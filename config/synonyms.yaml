@@ -11,6 +11,11 @@
 # out: a missed pair is still found by the topic step (dupes.py) and asked twice of the model.
 #
 # A word may stand in one group only (the first one wins). A broken line or file is ignored, never stops a run.
+#
+# THE LIST ALSO GROWS ON ITS OWN: nishpaksh/learn_synonyms.py appends pairs the outlets themselves show (the same
+# fact, merged by the model, in the same words but for one) to config/synonyms_learned.yaml, which is read AFTER this
+# file, so what is written here always wins. `never:` at the bottom lists words that must never be joined, by hand or
+# by the job: one line per set, and any two words of a line stay apart.
 groups:
   # people and harm
   - injured hurt wounded
@@ -45,3 +50,31 @@ groups:
   - large big huge
   - increase hike rise rises rose raise raised
   - decrease decline dip fell
+
+# words that differ in meaning or severity: never one word, whatever the outlets seem to swap. The job reads this
+# list before it learns a pair, and relate.py drops a learned group that joins two words of one line.
+never:
+  - injured killed missing
+  - arrested questioned accused alleged convicted acquitted released charged
+  - killed murdered
+  - probe arrest
+  - raised cut
+  - increase decrease
+  - rose fell
+  - win lose
+  - approve reject
+  - accept reject
+  - support oppose
+  - allow ban
+  - pass fail
+  - guilty innocent
+  - high low
+  - higher lower
+  - more less
+  - before after
+  - start end
+  - open close
+  - first last
+  - gain loss
+  - confirm deny
+  - safe unsafe

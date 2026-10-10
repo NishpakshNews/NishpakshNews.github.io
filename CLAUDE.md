@@ -372,6 +372,29 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   "... against India" and a line with a speaker, "... , Bedi stated") is NOT merged by code: the speaker's name stops
   `covers`, which also protects a statement's attribution from being folded away; the topic step (`dupes.py`) proposes
   such pairs and the model is asked twice.
+  **Synonyms learned from the outlets, done (owner, Oct 11 2026: "like the project learns and grows the titles' list on
+  its own, can synonyms grow too")** (`learn_synonyms.py`, `config/synonyms_learned.yaml`,
+  `.github/scripts/learn_synonyms.sh`; no model; the twin of `learn.py`). The evidence is what the pipeline already
+  decided: two claims under ONE merged statement (`claims.canonical_id`: the model said "same" twice, A/B swapped) that are
+  word for word the same except ONE lower-case word in the same place (3+ words around it, same numbers and names, not a
+  negation, number, filler, same stem or opposite by prefix: `swap`). Only a pair that code alone did NOT already call "same"
+  (`relate.relate`) counts, so a long line code merged with one word different (injured / killed) proves nothing, and the two
+  claims must come from different independence groups (`wire.independence_groups`). A pair is learned when it shows in 3+
+  statements, 2+ stories and 2+ independent groups of outlets and nothing is against it: the two words never stand in one
+  statement, never differ between two statements the pipeline judged contradictory (`canonical.conflicts`), are not on a
+  `never:` line of `synonyms.yaml` (seeded with the opposites and severity pairs: injured / killed, arrested / questioned,
+  raised / cut, rose / fell ...) and are not struck out in `rejected:` of the learned file. Neither word may already be in a
+  group (a word stays in the first group it appears in; a learned group never grows by itself); at most 5 pairs a run. The
+  entry is one line `{words, learned, statements, stories, example: [2 sentences]}`, only APPENDED. `relate.load_learned_groups`
+  reads it AFTER the hand-written groups (they win), drops a learned group that joins two words of a `never:` line, and a
+  missing or broken file adds nothing. The job step "Learn synonyms from the outlets" in `hourly.yml` (after the titles step,
+  `continue-on-error`) runs `learn_synonyms.sh`: pull, `python -m nishpaksh.learn_synonyms`, commit ONLY that file, push; used
+  from the next run on (`relate.SYNONYM` is built at import). A WRONG ENTRY: delete its line, add its two words as one line to
+  `rejected:` (and to `never:` in `synonyms.yaml` to keep them apart everywhere). Run by hand: `python -m nishpaksh.learn_synonyms
+  --dry-run`. Window: the last 3 days of articles (like titles), so a rare pair may never gather enough evidence in one window;
+  keeping a running tally across runs is not built. NOT RUN ON REAL DATA: 5 new tests ran as plain Python (stemmer stubbed, no
+  pytest / sqlalchemy in the sandbox), and thresholds were checked by mutation; the database read in `learn_synonyms.run` and
+  the git step have not run.
 - **What already happened is not written as scheduled (owner, Oct 9 2026, story 13792: "The 57th GST Council
   meeting is scheduled to take place ... on Thursday, October 8", written after it).** `compose.drop_past_schedules`
   before writing: a line saying something "is scheduled / set / expected to", "will be held / take place ...",

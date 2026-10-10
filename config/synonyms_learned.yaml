@@ -1,0 +1,13 @@
+# Synonyms learned from the news by nishpaksh/learn_synonyms.py (owner, Oct 11 2026). The job appends here and
+# commits it; nishpaksh/relate.py reads it after the hand-written synonyms.yaml, which always wins.
+# A pair enters this file only when two outlets said one fact (merged by the model, asked twice) in the same words
+# but for ONE word, in 3+ statements of 2+ stories and 2+ independent outlets, and nothing showed the two words to
+# differ. `statements` and `stories` say how often, `example` shows one pair of sentences, `learned` the day.
+# Entries are only appended.
+#
+# A WRONG ENTRY: delete its line below and add its two words as one line to `rejected:` (for example
+# "killed murdered"), so it is never learned again. To keep two words apart in all cases, also add them to `never:`
+# in synonyms.yaml.
+rejected: []
+
+groups:

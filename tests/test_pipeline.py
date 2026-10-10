@@ -3802,3 +3802,125 @@ def test_synonyms_come_from_the_yaml_file_and_a_broken_file_falls_back():
     with mock.patch("nishpaksh.config.load_yaml", return_value={"groups": ["Good  Fine", "x"]}):
         assert relate.load_synonym_groups() == ["good fine"]
 
+
+# ---------------------------------------------------------------- synonyms learned from the outlets (owner, Oct 11 2026)
+
+_SYN_FRAMES = [("Opposition leaders called the budget {w} in scale", 10),
+               ("Local traders described the festival crowd as {w} this season", 11),
+               ("Doctors said the recovery was {w} given his age", 11)]
+
+
+def _syn_corpus(word_a="unprecedented", word_b="historic"):
+    """Three merged statements in two stories, each told by two independent outlets in the same words but for one."""
+    by_canon, groups, art = {}, {}, 0
+    for cid, (frame, story) in enumerate(_SYN_FRAMES, start=1):
+        cl = []
+        for w in (word_a, word_b):
+            art += 1
+            groups[art] = f"g{art}"
+            cl.append({"id": art, "article_id": art, "story_id": story, "text": frame.format(w=w), "time": None})
+        by_canon[cid] = cl
+    return by_canon, groups
+
+
+def test_a_swap_is_one_lower_case_word_in_otherwise_identical_lines():
+    from nishpaksh import learn_synonyms as ls
+    assert ls.swap("Opposition leaders called the budget unprecedented in scale",
+                   "Opposition leaders called the budget historic in scale") == ("unprecedented", "historic")
+    for a, b in [("Leaders called the budget unprecedented in scale", "Leaders called the budget historic in size"),   # two words
+                 ("Leaders called the budget unprecedented in scale", "Chiefs called the budget unprecedented in scale"),  # the first word
+                 ("Leaders called the budget unprecedented in scale", "Leaders called the Budget unprecedented in scale"),  # same words
+                 ("Police said 12 people were hurt in the blast", "Police said 14 people were hurt in the blast"),  # a number
+                 ("Leaders called the Delhi budget unprecedented in scale", "Leaders called the Mumbai budget unprecedented in scale"),  # a name
+                 ("Police said he was not hurt in the blast", "Police said he was also hurt in the blast"),          # a negation
+                 ("Police said he was able to leave the site", "Police said he was unable to leave the site"),       # opposite by prefix
+                 ("Police said the arrests came on the day", "Police said the arrested came on the day"),           # one stem
+                 ("It was historic", "It was unusual")]:                                                              # too short
+        assert ls.swap(a, b) is None, (a, b)
+
+
+def test_a_pair_confirmed_in_three_statements_two_stories_two_groups_is_learned():
+    from nishpaksh import learn_synonyms as ls, relate
+    by_canon, groups = _syn_corpus()
+    for cl in by_canon.values():                     # the model had to confirm them: code alone did not call them "same"
+        assert relate.relate(cl[0]["text"], cl[1]["text"]) != "same"
+    ev = ls.scan(by_canon, {}, groups)
+    (key, e), = ev.items()
+    assert len(e["statements"]) == 3 and e["stories"] == {10, 11} and len(e["groups"]) == 6 and not e["veto"]
+    got = ls.pick(ev, dt.date(2026, 10, 11), never=[], struck=[])
+    assert len(got) == 1 and got[0]["words"] == "historic unprecedented" and got[0]["learned"] == "2026-10-11"
+    assert got[0]["statements"] == 3 and got[0]["stories"] == 2 and len(got[0]["example"]) == 2
+
+
+def test_too_little_evidence_or_any_evidence_against_learns_nothing():
+    from nishpaksh import learn_synonyms as ls, relate
+    by_canon, groups = _syn_corpus()
+    pick = lambda ev, **kw: ls.pick(ev, dt.date(2026, 10, 11), never=kw.get("never", []), struck=kw.get("struck", []))
+    assert pick(ls.scan(dict(list(by_canon.items())[:2]), {}, groups)) == []              # 2 statements
+    one_story = {c: [dict(x, story_id=10) for x in cl] for c, cl in by_canon.items()}
+    assert pick(ls.scan(one_story, {}, groups)) == []                                      # 1 story
+    one_group = {a: "same" for a in groups}
+    assert pick(ls.scan(by_canon, {}, one_group)) == []                                    # the outlets are not independent
+    # both words in one statement: \"unprecedented and historic\"
+    both = dict(by_canon)
+    both[4] = [{"id": 99, "article_id": 99, "story_id": 12, "text": "The vote was unprecedented and historic", "time": None}]
+    assert pick(ls.scan(both, {}, groups)) == []
+    # two statements the pipeline judged to contradict each other differ by the same two words
+    contra = dict(by_canon)
+    contra[5] = [{"id": 98, "article_id": 98, "story_id": 12, "text": "Leaders called the budget historic in scale", "time": None}]
+    contra[6] = [{"id": 97, "article_id": 97, "story_id": 12, "text": "Leaders called the budget unprecedented in scale", "time": None}]
+    assert pick(ls.scan(contra, {5: [6]}, groups)) == []
+    ok = ls.scan(by_canon, {}, groups)
+    assert pick(ok, never=[frozenset({relate._stem("historic"), relate._stem("unprecedented")})]) == []   # a `never:` line
+    assert pick(ok, struck=[frozenset({relate._stem("historic"), relate._stem("unprecedented")})]) == []  # struck out by hand
+    assert len(pick(ok)) == 1
+    # a word already in a group stays there: injured/hurt are one already, so \"wounded\" is not learned from them
+    grouped, g2 = _syn_corpus("injured", "hurt")
+    assert pick(ls.scan(grouped, {}, g2)) == []
+    # a long line that code merged with one word different is not evidence: only what the model had to confirm counts
+    long_a = "Police said the three men were detained near the old market after a late night raid by teams"
+    long_b = long_a.replace("detained", "held")
+    assert relate.relate(long_a, long_b) == "same"
+    longs = {c: [{"id": c * 2 + i, "article_id": c * 2 + i, "story_id": 20 + c, "text": t, "time": None}
+                 for i, t in enumerate((long_a, long_b))] for c in range(1, 4)}
+    assert ls.scan(longs, {}, {a["article_id"]: f"g{a['article_id']}" for cl in longs.values() for a in cl}) == {}
+
+
+def test_the_learned_file_is_only_appended_to_and_never_duplicates_or_breaks():
+    import tempfile
+    from pathlib import Path
+    import yaml
+    from nishpaksh import learn_synonyms as ls
+    by_canon, groups = _syn_corpus()
+    entries = ls.pick(ls.scan(by_canon, {}, groups), dt.date(2026, 10, 11), never=[], struck=[])
+    path = Path(tempfile.mkdtemp()) / "synonyms_learned.yaml"
+    assert ls.append(entries, path) == 1
+    first = path.read_text(encoding="utf-8")
+    assert first.startswith("# Synonyms learned") and "rejected: []" in first and first.rstrip().endswith("}")
+    assert ls.append(entries, path) == 0 and path.read_text(encoding="utf-8") == first      # the same pair is not added twice
+    doc = yaml.safe_load(first)
+    assert doc["groups"][0]["words"] == "historic unprecedented" and doc["groups"][0]["statements"] == 3
+    again = [dict(entries[0], words="historic remarkable")]                                  # a word is in one group only
+    assert ls.append(again, path) == 0
+    path.write_text("rejected: [\ngroups: {{{", encoding="utf-8")                              # a file that does not parse is left alone
+    assert ls.append(entries, path) == 0 and path.read_text(encoding="utf-8") == "rejected: [\ngroups: {{{"
+
+
+def test_the_reader_adds_learned_groups_after_the_hand_written_ones_and_ignores_bad_lines():
+    from unittest import mock
+    from nishpaksh import relate
+    hand = {"groups": ["firm company"], "never": ["killed murdered"]}
+    learned = {"groups": [{"words": "historic unprecedented", "learned": "2026-10-11"},
+                          {"words": "killed murdered"},                         # joins two words of a `never:` line
+                          {"words": "one"}, {"nowords": 1}, "not a dict", None]}
+    with mock.patch("nishpaksh.config.load_yaml", side_effect=lambda n: hand if n == "synonyms.yaml" else learned):
+        assert relate.load_learned_groups() == ["historic unprecedented"]
+        groups = relate.load_synonym_groups()
+        assert groups == ["firm company", "historic unprecedented"]                  # hand-written first: they win
+        syn = relate.build_synonyms(groups)
+        assert syn[relate._stem("historic")] == syn[relate._stem("unprecedented")]
+    with mock.patch("nishpaksh.config.load_yaml",
+                    side_effect=lambda n: hand if n == "synonyms.yaml" else (_ for _ in ()).throw(FileNotFoundError(n))):
+        assert relate.load_synonym_groups() == ["firm company"]                      # no learned file: nothing breaks
+    with mock.patch("nishpaksh.config.load_yaml", return_value={"groups": "broken"}):
+        assert relate.load_learned_groups() == []

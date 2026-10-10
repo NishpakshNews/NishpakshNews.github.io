@@ -43,7 +43,8 @@ must also new current currently""".split()}
 # ONE word. Kept short and hand-checked: words that differ in meaning are never grouped ("injured" and
 # "killed" stay apart; so do "arrested" and "questioned").
 # The list lives in config/synonyms.yaml so it can keep growing without touching code (owner, Oct 11 2026: "where
-# they can keep on adding"); this short list is only the fallback when that file is missing or broken.
+# they can keep on adding"); this short list is only the fallback when that file is missing or broken. Pairs the
+# outlets themselves show are appended by learn_synonyms.py to config/synonyms_learned.yaml and read after it.
 DEFAULT_SYNONYM_GROUPS = [
     "injured hurt wounded", "killed dead died death deaths die dies lost", "arrested detained nabbed apprehended",
     "attack attacked assault assaulted", "vessel ship boat", "blast explosion", "fire blaze",
@@ -52,16 +53,48 @@ DEFAULT_SYNONYM_GROUPS = [
 ]
 
 
+def load_never() -> list[frozenset[str]]:
+    """The `never:` lines of config/synonyms.yaml: words that are never one word, however often the outlets seem to
+    swap them (each line: the stems of its words; any two of them must stay apart). Empty when there is no such
+    list or the file is broken."""
+    try:
+        from .config import load_yaml
+        raw = (load_yaml("synonyms.yaml") or {}).get("never") or []
+        return [frozenset(_stem(w) for w in str(g).lower().split()) for g in raw if isinstance(g, str) and len(g.split()) >= 2]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def load_learned_groups() -> list[str]:
+    """The groups the job learned from the outlets (nishpaksh/learn_synonyms.py, config/synonyms_learned.yaml), read
+    AFTER the hand-written file so its groups win. An entry that is not a dict with a string `words` of 2+ words is
+    skipped, and so is one that puts two words of a `never:` line together. A missing or broken file adds nothing."""
+    try:
+        from .config import load_yaml
+        raw = (load_yaml("synonyms_learned.yaml") or {}).get("groups") or []
+        never = load_never()
+        out = []
+        for g in raw:
+            words = " ".join(str(g.get("words")).lower().split()) if isinstance(g, dict) and isinstance(g.get("words"), str) else ""
+            stems = {_stem(w) for w in words.split()}
+            if len(words.split()) >= 2 and not any(len(stems & n) >= 2 for n in never):
+                out.append(words)
+        return out
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def load_synonym_groups() -> list[str]:
-    """The groups of config/synonyms.yaml (one string of space-separated words each); the built-in list when the
-    file is missing, broken or empty. A line that is not a string of 2+ words is skipped."""
+    """The groups of config/synonyms.yaml (one string of space-separated words each), then the learned ones; the
+    built-in list instead of the hand-written file when it is missing, broken or empty. A line that is not a string
+    of 2+ words is skipped."""
     try:
         from .config import load_yaml
         raw = (load_yaml("synonyms.yaml") or {}).get("groups") or []
         groups = [" ".join(str(g).lower().split()) for g in raw if isinstance(g, str) and len(str(g).split()) >= 2]
-        return groups or list(DEFAULT_SYNONYM_GROUPS)
     except Exception:  # noqa: BLE001  (a missing or malformed file must never stop a run)
-        return list(DEFAULT_SYNONYM_GROUPS)
+        groups = []
+    return (groups or list(DEFAULT_SYNONYM_GROUPS)) + load_learned_groups()
 
 
 def build_synonyms(groups: list[str]) -> dict[str, str]:

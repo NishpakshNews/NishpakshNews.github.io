@@ -115,6 +115,13 @@ jobs:
         if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
         continue-on-error: true
         run: bash .github/scripts/learn_titles.sh
+      - name: Learn synonyms from the outlets
+        # appends pairs of words the outlets use for one fact (merged by the model, same words but for one) to
+        # config/synonyms_learned.yaml and commits that one file (nishpaksh/learn_synonyms.py); read by relate.py
+        # from the next run on. Never stops the hour.
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
+        continue-on-error: true
+        run: bash .github/scripts/learn_synonyms.sh
       - name: Save the newsroom
         # always, once a copy was loaded: whatever this hour did is kept, even after a failed step
         id: save
