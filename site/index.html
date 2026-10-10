@@ -125,7 +125,7 @@
   /* the article: a sheet that grows out of the card */
   #sheet { position: fixed; inset: 0; z-index: 10; background: var(--card); visibility: hidden; }
   #sheet.on { visibility: visible; }
-  #sheet.anim { transition: clip-path 460ms var(--ease), -webkit-clip-path 460ms var(--ease), background-color 460ms ease; }
+  #sheet.anim { transition: clip-path 560ms cubic-bezier(.22,.75,.18,1), -webkit-clip-path 560ms cubic-bezier(.22,.75,.18,1), background-color 560ms ease; }
   #sheet.open { background: var(--ground); }
   .sheet-scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; touch-action: pan-y pinch-zoom; overscroll-behavior: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .sheet-scroll::-webkit-scrollbar { display: none; }
@@ -164,11 +164,11 @@
   .hbox.has-pic { padding-top: 150px; }
   .hbox .layer { position: absolute; inset: 0; border-radius: 22px; opacity: 0; }
   #sheet.anim .hbox { transition: color 440ms ease 20ms; }
-  #sheet.anim .hbox .layer { transition: opacity 430ms ease 20ms; }
+  #sheet.anim .hbox .layer { transition: opacity 560ms ease; }
   #sheet.open .hbox { color: #fff; }
   #sheet.open .hbox .layer { opacity: 1; }
   .hbox h1 { transform: translate(var(--tx, 0px), var(--ty, 0px)); }
-  #sheet.anim .hbox h1 { transition: transform 460ms var(--ease); will-change: transform; }
+  #sheet.anim .hbox h1 { transition: transform 560ms cubic-bezier(.22,.75,.18,1); will-change: transform; }
   #sheet.open .hbox h1 { transform: none; text-shadow: 0 1px 2px rgba(0,0,0,0.35), 0 0 18px rgba(0,0,0,0.18); }
   /* the picture at the top of the indigo box, dissolving into it; the card's and the article's are one picture */
   .hbox .hpic { position: absolute; left: 0; right: 0; top: 0; height: 200px; border-radius: 22px 22px 0 0; overflow: hidden;
@@ -182,13 +182,16 @@
                     transform-origin: 50% 50%; transform: var(--it, none); }
   .hbox .hpic img.hsoft { filter: blur(16px) saturate(1.1); transform: var(--it, none) scale(1.15); }
   .hbox .hpic img.hsharp { -webkit-mask-image: linear-gradient(to bottom, #000 52%, transparent 82%); mask-image: linear-gradient(to bottom, #000 52%, transparent 82%); }
-  #sheet.anim .hbox .hpic img { transition: transform 460ms var(--ease), filter 460ms ease; will-change: transform, filter; }
+  #sheet.anim .hbox .hpic img { transition: transform 560ms cubic-bezier(.22,.75,.18,1), filter 560ms ease; will-change: transform, filter; }
   #sheet.open .hbox .hpic img.hsharp { transform: none; }
+  #sheet.open .hbox .hpic img.hsoft { transform: scale(1.15); }
+  /* Keep the blurred underlay and the sharp image registered as one shared element. The card and reader use
+     the same blur strength and wash; only the wash opacity changes, in sync with the image's travel. */
   .hbox .hpic .hwash { position: absolute; inset: 0; pointer-events: none; opacity: 1;
                        background: linear-gradient(to bottom, rgba(255,255,255,0) 50%, rgba(255,255,255,0.55) 78%, #fff 100%); }
   .hbox .hpic .pic-credit { opacity: 0; }
-  #sheet.anim .hbox .hpic { transition: opacity 340ms ease 100ms, transform 460ms var(--ease); will-change: transform; }
-  #sheet.anim .hbox .hpic .hwash { transition: opacity 420ms ease 10ms; }
+  #sheet.anim .hbox .hpic { transition: opacity 520ms cubic-bezier(.22,.75,.18,1), transform 560ms cubic-bezier(.22,.75,.18,1); will-change: transform, opacity; }
+  #sheet.anim .hbox .hpic .hwash { transition: opacity 560ms cubic-bezier(.22,.75,.18,1); }
   #sheet.anim .hbox .hpic .pic-credit { transition: opacity 220ms ease 300ms; }
   #sheet.open .hbox .hpic { opacity: 1; transform: none; }
   #sheet.open .hbox .hpic .hwash { opacity: 0; }
@@ -210,13 +213,28 @@
   #sheet.open .hbox .meta { opacity: .92; }
   #sheet.anim .hbox .meta { transition: opacity 260ms ease 260ms; }
   .rise { opacity: 0; transform: translateY(24px); }
-  #sheet.anim .rise { transition: opacity 300ms ease 200ms, transform 420ms var(--ease) 160ms; }
+  #sheet.anim .rise { transition: opacity 440ms ease, transform 520ms cubic-bezier(.22,.75,.18,1); }
   #sheet.open .rise { opacity: 1; transform: none; }
-  /* closing: what is not on the card goes at once, so the headline and the picture travel back alone */
-  #sheet.anim:not(.open) .rise { transition: opacity 390ms cubic-bezier(.22,.61,.36,1), transform 430ms var(--ease); opacity: 0; transform: translateY(12px); visibility: visible; }
-  #sheet.anim:not(.open) .hbox .meta, #sheet.anim:not(.open) .chrome { transition: opacity 320ms ease; }
-  #sheet.anim:not(.open) .hbox .layer { transition: opacity 430ms ease 20ms; }
-  #sheet.anim:not(.open) .hbox .hpic .hwash { transition: opacity 420ms ease 10ms; }
+  /* Stagger article sections into place; don't reveal the whole body as one abrupt slab. */
+  #sheet.anim .rise > * { opacity: 0; transform: translate3d(0, 14px, 0); transition: opacity 420ms ease, transform 520ms cubic-bezier(.22,.75,.18,1); }
+  #sheet.open .rise > * { opacity: 1; transform: translate3d(0,0,0); }
+  #sheet.open .rise > *:nth-child(1) { transition-delay: 70ms; }
+  #sheet.open .rise > *:nth-child(2) { transition-delay: 115ms; }
+  #sheet.open .rise > *:nth-child(3) { transition-delay: 160ms; }
+  #sheet.open .rise > *:nth-child(4) { transition-delay: 205ms; }
+  #sheet.open .rise > *:nth-child(5) { transition-delay: 250ms; }
+  #sheet.open .rise > *:nth-child(n+6) { transition-delay: 285ms; }
+  /* While the reader contracts, homepage copy and metadata fade/flow in underneath it. */
+  .track.returning .card .text, .track.returning .card .foot { opacity: 0; transform: translate3d(0, 12px, 0); }
+  .track.returning.reveal .card .text, .track.returning.reveal .card .foot { opacity: 1; transform: translate3d(0, 0, 0); }
+  .track.returning .card .text { transition: opacity 420ms ease 80ms, transform 520ms cubic-bezier(.22,.75,.18,1) 50ms; }
+  .track.returning .card .foot { transition: opacity 360ms ease 150ms, transform 480ms cubic-bezier(.22,.75,.18,1) 120ms; }
+  /* Closing keeps the same long shared-element curve used by the opening morph. */
+  #sheet.anim:not(.open) .rise { transition: opacity 420ms ease, transform 520ms cubic-bezier(.22,.75,.18,1); opacity: 0; transform: translateY(8px); visibility: visible; }
+  #sheet.anim:not(.open) .rise > * { transition: opacity 180ms ease, transform 240ms cubic-bezier(.4,0,.2,1); opacity: 0; transform: translate3d(0, 8px, 0); }
+  #sheet.anim:not(.open) .hbox .meta, #sheet.anim:not(.open) .chrome { transition: opacity 360ms ease; }
+  #sheet.anim:not(.open) .hbox .layer { transition: opacity 560ms ease; }
+  #sheet.anim:not(.open) .hbox .hpic .hwash { transition: opacity 560ms cubic-bezier(.22,.75,.18,1); }
   #sheet.anim:not(.open) .hbox .hpic .pic-credit { transition: opacity 220ms ease; }
 
   /* sections as cards with numbered headings; the lead alone; figures as tiles; what they say by speaker */
@@ -356,7 +374,7 @@
   .greeting.swap { opacity: 0; }
   @media (prefers-reduced-motion: reduce) {
     nav.sections, .sb, .track { transition-duration: 1ms !important; transition-delay: 0ms !important; }
-    #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer, #sheet.anim .hbox .hpic, #sheet.anim .hbox .hpic img, #sheet.anim .hbox .hpic .hwash, #sheet.anim .hbox .meta, #sheet.anim .hbox h1, #sheet.anim .hbox .hpic .pic-credit { transition-duration: 1ms !important; transition-delay: 0ms !important; }
+    #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer, #sheet.anim .hbox .hpic, #sheet.anim .hbox .hpic img, #sheet.anim .hbox .hpic .hwash, #sheet.anim .hbox .meta, #sheet.anim .hbox h1, #sheet.anim .hbox .hpic .pic-credit, #sheet.anim .rise > *, .track.returning .card .text, .track.returning .card .foot { transition-duration: 1ms !important; transition-delay: 0ms !important; }
   }
 
   /* trial_version_2.1 (owner, Oct 9 2026): the menu at the left of the wordmark; the menu, the language switch and the
@@ -1229,6 +1247,10 @@ function closeStory(animate = true) {
   if (k >= 0 && k !== current) jumpTo(k);
   const r = animate ? cardRectFor(id) : null;
   if (r) {
+    track.classList.remove("returning", "reveal");
+    void track.offsetWidth;
+    track.classList.add("returning");
+    requestAnimationFrame(() => track.classList.add("reveal"));
     const el = track.querySelector(`.slot[data-i="${current}"] a.card`);
     if (el) lastOff = headOffset(el);
     sheetScroll.scrollTop = 0;     // the article's top goes back into the card, as it came out of it
@@ -1237,11 +1259,14 @@ function closeStory(animate = true) {
     flyBarBack(el);                // 2.1: the colour bar travels back into the card with the headline
     setClip(r); sheet.classList.remove("open");
     closing = setTimeout(() => {
-      sheet.classList.remove("on", "anim"); closing = null;
+      sheet.classList.remove("on", "anim");
+      track.classList.remove("returning", "reveal");
+      closing = null;
       if (refreshPending) refreshDeck();
-    }, 485);
+    }, 590);
   } else {
     sheet.classList.remove("on", "anim", "open");
+    track.classList.remove("returning", "reveal");
     if (refreshPending) refreshDeck();
   }
   const el = track.querySelector(`.slot[data-i="${current}"] a.card`);
