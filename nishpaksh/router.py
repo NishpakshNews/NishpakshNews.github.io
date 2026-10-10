@@ -18,10 +18,9 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from zoneinfo import ZoneInfo
 
-from .budget import PACIFIC
-
 log = logging.getLogger(__name__)
 EMBED_DIMS = 256
+PACIFIC = ZoneInfo("America/Los_Angeles")  # Gemini daily quotas reset at midnight Pacific
 PACE_SLACK_HOURS = 2   # how far ahead of an even spread a slot may run
 OVERLOAD_STREAK = 3    # consecutive overload errors of a model (on any key) before it is dropped for the run
 

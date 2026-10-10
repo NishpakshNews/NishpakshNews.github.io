@@ -12,9 +12,7 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 import feedparser
 import requests
 import trafilatura
-from sqlalchemy import func
 
-from .budget import accrued_limit, quota_day_start
 from .config import SETTINGS, load_yaml
 from .db import Store, articles, feeds, insert, select, update, utcnow
 from .wire import minhash
@@ -243,7 +241,6 @@ def fill_images(store: Store, limit: int = 120) -> int:
 
 def ingest(store: Store) -> int:
     now = utcnow()
-    quota_start = quota_day_start(now)
     oldest = now - dt.timedelta(hours=SETTINGS.max_article_age_hours)
     candidates: list[tuple[dict, dict]] = []
     seen: set[str] = set()
@@ -279,31 +276,14 @@ def ingest(store: Store) -> int:
     for f, _ in todo:
         diag[f["name"]]["new"] += 1
     todo.sort(key=lambda fe: fe[1]["published_at"] or now, reverse=True)
-    # Per-feed fairness limits are soft hourly tranches. Unused slots bank until Gemini's reset,
-    # so a later burst can be ingested without permanently losing capacity at the next hour.
-    feed_used_rows = store.rows(select(articles.c.feed_id, func.count().label("n"))
-                                .where(articles.c.feed_id.is_not(None),
-                                       articles.c.fetched_at >= quota_start, articles.c.fetched_at <= now)
-                                .group_by(articles.c.feed_id))
-    feed_used_today = {r["feed_id"]: int(r["n"] or 0) for r in feed_used_rows}
     per_feed: dict[int, int] = {}
     fair = []
-    feed_cap = accrued_limit(SETTINGS.max_new_per_feed, now)
     for f, en in todo:
-        room = max(0, feed_cap - feed_used_today.get(f["id"], 0))
-        if per_feed.get(f["id"], 0) < room:
+        if per_feed.get(f["id"], 0) < SETTINGS.max_new_per_feed:
             per_feed[f["id"]] = per_feed.get(f["id"], 0) + 1
             fair.append((f, en))
-    # Total intake is capped separately across feeds. Search-discovered articles count too: this is
-    # the day's article intake ceiling, not just an RSS ceiling. Provider hard quotas are separate.
-    accrued = accrued_limit(SETTINGS.max_new_articles_per_run, now)
-    used_row = store.one(select(func.count().label("n")).select_from(articles)
-                         .where(articles.c.fetched_at >= quota_start, articles.c.fetched_at <= now))
-    used_today = int(used_row["n"]) if used_row else 0
-    intake_room = max(0, accrued - used_today)
-    todo = fair[:intake_room]
-    log.info("ingest: %d new links across %d feeds (internal daily bank %d/%d)",
-             len(todo), len({f["id"] for f, _ in todo}), used_today, accrued)
+    todo = fair[: SETTINGS.max_new_articles_per_run]
+    log.info("ingest: %d new links across %d feeds", len(todo), len({f['id'] for f, _ in todo}))
 
     with ThreadPoolExecutor(max_workers=8) as pool:
         pages = list(pool.map(lambda fe: fetch_article(fe[1]["url"]), todo))

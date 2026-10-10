@@ -5,12 +5,12 @@ only writes. Publishing used to come last in a 20-50 minute run and was squeezed
 spent 50 minutes reading and never asked the writer), and reading spent the Flash-Lite the writer
 needed as its fallback.
 
-Each hourly run: settled stories (editions.settled), most important first (priority.value), are
-written while accrued daily seats remain, `desk_tries` stories were tried, or time is up. Unused
-publishing seats accumulate by hour and reset at midnight Pacific with Gemini's quota day. The quality
-bar is unchanged: no good essay, no article.
+Each run: the settled stories (editions.settled), most important first (priority.value), are
+written one by one until this clock hour has `desk_per_hour` articles (owner: at least one an hour,
+at most two), `desk_tries` stories were tried, or the time is up. The quality bar is unchanged:
+no good essay, no article.
 
-Seats (owner, Oct 9 2026): two general seats an hour and one (`desk_beat_seat`) only for
+Seats (owner, Oct 9 2026): at most three an hour, two for any story and one (`desk_beat_seat`) only for
 a Domains or Sport story (priority.is_beat). A beat story takes the beat seat first, so the two others
 stay for the rest; with no beat story ready the beat seat stays EMPTY (never a third general article).
 
@@ -26,7 +26,6 @@ import time
 
 from sqlalchemy import func
 
-from .budget import accrued_limit, quota_day_start
 from .config import SETTINGS, database_url, gemini_api_keys, load_yaml
 from .db import Store, articles, diagnostics, insert, published, select, stories, story_links, utcnow
 from .router import GeminiBackend, Router
@@ -54,22 +53,13 @@ def _beats(store: Store, ids: list[int]) -> set[int]:
 
 
 def seats(store: Store, now: dt.datetime | None = None) -> tuple[int, int]:
-    """(accrued general seats left, accrued beat seats left) since Gemini quota-day reset.
-
-    Unused seats survive a quiet hour. A Domains/Sport story uses the reserved beat pool first;
-    beat articles beyond that pool consume general seats, so a ready beat never creates a fourth
-    seat from thin air.
-    """
+    """(general seats left, beat seats left) in this clock hour. Beat articles published this hour fill the
+    beat seat first."""
     now = now or utcnow()
-    start = quota_day_start(now)
     ids = [r["story_id"] for r in store.rows(select(published.c.story_id)
-                                             .where(published.c.updated_at >= start,
-                                                    published.c.updated_at <= now))]
-    general_capacity = accrued_limit(SETTINGS.desk_per_hour, now)
-    beat_capacity = accrued_limit(SETTINGS.desk_beat_seat, now)
-    beat_used = min(len(_beats(store, ids)), beat_capacity)
-    general_used = len(ids) - beat_used
-    return max(0, general_capacity - general_used), max(0, beat_capacity - beat_used)
+                                             .where(published.c.updated_at >= _hour_start(now)))]
+    beat_used = min(len(_beats(store, ids)), SETTINGS.desk_beat_seat)
+    return SETTINGS.desk_per_hour - (len(ids) - beat_used), SETTINGS.desk_beat_seat - beat_used
 
 
 def published_this_hour(store: Store, now: dt.datetime | None = None) -> int:

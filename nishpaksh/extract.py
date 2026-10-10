@@ -12,7 +12,6 @@ import threading
 import time
 from zoneinfo import ZoneInfo
 
-from .budget import accrued_limit, quota_day_key
 from .config import SETTINGS
 from .frames import normalize as normalize_frame
 from sqlalchemy import func
@@ -374,19 +373,9 @@ def retract_unreadable(store: Store) -> int:
 
 
 def read_blocked_pages(store: Store, tavily, max_pages: int = 5, focus: set[int] | None = None) -> int:
-    """Read blocked pages through Tavily, banking unused hourly page slots to Gemini's Pacific reset.
-
-    `max_pages` is the hourly soft-cap tranche. The actual Tavily credit/month budget is checked by Tavily.
-    """
+    """Pages our fetcher could not read, in stories worth reading, fetched through Tavily: at most
+    one per independent source per story, stories closest to publishable first."""
     if tavily is None or not tavily.enabled or max_pages <= 0:
-        return 0
-    now = utcnow()
-    day = quota_day_key(now)
-    budget_key = "internal:tavily-extract-pages"
-    accrued = accrued_limit(max_pages, now)
-    used = int(store.quota_load(day).get(budget_key, (0, 0))[0] or 0)
-    max_pages = max(0, accrued - used)
-    if max_pages <= 0:
         return 0
     from .wire import independence_groups, independent
     rows = store.rows(select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.agency, articles.c.wire_group,
@@ -417,8 +406,6 @@ def read_blocked_pages(store: Store, tavily, max_pages: int = 5, focus: set[int]
     pick = [a for _, _, a in wanted[:max_pages]]
     if not pick:
         return 0
-    # Reserve requested page slots even when some pages fail; provider credits have their own accounting.
-    store.quota_add(budget_key, day, len(pick), 0)
     got = tavily.extract([a["url"] for a in pick])
     n = 0
     for a in pick:

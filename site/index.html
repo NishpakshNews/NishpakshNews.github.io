@@ -125,7 +125,7 @@
   /* the article: a sheet that grows out of the card */
   #sheet { position: fixed; inset: 0; z-index: 10; background: var(--card); visibility: hidden; }
   #sheet.on { visibility: visible; }
-  #sheet.anim { transition: clip-path 560ms cubic-bezier(.22,.75,.18,1), -webkit-clip-path 560ms cubic-bezier(.22,.75,.18,1), background-color 560ms ease; }
+  #sheet.anim { transition: clip-path 460ms var(--ease), -webkit-clip-path 460ms var(--ease), background-color 460ms ease; }
   #sheet.open { background: var(--ground); }
   .sheet-scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; touch-action: pan-y pinch-zoom; overscroll-behavior: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .sheet-scroll::-webkit-scrollbar { display: none; }
@@ -163,12 +163,12 @@
   .hbox { position: relative; margin-top: 14px; border-radius: 22px; color: var(--ink); padding: 18px; }
   .hbox.has-pic { padding-top: 150px; }
   .hbox .layer { position: absolute; inset: 0; border-radius: 22px; opacity: 0; }
-  #sheet.anim .hbox { transition: color 440ms ease 20ms; }
-  #sheet.anim .hbox .layer { transition: opacity 560ms ease; }
+  #sheet.anim .hbox { transition: color 320ms ease 120ms; }
+  #sheet.anim .hbox .layer { transition: opacity 340ms ease 100ms; }
   #sheet.open .hbox { color: #fff; }
   #sheet.open .hbox .layer { opacity: 1; }
   .hbox h1 { transform: translate(var(--tx, 0px), var(--ty, 0px)); }
-  #sheet.anim .hbox h1 { transition: transform 560ms cubic-bezier(.22,.75,.18,1); will-change: transform; }
+  #sheet.anim .hbox h1 { transition: transform 460ms var(--ease); will-change: transform; }
   #sheet.open .hbox h1 { transform: none; text-shadow: 0 1px 2px rgba(0,0,0,0.35), 0 0 18px rgba(0,0,0,0.18); }
   /* the picture at the top of the indigo box, dissolving into it; the card's and the article's are one picture */
   .hbox .hpic { position: absolute; left: 0; right: 0; top: 0; height: 200px; border-radius: 22px 22px 0 0; overflow: hidden;
@@ -180,18 +180,13 @@
   .hbox .hpic { -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); }
   .hbox .hpic img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; display: block;
                     transform-origin: 50% 50%; transform: var(--it, none); }
-  .hbox .hpic img.hsoft { filter: blur(16px) saturate(1.1); transform: var(--it, none) scale(1.15); }
-  .hbox .hpic img.hsharp { -webkit-mask-image: linear-gradient(to bottom, #000 52%, transparent 82%); mask-image: linear-gradient(to bottom, #000 52%, transparent 82%); }
-  #sheet.anim .hbox .hpic img { transition: transform 560ms cubic-bezier(.22,.75,.18,1), filter 560ms ease; will-change: transform, filter; }
-  #sheet.open .hbox .hpic img.hsharp { transform: none; }
-  #sheet.open .hbox .hpic img.hsoft { transform: scale(1.15); }
-  /* Keep the blurred underlay and the sharp image registered as one shared element. The card and reader use
-     the same blur strength and wash; only the wash opacity changes, in sync with the image's travel. */
+  #sheet.anim .hbox .hpic img { transition: transform 460ms var(--ease); will-change: transform; }
+  #sheet.open .hbox .hpic img { transform: none; }
   .hbox .hpic .hwash { position: absolute; inset: 0; pointer-events: none; opacity: 1;
                        background: linear-gradient(to bottom, rgba(255,255,255,0) 50%, rgba(255,255,255,0.55) 78%, #fff 100%); }
   .hbox .hpic .pic-credit { opacity: 0; }
-  #sheet.anim .hbox .hpic { transition: opacity 520ms cubic-bezier(.22,.75,.18,1), transform 560ms cubic-bezier(.22,.75,.18,1); will-change: transform, opacity; }
-  #sheet.anim .hbox .hpic .hwash { transition: opacity 560ms cubic-bezier(.22,.75,.18,1); }
+  #sheet.anim .hbox .hpic { transition: opacity 340ms ease 100ms, transform 460ms var(--ease); will-change: transform; }
+  #sheet.anim .hbox .hpic .hwash { transition: opacity 360ms ease; }
   #sheet.anim .hbox .hpic .pic-credit { transition: opacity 220ms ease 300ms; }
   #sheet.open .hbox .hpic { opacity: 1; transform: none; }
   #sheet.open .hbox .hpic .hwash { opacity: 0; }
@@ -213,29 +208,14 @@
   #sheet.open .hbox .meta { opacity: .92; }
   #sheet.anim .hbox .meta { transition: opacity 260ms ease 260ms; }
   .rise { opacity: 0; transform: translateY(24px); }
-  #sheet.anim .rise { transition: opacity 440ms ease, transform 520ms cubic-bezier(.22,.75,.18,1); }
+  #sheet.anim .rise { transition: opacity 300ms ease 200ms, transform 420ms var(--ease) 160ms; }
   #sheet.open .rise { opacity: 1; transform: none; }
-  /* Stagger article sections into place; don't reveal the whole body as one abrupt slab. */
-  #sheet.anim .rise > * { opacity: 0; transform: translate3d(0, 14px, 0); transition: opacity 420ms ease, transform 520ms cubic-bezier(.22,.75,.18,1); }
-  #sheet.open .rise > * { opacity: 1; transform: translate3d(0,0,0); }
-  #sheet.open .rise > *:nth-child(1) { transition-delay: 70ms; }
-  #sheet.open .rise > *:nth-child(2) { transition-delay: 115ms; }
-  #sheet.open .rise > *:nth-child(3) { transition-delay: 160ms; }
-  #sheet.open .rise > *:nth-child(4) { transition-delay: 205ms; }
-  #sheet.open .rise > *:nth-child(5) { transition-delay: 250ms; }
-  #sheet.open .rise > *:nth-child(n+6) { transition-delay: 285ms; }
-  /* While the reader contracts, homepage copy and metadata fade/flow in underneath it. */
-  .track.returning .card .text, .track.returning .card .foot { opacity: 0; transform: translate3d(0, 12px, 0); }
-  .track.returning.reveal .card .text, .track.returning.reveal .card .foot { opacity: 1; transform: translate3d(0, 0, 0); }
-  .track.returning .card .text { transition: opacity 420ms ease 80ms, transform 520ms cubic-bezier(.22,.75,.18,1) 50ms; }
-  .track.returning .card .foot { transition: opacity 360ms ease 150ms, transform 480ms cubic-bezier(.22,.75,.18,1) 120ms; }
-  /* Closing keeps the same long shared-element curve used by the opening morph. */
-  #sheet.anim:not(.open) .rise { transition: opacity 420ms ease, transform 520ms cubic-bezier(.22,.75,.18,1); opacity: 0; transform: translateY(8px); visibility: visible; }
-  #sheet.anim:not(.open) .rise > * { transition: opacity 180ms ease, transform 240ms cubic-bezier(.4,0,.2,1); opacity: 0; transform: translate3d(0, 8px, 0); }
-  #sheet.anim:not(.open) .hbox .meta, #sheet.anim:not(.open) .chrome { transition: opacity 360ms ease; }
-  #sheet.anim:not(.open) .hbox .layer { transition: opacity 560ms ease; }
-  #sheet.anim:not(.open) .hbox .hpic .hwash { transition: opacity 560ms cubic-bezier(.22,.75,.18,1); }
-  #sheet.anim:not(.open) .hbox .hpic .pic-credit { transition: opacity 220ms ease; }
+  /* closing: what is not on the card goes at once, so the headline and the picture travel back alone */
+  #sheet.anim:not(.open) .rise { transition: opacity 110ms ease, transform 200ms ease, visibility 0s linear 110ms; visibility: hidden; }
+  #sheet.anim:not(.open) .hbox .meta, #sheet.anim:not(.open) .chrome { transition: opacity 110ms ease; }
+  #sheet.anim:not(.open) .hbox .layer { transition: opacity 280ms ease; }
+  #sheet.anim:not(.open) .hbox .hpic .hwash { transition: opacity 300ms ease 80ms; }
+  #sheet.anim:not(.open) .hbox .hpic .pic-credit { transition: opacity 110ms ease; }
 
   /* sections as cards with numbered headings; the lead alone; figures as tiles; what they say by speaker */
   .paper.lead { font-family: var(--head); font-size: 20px; line-height: 1.5; }
@@ -374,7 +354,7 @@
   .greeting.swap { opacity: 0; }
   @media (prefers-reduced-motion: reduce) {
     nav.sections, .sb, .track { transition-duration: 1ms !important; transition-delay: 0ms !important; }
-    #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer, #sheet.anim .hbox .hpic, #sheet.anim .hbox .hpic img, #sheet.anim .hbox .hpic .hwash, #sheet.anim .hbox .meta, #sheet.anim .hbox h1, #sheet.anim .hbox .hpic .pic-credit, #sheet.anim .rise > *, .track.returning .card .text, .track.returning .card .foot { transition-duration: 1ms !important; transition-delay: 0ms !important; }
+    #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer, #sheet.anim .hbox .hpic, #sheet.anim .hbox .hpic img, #sheet.anim .hbox .hpic .hwash, #sheet.anim .hbox .meta, #sheet.anim .hbox h1, #sheet.anim .hbox .hpic .pic-credit { transition-duration: 1ms !important; transition-delay: 0ms !important; }
   }
 
   /* trial_version_2.1 (owner, Oct 9 2026): the menu at the left of the wordmark; the menu, the language switch and the
@@ -528,9 +508,6 @@
   .nrow { display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid #eeeef1; width: 100%; border-left: 0; border-right: 0; border-bottom: 0;
           background: none; text-align: start; color: var(--ink); cursor: pointer; }
   .nrow .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 7px; flex: none; }
-  .rdaynav { display: flex; gap: 8px; margin: 2px 0 14px; }
-  .rdaynav button { flex: 1; min-height: 38px; border: 1px solid var(--edge); border-radius: 12px; background: #fff; color: var(--ink-soft); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
-  .rdaynav button.on { background: #2f3a72; border-color: #2f3a72; color: #fff; }
   .rclock { border-radius: 18px; color: #fff; padding: 22px 20px; margin-top: 6px; }
   .rclock b.big { display: block; font-family: var(--head); font-size: 40px; font-weight: 600; line-height: 1.1; margin-top: 2px; }
   .rnotify { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 14px; background: #f6f6f9; margin: 10px 0; }
@@ -719,8 +696,8 @@ function barCounts(paras) {                   // as nishpaksh/feed.py bar_counts
   }
   return c;
 }
-async function loadCards(l, force = false) {
-  if (!force && cardCache[l]) return cardCache[l];
+async function loadCards(l) {
+  if (cardCache[l]) return cardCache[l];
   let stories = null;
   try {
     // the minute in the address: GitHub's cache keeps a file up to 5 minutes, so a new article showed up to 5
@@ -913,43 +890,6 @@ async function showDeck(keepId) {
     $("retry").onclick = () => { delete cardCache[lang]; track.innerHTML = loadingHtml(); showDeck(keepId); };
   }
 }
-
-function deckSignature(list) {
-  return (list || []).map(c => `${c.id}:${c.at}:${c.h}`).join("\n");
-}
-function refreshAgoLabels() {
-  if (document.hidden || openId) return;
-  track.querySelectorAll(".ago").forEach(el => {
-    const slot = el.closest(".slot"), c = slot && cards[Number(slot.dataset.i)];
-    if (c) el.textContent = ago(c.at);
-  });
-}
-let deckRefreshing = false, deckRefreshAgain = false, refreshPending = false;
-async function refreshDeck() {
-  if (document.hidden) { refreshPending = true; return; }
-  if (openId || closing) { refreshPending = true; return; }
-  if (deckRefreshing) { deckRefreshAgain = true; return; }
-  deckRefreshing = true;
-  const keepId = cards[current] && cards[current].id;
-  const before = deckSignature(pool);
-  try {
-    const fresh = await loadCards(lang, true);
-    pool = fresh;
-    if (deckSignature(fresh) !== before) {
-      cards = sectionCards();
-      renderDeck(keepId);
-      buildBar();
-    } else {
-      refreshAgoLabels();
-    }
-    refreshPending = false;
-  } catch (e) {
-    // Keep the last good feed while offline; the next timer/focus will retry.
-  } finally {
-    deckRefreshing = false;
-    if (deckRefreshAgain) { deckRefreshAgain = false; refreshDeck(); }
-  }
-}
 function loadingHtml() {
   return `<div class="slot"><div class="card loading" aria-busy="true"><div class="bone" style="height:30px;width:85%"></div>
     <div class="bone" style="height:30px;width:60%;margin-bottom:22px"></div><div class="bone"></div><div class="bone"></div><div class="bone" style="width:70%"></div></div></div>`;
@@ -1079,14 +1019,12 @@ function setSheetPicture(id) {
   const pic = c && c.img && safeUrl(c.img.src) ? c.img : null;
   const box = $("hpic");
   hbox.classList.toggle("has-pic", !!pic);
-  box.innerHTML = pic ? `<img class="hsoft" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"><img class="hsharp" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"><div class="hwash"></div>` +
+  box.innerHTML = pic ? `<img src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"><div class="hwash"></div>` +
     (safeUrl(pic.href) ? `<a class="pic-credit" href="${esc(pic.href)}" target="_blank" rel="noopener noreferrer">${esc(T[lang].photo)}: ${esc(pic.by || "")}</a>`
                        : `<span class="pic-credit">${esc(T[lang].photo)}: ${esc(pic.by || "")}</span>`) : "";
-  const imgs = [...box.querySelectorAll("img")];
-  const fitWhenReady = () => { if (imgs.every(im => im.complete && im.naturalWidth)) fitPic(); };
-  imgs.forEach(img => { if (!img.complete) img.addEventListener("load", fitWhenReady, {once: true});
-    img.addEventListener("error", () => { hbox.classList.remove("has-pic"); box.innerHTML = ""; }, {once: true}); });
-  fitWhenReady();
+  const img = box.querySelector("img");
+  if (img) { if (img.complete) fitPic(); else img.addEventListener("load", fitPic, {once: true}); }
+  if (img) img.addEventListener("error", () => { hbox.classList.remove("has-pic"); box.innerHTML = ""; }, {once: true});
 }
 // the article's sections as a rail under the top: the one being read is filled, a tap goes there
 function buildRail() {
@@ -1170,10 +1108,10 @@ let lastOff = {x: 22, y: 24, w: 0, pic: null};
 // the article's picture laid out at its whole cover size inside the 200px box (centred, the box clips it), so the
 // image itself can be scaled to the card's crop; only set once per picture, never animated
 function fitPic() {
-  const imgs = [...$("hpic").querySelectorAll("img")], img = imgs.find(x => x.naturalWidth), W = hbox.getBoundingClientRect().width;
-  if (!img || !W) return null;
+  const img = $("hpic").querySelector("img"), W = hbox.getBoundingClientRect().width;
+  if (!img || !img.naturalWidth || !W) return null;
   const iw = img.naturalWidth, ih = img.naturalHeight, s = Math.max(W / iw, 200 / ih), w = iw * s, h = ih * s;
-  imgs.forEach(im => Object.assign(im.style, {width: `${w}px`, height: `${h}px`, left: `${(W - w) / 2}px`, top: `${(200 - h) / 2}px`, objectFit: "fill"}));
+  Object.assign(img.style, {width: `${w}px`, height: `${h}px`, left: `${(W - w) / 2}px`, top: `${(200 - h) / 2}px`, objectFit: "fill"});
   return {iw, ih, s, W};
 }
 function placeOverCard(r, off = lastOff) {
@@ -1240,17 +1178,12 @@ function closeStory(animate = true) {
   if (!openId) return;
   const id = openId;
   openId = null;
-  refreshPending = true;                 // reload the deck as the reader returns home
   document.title = "Nishpaksh · निष्पक्ष";
   document.documentElement.classList.remove("reading"); sections.inert = false;
   const k = cards.findIndex(c => String(c.id) === id);
   if (k >= 0 && k !== current) jumpTo(k);
   const r = animate ? cardRectFor(id) : null;
   if (r) {
-    track.classList.remove("returning", "reveal");
-    void track.offsetWidth;
-    track.classList.add("returning");
-    requestAnimationFrame(() => track.classList.add("reveal"));
     const el = track.querySelector(`.slot[data-i="${current}"] a.card`);
     if (el) lastOff = headOffset(el);
     sheetScroll.scrollTop = 0;     // the article's top goes back into the card, as it came out of it
@@ -1258,16 +1191,9 @@ function closeStory(animate = true) {
     placeOverCard(r, lastOff);
     flyBarBack(el);                // 2.1: the colour bar travels back into the card with the headline
     setClip(r); sheet.classList.remove("open");
-    closing = setTimeout(() => {
-      sheet.classList.remove("on", "anim");
-      track.classList.remove("returning", "reveal");
-      closing = null;
-      if (refreshPending) refreshDeck();
-    }, 590);
+    closing = setTimeout(() => { sheet.classList.remove("on", "anim"); closing = null; }, 470);
   } else {
     sheet.classList.remove("on", "anim", "open");
-    track.classList.remove("returning", "reveal");
-    if (refreshPending) refreshDeck();
   }
   const el = track.querySelector(`.slot[data-i="${current}"] a.card`);
   if (el) el.focus({preventScroll: true});
@@ -1559,12 +1485,6 @@ document.addEventListener("keydown", e => {
 
 /* ---------- routing: #/ is the deck, #/story/<id> an article ---------- */
 function route(animate) {
-  const recap = location.hash.match(/^#\/recap(?:\/(\d{4}-\d{2}-\d{2}))?(?:[/?#].*)?$/);
-  if (recap) {
-    if (openId) { openedFromDeck = false; closeStory(animate); }
-    asSheet("recap", recap[1] || null);
-    return;
-  }
   const m = location.hash.match(/^#\/story\/([^/?#]+)/);
   if (m) { const id = decodeURIComponent(m[1]); if (id !== openId) openStory(id, null, {instant: true, noHistory: true}); }
   else if (openId) { openedFromDeck = false; closeStory(animate); }
@@ -1574,22 +1494,19 @@ function route(animate) {
 let lastH = 0;
 new ResizeObserver(() => { const h = slotHeight(); if (h !== lastH) { lastH = h; if (cards.length) jumpTo(current); } }).observe(track);
 
-// Keep the feed and age labels live while the homepage remains open.
+// coming back to the page after a while: fresh news and greeting
+let hiddenAt = 0;
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) return;
+  if (document.hidden) { hiddenAt = Date.now(); return; }
   if (greeted) $("greet").textContent = greeting();
-  refreshAgoLabels();
-  refreshDeck();
-  countUnread();
+  if (hiddenAt && Date.now() - hiddenAt > 2 * 60000) {
+    const keep = cards[current] && cards[current].id;
+    delete cardCache.en; delete cardCache.hi;
+    showDeck(keep);
+  } else if (!openId) track.querySelectorAll(".ago").forEach((el, i) => {
+    const slot = el.closest(".slot"); const c = cards[Number(slot.dataset.i)]; if (c) el.textContent = ago(c.at);
+  });
 });
-window.addEventListener("focus", () => { refreshAgoLabels(); refreshDeck(); countUnread(); });
-window.addEventListener("pageshow", () => { refreshAgoLabels(); refreshDeck(); countUnread(); });
-setInterval(() => {
-  if (document.hidden) return;
-  refreshAgoLabels();
-  refreshDeck();
-  countUnread();
-}, 60 * 1000);
 
 /* opening (owner, Oct 8-9 2026): the indigo with the wordmark fades away, then "Hello." for a second, then
    the greeting for the time of day */
@@ -1874,11 +1791,7 @@ function openSheet(kind) {
   overlayOpen();
 }
 function hideSheet() { bsheet.classList.remove("on"); bveil.classList.remove("on"); sheetKind = null; }
-function closeSheet() {
-  const was = !!sheetKind, wasRecapRoute = sheetKind === "recap" && /^#\/recap/.test(location.hash);
-  hideSheet(); if (was) overlayClose();
-  if (wasRecapRoute) history.replaceState(null, "", location.pathname + location.search);
-}
+function closeSheet() { const was = !!sheetKind; hideSheet(); if (was) overlayClose(); }
 bveil.addEventListener("click", closeSheet);
 function frame(title, body) {
   return `<div class="bgrab"><span></span></div><div class="bhead"><h2>${esc(title)}</h2><button type="button" class="bx" data-b="close" aria-label="${esc(T[lang].close)}">${ICON.x}</button></div>${body}`;
@@ -2114,18 +2027,16 @@ Object.assign(T.en, {notes: "Notifications", myAudio: "My audio", noNotes: "Noth
   sectionsL: "Sections", placesL: "Places and names", states: "States", words: "Words and names", allOf: l => `All of ${l}`, all: "All",
   of: (a, b) => `${a} of ${b}`, wordsIntro: "We tell you when an article names it.", wordPh: "A word or a name, e.g. Supreme Court", followBtn: "Follow",
   recapAt: "Today's summary is written at", recapTime: "11:00 pm", recapIn: x => `in ${x}`, recapAbout: "A short summary of the day's news, section by section: Politics, Justice, Business, World and Life. One line for each story, in the colours of its article. Tap a line to read the full article.",
-  recapMaking: "Today's summary is being written. It will be here in a few minutes.", recapMissing: "No saved summary is available for this day.", notifyMe: "Notify me when it is ready", listenRecap: "Listen",
-  articles: n => `${n} stories today`, hm: (h, m) => `${h} h ${m} min`, recapReadyHint: "Ready", recapTimeHint: "11 pm", stop: "Stop following",
-  recapToday: "Today’s recap", recapYesterday: "Yesterday’s recap", recapSelected: "Selected day"});
+  recapMaking: "Today's summary is being written. It will be here in a few minutes.", notifyMe: "Notify me when it is ready", listenRecap: "Listen",
+  articles: n => `${n} stories today`, hm: (h, m) => `${h} h ${m} min`, recapReadyHint: "Ready", recapTimeHint: "11 pm", stop: "Stop following"});
 Object.assign(T.hi, {notes: "सूचनाएं", myAudio: "मेरे ऑडियो", noNotes: "अभी कुछ नहीं। कोई खंड, राज्य या शब्द फ़ॉलो करें, नया लेख आने पर हम बताएंगे।",
   noAudio: "आपने अभी कोई ऑडियो नहीं मांगा।", ready: l => `${l} · तैयार`, making: l => `${l} · बन रहा है, आमतौर पर एक घंटे में`, failed: l => `${l} · नहीं बन सका`,
   followIntro: "आप जो फ़ॉलो करते हैं, उसमें हर नया लेख आने पर हम बताते हैं। पूरा चुनने के लिए गोले पर, भीतर चुनने के लिए तीर पर टैप करें।",
   sectionsL: "खंड", placesL: "जगहें और नाम", states: "राज्य", words: "शब्द और नाम", allOf: l => `पूरा ${l}`, all: "सब",
   of: (a, b) => `${b} में से ${a}`, wordsIntro: "जिस लेख में यह नाम आए, हम बताएंगे।", wordPh: "कोई शब्द या नाम, जैसे Supreme Court", followBtn: "फ़ॉलो",
   recapAt: "आज का सार लिखा जाएगा", recapTime: "रात 11:00 बजे", recapIn: x => `${x} में`, recapAbout: "दिन की ख़बरों का छोटा सार, खंड के अनुसार: राजनीति, न्याय, बिज़नेस, दुनिया और जीवन। हर ख़बर की एक पंक्ति, उसके लेख के रंगों में। पूरा लेख पढ़ने के लिए किसी पंक्ति पर टैप करें।",
-  recapMaking: "आज का सार लिखा जा रहा है। कुछ ही मिनटों में यहां होगा।", recapMissing: "इस दिन का कोई सहेजा हुआ सार उपलब्ध नहीं है।", notifyMe: "तैयार होने पर मुझे बताएं", listenRecap: "सुनें",
-  articles: n => `आज की ${n} ख़बरें`, hm: (h, m) => `${h} घंटे ${m} मिनट`, recapReadyHint: "तैयार", recapTimeHint: "रात 11", stop: "फ़ॉलो बंद करें",
-  recapToday: "आज का सार", recapYesterday: "कल का सार", recapSelected: "चुना हुआ दिन"});
+  recapMaking: "आज का सार लिखा जा रहा है। कुछ ही मिनटों में यहां होगा।", notifyMe: "तैयार होने पर मुझे बताएं", listenRecap: "सुनें",
+  articles: n => `आज की ${n} ख़बरें`, hm: (h, m) => `${h} घंटे ${m} मिनट`, recapReadyHint: "तैयार", recapTimeHint: "रात 11", stop: "फ़ॉलो बंद करें"});
 const STATES = [["andhra-pradesh", "Andhra Pradesh", "आंध्र प्रदेश"], ["arunachal-pradesh", "Arunachal Pradesh", "अरुणाचल प्रदेश"], ["assam", "Assam", "असम"], ["bihar", "Bihar", "बिहार"], ["chhattisgarh", "Chhattisgarh", "छत्तीसगढ़"], ["goa", "Goa", "गोवा"], ["gujarat", "Gujarat", "गुजरात"], ["haryana", "Haryana", "हरियाणा"], ["himachal-pradesh", "Himachal Pradesh", "हिमाचल प्रदेश"], ["jharkhand", "Jharkhand", "झारखंड"], ["karnataka", "Karnataka", "कर्नाटक"], ["kerala", "Kerala", "केरल"], ["madhya-pradesh", "Madhya Pradesh", "मध्य प्रदेश"], ["maharashtra", "Maharashtra", "महाराष्ट्र"], ["manipur", "Manipur", "मणिपुर"], ["meghalaya", "Meghalaya", "मेघालय"], ["mizoram", "Mizoram", "मिज़ोरम"], ["nagaland", "Nagaland", "नगालैंड"], ["odisha", "Odisha", "ओडिशा"], ["punjab", "Punjab", "पंजाब"], ["rajasthan", "Rajasthan", "राजस्थान"], ["sikkim", "Sikkim", "सिक्किम"], ["tamil-nadu", "Tamil Nadu", "तमिलनाडु"], ["telangana", "Telangana", "तेलंगाना"], ["tripura", "Tripura", "त्रिपुरा"], ["uttar-pradesh", "Uttar Pradesh", "उत्तर प्रदेश"], ["uttarakhand", "Uttarakhand", "उत्तराखंड"], ["west-bengal", "West Bengal", "पश्चिम बंगाल"], ["andaman-nicobar", "Andaman and Nicobar Islands", "अंडमान और निकोबार"], ["chandigarh", "Chandigarh", "चंडीगढ़"], ["dadra-daman-diu", "Dadra and Nagar Haveli and Daman and Diu", "दादरा और नगर हवेली और दमन और दीव"], ["delhi", "Delhi", "दिल्ली"], ["jammu-kashmir", "Jammu and Kashmir", "जम्मू-कश्मीर"], ["ladakh", "Ladakh", "लद्दाख"], ["lakshadweep", "Lakshadweep", "लक्षद्वीप"], ["puducherry", "Puducherry", "पुडुचेरी"]];
 const stateLabel = k => { const s = STATES.find(x => x[0] === k); return s ? s[lang === "hi" ? 2 : 1] : k; };
 
@@ -2157,18 +2068,11 @@ function paintBadge() {
   if (unread > 0) mbtn.insertAdjacentHTML("beforeend", `<span class="mbadge">${unread > 9 ? "9+" : unread}</span>`);
 }
 function needSignin(then) { afterSignin = then; authMode = "signup"; openSheet("signin"); }
-let recapRequestedDay = null;
-function asSheet(kind, day = null) {
-  hideMenu();
-  if (kind === "recap") recapRequestedDay = day;
-  else recapRequestedDay = null;
-  if (!me) { needSignin(() => { sheetKind = kind; openKind(kind); }); return; }
-  openSheet(kind); openKind(kind);
-}
+function asSheet(kind) { hideMenu(); if (!me) { needSignin(() => { sheetKind = kind; openKind(kind); }); return; } openSheet(kind); openKind(kind); }
 function openKind(kind) {
   if (kind === "follow") { followSub = null; loadFollows().then(() => { if (sheetKind === "follow") renderSheet(); }); }
   else if (kind === "notes") loadNotes();
-  else if (kind === "recap") loadRecap(recapRequestedDay);
+  else if (kind === "recap") loadRecap();
   renderSheet();
 }
 
@@ -2287,35 +2191,28 @@ function notesHtml() {
 let recapData = null;
 const istNow = () => new Date(Date.now() + 5.5 * 3600e3);
 const istDay = () => istNow().toISOString().slice(0, 10);
-async function loadRecap(dayOverride = null) {
+async function loadRecap() {
   recapData = null;
-  const today = istDay(), day = /^\d{4}-\d{2}-\d{2}$/.test(dayOverride || "") ? dayOverride : today;
-  const mins = istNow().getUTCHours() * 60 + istNow().getUTCMinutes();
-  const isToday = day === today;
+  const day = istDay(), mins = istNow().getUTCHours() * 60 + istNow().getUTCMinutes();
   let row = null;
-  // A notification may be tapped after midnight. Historical recap deep-links must still load their own day.
-  if (!isToday || mins >= 23 * 60) {
+  if (mins >= 23 * 60) {
     try { row = (await api(`recaps?select=day,payload_en,payload_hi&day=eq.${day}`))[0] || null; } catch (e) { row = null; }
   }
   if (me) await loadFollows();
-  recapData = {day, mins, row, isToday};
+  recapData = {day, mins, row};
   if (sheetKind === "recap") renderSheet();
 }
 function recapHtml() {
   const t = T[lang];
   if (!recapData) return `<div class="bbody"><p class="bnote">…</p></div>`;
-  const {mins, row, day, isToday} = recapData, on = isF("recap", "daily");
+  const {mins, row, day} = recapData, on = isF("recap", "daily");
   const left = (23 * 60 - mins + 1440) % 1440;
-  const prevDay = new Date(new Date(`${istDay()}T12:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10);
-  const dayNav = `<div class="rdaynav" role="group" aria-label="${esc(t.recapSelected)}">
-    <button type="button" data-recapday="${istDay()}" class="${day === istDay() ? "on" : ""}">${esc(t.recapToday)}</button>
-    <button type="button" data-recapday="${prevDay}" class="${day === prevDay ? "on" : ""}">${esc(t.recapYesterday)}</button></div>`;
   const toggle = `<div class="rnotify">${ICON.bellg}<span style="flex:1;font-size:16px">${esc(t.notifyMe)}</span>
     <button type="button" class="tog" role="switch" aria-checked="${on}" data-recapnotify="1" aria-label="${esc(t.notifyMe)}"><i></i></button></div>`;
-  if (isToday && mins < 23 * 60) return `<div class="bbody">${dayNav}<div class="rclock brand"><div style="font-size:14px;opacity:.85">${esc(t.recapAt)}</div><b class="big">${esc(t.recapTime)}</b>
+  if (mins < 23 * 60) return `<div class="bbody"><div class="rclock brand"><div style="font-size:14px;opacity:.85">${esc(t.recapAt)}</div><b class="big">${esc(t.recapTime)}</b>
       <div style="font-size:16px;margin-top:8px">${esc(t.recapIn(t.hm(Math.floor(left / 60), left % 60)))}</div></div>
       <p class="bnote" style="font-size:14px;line-height:1.5;margin:4px 2px">${esc(t.recapAbout)}</p>${toggle}</div>`;
-  if (!row) return `<div class="bbody">${dayNav}<div class="rclock brand"><div style="font-size:16px;line-height:1.5">${esc(isToday ? t.recapMaking : t.recapMissing)}</div></div>${toggle}</div>`;
+  if (!row) return `<div class="bbody"><div class="rclock brand"><div style="font-size:16px;line-height:1.5">${esc(t.recapMaking)}</div></div>${toggle}</div>`;
   const p = (lang === "hi" && row.payload_hi) || row.payload_en || {}, items = p.stories || [];
   const date = new Date(`${day}T12:00:00Z`).toLocaleDateString(lang === "hi" ? "hi-IN" : "en-IN", {weekday: "long", day: "numeric", month: "long"});
   // the day's brief (owner, Oct 10 2026): section by section, one short sentence per story in the colour of the
@@ -2323,7 +2220,7 @@ function recapHtml() {
   const body = p.sections ? p.sections.map(sc => `<div class="flabel" style="margin-top:16px">${esc(sc.label)}</div>
       <p class="rbrief">${sc.sents.map(x => `<span class="rs" role="button" tabindex="0" data-rstory="${esc(x.id)}">${sentenceHtml(x)}</span>`).join("")}</p>`).join("")
     : items.map(it => `<button type="button" class="ritem" data-rstory="${esc(it.id)}"><div class="h">${esc(it.h)}</div><p>${(it.lead || []).map(sentenceHtml).join("")}</p></button>`).join("");
-  return `<div class="bbody" style="flex:1;min-height:0;gap:0">${dayNav}
+  return `<div class="bbody" style="flex:1;min-height:0;gap:0">
     <div style="margin:4px 0 6px"><div class="bnote" style="font-size:14px">${esc(date)}</div><div style="font-weight:600">${esc(t.articles(items.length))}</div></div>
     ${toggle}${body}</div>`;
 }
@@ -2338,15 +2235,7 @@ bsheet.addEventListener("click", async e => {
     const m = (b.dataset.nurl || "").match(/#\/story\/(\d+)/);
     closeSheet();
     if (m) setTimeout(() => { history.pushState({story: m[1]}, "", `#/story/${m[1]}`); openedFromDeck = true; openStory(m[1], null, {instant: true, noHistory: true}); }, 80);
-    else {
-      const recap = (b.dataset.nurl || "").match(/#\/recap(?:\/(\d{4}-\d{2}-\d{2}))?/);
-      if (recap) setTimeout(() => asSheet("recap", recap[1] || null), 320);
-    }
-    return;
-  }
-  if (b.dataset.recapday) {
-    e.stopImmediatePropagation();
-    loadRecap(b.dataset.recapday);
+    else if (/#\/recap/.test(b.dataset.nurl || "")) setTimeout(() => asSheet("recap"), 320);
     return;
   }
   if (b.dataset.recapnotify) {
@@ -2365,6 +2254,7 @@ bsheet.addEventListener("click", async e => {
 
 paintMe();
 if (me) { loadFollows(); countUnread(); }
+document.addEventListener("visibilitychange", () => { if (!document.hidden) countUnread(); });
 // a signed-in reader whose browser already allows notifications is (re)registered on every visit
 if (me && "Notification" in window && Notification.permission === "granted") setTimeout(() => subscribePush(Promise.resolve("granted")), 3000);
 applyLang();

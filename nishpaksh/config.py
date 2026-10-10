@@ -52,8 +52,8 @@ def tavily_api_key() -> str:
 class Settings:
     # ingestion
     max_article_age_hours: int = 48
-    max_new_articles_per_run: int = 400  # soft hourly tranche; unused intake capacity banks to Gemini's reset
-    max_new_per_feed: int = 30           # soft hourly tranche per feed; unused capacity banks to Gemini's reset
+    max_new_articles_per_run: int = 400
+    max_new_per_feed: int = 30           # so a few prolific feeds cannot crowd out the rest
     max_article_chars: int = 7000
     min_full_text_chars: int = 400
     feed_disable_after_failures: int = 24
@@ -66,12 +66,12 @@ class Settings:
     storage_soft_limit_mb: int = 350         # above this, retention halves until back under
 
     # proactive search (discover.py) and Tavily (1,000 credits a month)
-    search_stories_per_run: int = 10     # soft hourly tranche; unused searches bank to Gemini's reset
+    search_stories_per_run: int = 10
     search_depth_share: float = 0.2      # share of searches spent on follow-ups to published stories
     search_every_hours: int = 6          # a story is searched again at most this often
     search_new_per_story: int = 3        # new outlets added per story per search
-    tavily_extract_pages_per_run: int = 5  # soft hourly tranche; unused pages bank to Gemini's reset
-    tavily_searches_per_run: int = 1     # soft hourly tranche; only when free searches found nothing
+    tavily_extract_pages_per_run: int = 5
+    tavily_searches_per_run: int = 1     # only when the free searches found nothing
     tavily_daily_cap: int = 31          # 31 x 31 days < 1,000 even if Tavily's month is not the calendar month
 
     # wire-copy detection (MinHash Jaccard on 5-word shingles)
@@ -113,7 +113,7 @@ class Settings:
     max_extract_per_story: int = 8
     prep_queue: int = 16                 # stories read, analysed and searched for at a time (priority.py)
     prep_beat: int = 4                   # ...of which reserved for Domains and Sport stories (owner, Oct 9 2026)
-    desk_per_hour: int = 2               # general publishing seats per hourly run; unused seats bank to Gemini's reset
+    desk_per_hour: int = 2               # articles the writer publishes in one clock hour from any story (owner)
     desk_beat_seat: int = 1              # ...plus this many for Domains or Sport stories only; empty if none is ready
     desk_tries: int = 5                  # stories the writer job tries per run before giving up
     desk_minutes: float = 20             # the writer job's time budget
