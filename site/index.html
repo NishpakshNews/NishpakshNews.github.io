@@ -163,8 +163,8 @@
   .hbox { position: relative; margin-top: 14px; border-radius: 22px; color: var(--ink); padding: 18px; }
   .hbox.has-pic { padding-top: 150px; }
   .hbox .layer { position: absolute; inset: 0; border-radius: 22px; opacity: 0; }
-  #sheet.anim .hbox { transition: color 320ms ease 120ms; }
-  #sheet.anim .hbox .layer { transition: opacity 340ms ease 100ms; }
+  #sheet.anim .hbox { transition: color 440ms ease 20ms; }
+  #sheet.anim .hbox .layer { transition: opacity 430ms ease 20ms; }
   #sheet.open .hbox { color: #fff; }
   #sheet.open .hbox .layer { opacity: 1; }
   .hbox h1 { transform: translate(var(--tx, 0px), var(--ty, 0px)); }
@@ -186,7 +186,7 @@
                        background: linear-gradient(to bottom, rgba(255,255,255,0) 50%, rgba(255,255,255,0.55) 78%, #fff 100%); }
   .hbox .hpic .pic-credit { opacity: 0; }
   #sheet.anim .hbox .hpic { transition: opacity 340ms ease 100ms, transform 460ms var(--ease); will-change: transform; }
-  #sheet.anim .hbox .hpic .hwash { transition: opacity 360ms ease; }
+  #sheet.anim .hbox .hpic .hwash { transition: opacity 420ms ease 10ms; }
   #sheet.anim .hbox .hpic .pic-credit { transition: opacity 220ms ease 300ms; }
   #sheet.open .hbox .hpic { opacity: 1; transform: none; }
   #sheet.open .hbox .hpic .hwash { opacity: 0; }
@@ -211,11 +211,11 @@
   #sheet.anim .rise { transition: opacity 300ms ease 200ms, transform 420ms var(--ease) 160ms; }
   #sheet.open .rise { opacity: 1; transform: none; }
   /* closing: what is not on the card goes at once, so the headline and the picture travel back alone */
-  #sheet.anim:not(.open) .rise { transition: opacity 110ms ease, transform 200ms ease, visibility 0s linear 110ms; visibility: hidden; }
-  #sheet.anim:not(.open) .hbox .meta, #sheet.anim:not(.open) .chrome { transition: opacity 110ms ease; }
-  #sheet.anim:not(.open) .hbox .layer { transition: opacity 280ms ease; }
-  #sheet.anim:not(.open) .hbox .hpic .hwash { transition: opacity 300ms ease 80ms; }
-  #sheet.anim:not(.open) .hbox .hpic .pic-credit { transition: opacity 110ms ease; }
+  #sheet.anim:not(.open) .rise { transition: opacity 250ms ease 15ms, transform 280ms var(--ease), visibility 0s linear 300ms; visibility: hidden; }
+  #sheet.anim:not(.open) .hbox .meta, #sheet.anim:not(.open) .chrome { transition: opacity 230ms ease 10ms; }
+  #sheet.anim:not(.open) .hbox .layer { transition: opacity 430ms ease 20ms; }
+  #sheet.anim:not(.open) .hbox .hpic .hwash { transition: opacity 420ms ease 10ms; }
+  #sheet.anim:not(.open) .hbox .hpic .pic-credit { transition: opacity 220ms ease; }
 
   /* sections as cards with numbered headings; the lead alone; figures as tiles; what they say by speaker */
   .paper.lead { font-family: var(--head); font-size: 20px; line-height: 1.5; }
@@ -696,8 +696,8 @@ function barCounts(paras) {                   // as nishpaksh/feed.py bar_counts
   }
   return c;
 }
-async function loadCards(l) {
-  if (cardCache[l]) return cardCache[l];
+async function loadCards(l, force = false) {
+  if (!force && cardCache[l]) return cardCache[l];
   let stories = null;
   try {
     // the minute in the address: GitHub's cache keeps a file up to 5 minutes, so a new article showed up to 5
@@ -888,6 +888,43 @@ async function showDeck(keepId) {
     track.innerHTML = `<div class="slot"><div class="state"><div>${esc(T[lang].error)}<br><br>
       <button type="button" class="back" style="width:auto;padding:0 18px;border-radius:999px" id="retry">${esc(T[lang].retry)}</button></div></div></div>`;
     $("retry").onclick = () => { delete cardCache[lang]; track.innerHTML = loadingHtml(); showDeck(keepId); };
+  }
+}
+
+function deckSignature(list) {
+  return (list || []).map(c => `${c.id}:${c.at}:${c.h}`).join("\n");
+}
+function refreshAgoLabels() {
+  if (document.hidden || openId) return;
+  track.querySelectorAll(".ago").forEach(el => {
+    const slot = el.closest(".slot"), c = slot && cards[Number(slot.dataset.i)];
+    if (c) el.textContent = ago(c.at);
+  });
+}
+let deckRefreshing = false, deckRefreshAgain = false, refreshPending = false;
+async function refreshDeck() {
+  if (document.hidden) { refreshPending = true; return; }
+  if (openId || closing) { refreshPending = true; return; }
+  if (deckRefreshing) { deckRefreshAgain = true; return; }
+  deckRefreshing = true;
+  const keepId = cards[current] && cards[current].id;
+  const before = deckSignature(pool);
+  try {
+    const fresh = await loadCards(lang, true);
+    pool = fresh;
+    if (deckSignature(fresh) !== before) {
+      cards = sectionCards();
+      renderDeck(keepId);
+      buildBar();
+    } else {
+      refreshAgoLabels();
+    }
+    refreshPending = false;
+  } catch (e) {
+    // Keep the last good feed while offline; the next timer/focus will retry.
+  } finally {
+    deckRefreshing = false;
+    if (deckRefreshAgain) { deckRefreshAgain = false; refreshDeck(); }
   }
 }
 function loadingHtml() {
@@ -1178,6 +1215,7 @@ function closeStory(animate = true) {
   if (!openId) return;
   const id = openId;
   openId = null;
+  refreshPending = true;                 // reload the deck as the reader returns home
   document.title = "Nishpaksh · निष्पक्ष";
   document.documentElement.classList.remove("reading"); sections.inert = false;
   const k = cards.findIndex(c => String(c.id) === id);
@@ -1191,9 +1229,13 @@ function closeStory(animate = true) {
     placeOverCard(r, lastOff);
     flyBarBack(el);                // 2.1: the colour bar travels back into the card with the headline
     setClip(r); sheet.classList.remove("open");
-    closing = setTimeout(() => { sheet.classList.remove("on", "anim"); closing = null; }, 470);
+    closing = setTimeout(() => {
+      sheet.classList.remove("on", "anim"); closing = null;
+      if (refreshPending) refreshDeck();
+    }, 485);
   } else {
     sheet.classList.remove("on", "anim", "open");
+    if (refreshPending) refreshDeck();
   }
   const el = track.querySelector(`.slot[data-i="${current}"] a.card`);
   if (el) el.focus({preventScroll: true});
@@ -1485,6 +1527,12 @@ document.addEventListener("keydown", e => {
 
 /* ---------- routing: #/ is the deck, #/story/<id> an article ---------- */
 function route(animate) {
+  const recap = location.hash.match(/^#\/recap(?:\/(\d{4}-\d{2}-\d{2}))?(?:[/?#].*)?$/);
+  if (recap) {
+    if (openId) { openedFromDeck = false; closeStory(animate); }
+    asSheet("recap", recap[1] || null);
+    return;
+  }
   const m = location.hash.match(/^#\/story\/([^/?#]+)/);
   if (m) { const id = decodeURIComponent(m[1]); if (id !== openId) openStory(id, null, {instant: true, noHistory: true}); }
   else if (openId) { openedFromDeck = false; closeStory(animate); }
@@ -1494,19 +1542,22 @@ function route(animate) {
 let lastH = 0;
 new ResizeObserver(() => { const h = slotHeight(); if (h !== lastH) { lastH = h; if (cards.length) jumpTo(current); } }).observe(track);
 
-// coming back to the page after a while: fresh news and greeting
-let hiddenAt = 0;
+// Keep the feed and age labels live while the homepage remains open.
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (document.hidden) return;
   if (greeted) $("greet").textContent = greeting();
-  if (hiddenAt && Date.now() - hiddenAt > 2 * 60000) {
-    const keep = cards[current] && cards[current].id;
-    delete cardCache.en; delete cardCache.hi;
-    showDeck(keep);
-  } else if (!openId) track.querySelectorAll(".ago").forEach((el, i) => {
-    const slot = el.closest(".slot"); const c = cards[Number(slot.dataset.i)]; if (c) el.textContent = ago(c.at);
-  });
+  refreshAgoLabels();
+  refreshDeck();
+  countUnread();
 });
+window.addEventListener("focus", () => { refreshAgoLabels(); refreshDeck(); countUnread(); });
+window.addEventListener("pageshow", () => { refreshAgoLabels(); refreshDeck(); countUnread(); });
+setInterval(() => {
+  if (document.hidden) return;
+  refreshAgoLabels();
+  refreshDeck();
+  countUnread();
+}, 60 * 1000);
 
 /* opening (owner, Oct 8-9 2026): the indigo with the wordmark fades away, then "Hello." for a second, then
    the greeting for the time of day */
@@ -1791,7 +1842,11 @@ function openSheet(kind) {
   overlayOpen();
 }
 function hideSheet() { bsheet.classList.remove("on"); bveil.classList.remove("on"); sheetKind = null; }
-function closeSheet() { const was = !!sheetKind; hideSheet(); if (was) overlayClose(); }
+function closeSheet() {
+  const was = !!sheetKind, wasRecapRoute = sheetKind === "recap" && /^#\/recap/.test(location.hash);
+  hideSheet(); if (was) overlayClose();
+  if (wasRecapRoute) history.replaceState(null, "", location.pathname + location.search);
+}
 bveil.addEventListener("click", closeSheet);
 function frame(title, body) {
   return `<div class="bgrab"><span></span></div><div class="bhead"><h2>${esc(title)}</h2><button type="button" class="bx" data-b="close" aria-label="${esc(T[lang].close)}">${ICON.x}</button></div>${body}`;
@@ -2027,7 +2082,7 @@ Object.assign(T.en, {notes: "Notifications", myAudio: "My audio", noNotes: "Noth
   sectionsL: "Sections", placesL: "Places and names", states: "States", words: "Words and names", allOf: l => `All of ${l}`, all: "All",
   of: (a, b) => `${a} of ${b}`, wordsIntro: "We tell you when an article names it.", wordPh: "A word or a name, e.g. Supreme Court", followBtn: "Follow",
   recapAt: "Today's summary is written at", recapTime: "11:00 pm", recapIn: x => `in ${x}`, recapAbout: "A short summary of the day's news, section by section: Politics, Justice, Business, World and Life. One line for each story, in the colours of its article. Tap a line to read the full article.",
-  recapMaking: "Today's summary is being written. It will be here in a few minutes.", notifyMe: "Notify me when it is ready", listenRecap: "Listen",
+  recapMaking: "Today's summary is being written. It will be here in a few minutes.", recapMissing: "No saved summary is available for this day.", notifyMe: "Notify me when it is ready", listenRecap: "Listen",
   articles: n => `${n} stories today`, hm: (h, m) => `${h} h ${m} min`, recapReadyHint: "Ready", recapTimeHint: "11 pm", stop: "Stop following"});
 Object.assign(T.hi, {notes: "सूचनाएं", myAudio: "मेरे ऑडियो", noNotes: "अभी कुछ नहीं। कोई खंड, राज्य या शब्द फ़ॉलो करें, नया लेख आने पर हम बताएंगे।",
   noAudio: "आपने अभी कोई ऑडियो नहीं मांगा।", ready: l => `${l} · तैयार`, making: l => `${l} · बन रहा है, आमतौर पर एक घंटे में`, failed: l => `${l} · नहीं बन सका`,
@@ -2035,7 +2090,7 @@ Object.assign(T.hi, {notes: "सूचनाएं", myAudio: "मेरे ऑ�
   sectionsL: "खंड", placesL: "जगहें और नाम", states: "राज्य", words: "शब्द और नाम", allOf: l => `पूरा ${l}`, all: "सब",
   of: (a, b) => `${b} में से ${a}`, wordsIntro: "जिस लेख में यह नाम आए, हम बताएंगे।", wordPh: "कोई शब्द या नाम, जैसे Supreme Court", followBtn: "फ़ॉलो",
   recapAt: "आज का सार लिखा जाएगा", recapTime: "रात 11:00 बजे", recapIn: x => `${x} में`, recapAbout: "दिन की ख़बरों का छोटा सार, खंड के अनुसार: राजनीति, न्याय, बिज़नेस, दुनिया और जीवन। हर ख़बर की एक पंक्ति, उसके लेख के रंगों में। पूरा लेख पढ़ने के लिए किसी पंक्ति पर टैप करें।",
-  recapMaking: "आज का सार लिखा जा रहा है। कुछ ही मिनटों में यहां होगा।", notifyMe: "तैयार होने पर मुझे बताएं", listenRecap: "सुनें",
+  recapMaking: "आज का सार लिखा जा रहा है। कुछ ही मिनटों में यहां होगा।", recapMissing: "इस दिन का कोई सहेजा हुआ सार उपलब्ध नहीं है।", notifyMe: "तैयार होने पर मुझे बताएं", listenRecap: "सुनें",
   articles: n => `आज की ${n} ख़बरें`, hm: (h, m) => `${h} घंटे ${m} मिनट`, recapReadyHint: "तैयार", recapTimeHint: "रात 11", stop: "फ़ॉलो बंद करें"});
 const STATES = [["andhra-pradesh", "Andhra Pradesh", "आंध्र प्रदेश"], ["arunachal-pradesh", "Arunachal Pradesh", "अरुणाचल प्रदेश"], ["assam", "Assam", "असम"], ["bihar", "Bihar", "बिहार"], ["chhattisgarh", "Chhattisgarh", "छत्तीसगढ़"], ["goa", "Goa", "गोवा"], ["gujarat", "Gujarat", "गुजरात"], ["haryana", "Haryana", "हरियाणा"], ["himachal-pradesh", "Himachal Pradesh", "हिमाचल प्रदेश"], ["jharkhand", "Jharkhand", "झारखंड"], ["karnataka", "Karnataka", "कर्नाटक"], ["kerala", "Kerala", "केरल"], ["madhya-pradesh", "Madhya Pradesh", "मध्य प्रदेश"], ["maharashtra", "Maharashtra", "महाराष्ट्र"], ["manipur", "Manipur", "मणिपुर"], ["meghalaya", "Meghalaya", "मेघालय"], ["mizoram", "Mizoram", "मिज़ोरम"], ["nagaland", "Nagaland", "नगालैंड"], ["odisha", "Odisha", "ओडिशा"], ["punjab", "Punjab", "पंजाब"], ["rajasthan", "Rajasthan", "राजस्थान"], ["sikkim", "Sikkim", "सिक्किम"], ["tamil-nadu", "Tamil Nadu", "तमिलनाडु"], ["telangana", "Telangana", "तेलंगाना"], ["tripura", "Tripura", "त्रिपुरा"], ["uttar-pradesh", "Uttar Pradesh", "उत्तर प्रदेश"], ["uttarakhand", "Uttarakhand", "उत्तराखंड"], ["west-bengal", "West Bengal", "पश्चिम बंगाल"], ["andaman-nicobar", "Andaman and Nicobar Islands", "अंडमान और निकोबार"], ["chandigarh", "Chandigarh", "चंडीगढ़"], ["dadra-daman-diu", "Dadra and Nagar Haveli and Daman and Diu", "दादरा और नगर हवेली और दमन और दीव"], ["delhi", "Delhi", "दिल्ली"], ["jammu-kashmir", "Jammu and Kashmir", "जम्मू-कश्मीर"], ["ladakh", "Ladakh", "लद्दाख"], ["lakshadweep", "Lakshadweep", "लक्षद्वीप"], ["puducherry", "Puducherry", "पुडुचेरी"]];
 const stateLabel = k => { const s = STATES.find(x => x[0] === k); return s ? s[lang === "hi" ? 2 : 1] : k; };
@@ -2068,11 +2123,18 @@ function paintBadge() {
   if (unread > 0) mbtn.insertAdjacentHTML("beforeend", `<span class="mbadge">${unread > 9 ? "9+" : unread}</span>`);
 }
 function needSignin(then) { afterSignin = then; authMode = "signup"; openSheet("signin"); }
-function asSheet(kind) { hideMenu(); if (!me) { needSignin(() => { sheetKind = kind; openKind(kind); }); return; } openSheet(kind); openKind(kind); }
+let recapRequestedDay = null;
+function asSheet(kind, day = null) {
+  hideMenu();
+  if (kind === "recap") recapRequestedDay = day;
+  else recapRequestedDay = null;
+  if (!me) { needSignin(() => { sheetKind = kind; openKind(kind); }); return; }
+  openSheet(kind); openKind(kind);
+}
 function openKind(kind) {
   if (kind === "follow") { followSub = null; loadFollows().then(() => { if (sheetKind === "follow") renderSheet(); }); }
   else if (kind === "notes") loadNotes();
-  else if (kind === "recap") loadRecap();
+  else if (kind === "recap") loadRecap(recapRequestedDay);
   renderSheet();
 }
 
@@ -2191,28 +2253,31 @@ function notesHtml() {
 let recapData = null;
 const istNow = () => new Date(Date.now() + 5.5 * 3600e3);
 const istDay = () => istNow().toISOString().slice(0, 10);
-async function loadRecap() {
+async function loadRecap(dayOverride = null) {
   recapData = null;
-  const day = istDay(), mins = istNow().getUTCHours() * 60 + istNow().getUTCMinutes();
+  const today = istDay(), day = /^\d{4}-\d{2}-\d{2}$/.test(dayOverride || "") ? dayOverride : today;
+  const mins = istNow().getUTCHours() * 60 + istNow().getUTCMinutes();
+  const isToday = day === today;
   let row = null;
-  if (mins >= 23 * 60) {
+  // A notification may be tapped after midnight. Historical recap deep-links must still load their own day.
+  if (!isToday || mins >= 23 * 60) {
     try { row = (await api(`recaps?select=day,payload_en,payload_hi&day=eq.${day}`))[0] || null; } catch (e) { row = null; }
   }
   if (me) await loadFollows();
-  recapData = {day, mins, row};
+  recapData = {day, mins, row, isToday};
   if (sheetKind === "recap") renderSheet();
 }
 function recapHtml() {
   const t = T[lang];
   if (!recapData) return `<div class="bbody"><p class="bnote">…</p></div>`;
-  const {mins, row, day} = recapData, on = isF("recap", "daily");
+  const {mins, row, day, isToday} = recapData, on = isF("recap", "daily");
   const left = (23 * 60 - mins + 1440) % 1440;
   const toggle = `<div class="rnotify">${ICON.bellg}<span style="flex:1;font-size:16px">${esc(t.notifyMe)}</span>
     <button type="button" class="tog" role="switch" aria-checked="${on}" data-recapnotify="1" aria-label="${esc(t.notifyMe)}"><i></i></button></div>`;
-  if (mins < 23 * 60) return `<div class="bbody"><div class="rclock brand"><div style="font-size:14px;opacity:.85">${esc(t.recapAt)}</div><b class="big">${esc(t.recapTime)}</b>
+  if (isToday && mins < 23 * 60) return `<div class="bbody"><div class="rclock brand"><div style="font-size:14px;opacity:.85">${esc(t.recapAt)}</div><b class="big">${esc(t.recapTime)}</b>
       <div style="font-size:16px;margin-top:8px">${esc(t.recapIn(t.hm(Math.floor(left / 60), left % 60)))}</div></div>
       <p class="bnote" style="font-size:14px;line-height:1.5;margin:4px 2px">${esc(t.recapAbout)}</p>${toggle}</div>`;
-  if (!row) return `<div class="bbody"><div class="rclock brand"><div style="font-size:16px;line-height:1.5">${esc(t.recapMaking)}</div></div>${toggle}</div>`;
+  if (!row) return `<div class="bbody"><div class="rclock brand"><div style="font-size:16px;line-height:1.5">${esc(isToday ? t.recapMaking : t.recapMissing)}</div></div>${toggle}</div>`;
   const p = (lang === "hi" && row.payload_hi) || row.payload_en || {}, items = p.stories || [];
   const date = new Date(`${day}T12:00:00Z`).toLocaleDateString(lang === "hi" ? "hi-IN" : "en-IN", {weekday: "long", day: "numeric", month: "long"});
   // the day's brief (owner, Oct 10 2026): section by section, one short sentence per story in the colour of the
@@ -2235,7 +2300,10 @@ bsheet.addEventListener("click", async e => {
     const m = (b.dataset.nurl || "").match(/#\/story\/(\d+)/);
     closeSheet();
     if (m) setTimeout(() => { history.pushState({story: m[1]}, "", `#/story/${m[1]}`); openedFromDeck = true; openStory(m[1], null, {instant: true, noHistory: true}); }, 80);
-    else if (/#\/recap/.test(b.dataset.nurl || "")) setTimeout(() => asSheet("recap"), 320);
+    else {
+      const recap = (b.dataset.nurl || "").match(/#\/recap(?:\/(\d{4}-\d{2}-\d{2}))?/);
+      if (recap) setTimeout(() => asSheet("recap", recap[1] || null), 320);
+    }
     return;
   }
   if (b.dataset.recapnotify) {
@@ -2254,7 +2322,6 @@ bsheet.addEventListener("click", async e => {
 
 paintMe();
 if (me) { loadFollows(); countUnread(); }
-document.addEventListener("visibilitychange", () => { if (!document.hidden) countUnread(); });
 // a signed-in reader whose browser already allows notifications is (re)registered on every visit
 if (me && "Notification" in window && Notification.permission === "granted") setTimeout(() => subscribePush(Promise.resolve("granted")), 3000);
 applyLang();

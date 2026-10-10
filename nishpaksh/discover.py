@@ -5,7 +5,8 @@ story, who else reported it? It never decides that something belongs to a story.
 article enters as an ordinary article (found_by = "search") and goes through the same grouping
 checks as everything else; if it is about a different event it simply does not join.
 
-Which stories: importance x gap, a fixed number per run.
+Which stories: importance x gap, up to the accumulated daily search-story allowance. Unused hourly
+search slots carry forward until the Gemini Pacific-midnight reset.
   importance  how many articles and outlets already cover it, how recent it is
   gap         how far it is from publishable (3 independent outlets); a story that already
               qualifies gains little, one outlet short gains most
@@ -29,6 +30,7 @@ from urllib.parse import parse_qs, quote_plus, urlsplit
 import feedparser
 import requests
 
+from .budget import accrued_limit, quota_day_key
 from .config import SETTINGS
 from .db import Store, articles, insert, published, select, stories, update, utcnow
 from .ingest import HEADERS, canonical_url, detect_agency, fetch_article, is_web_url
@@ -36,6 +38,8 @@ from .ownership import canonical_outlet, owner_of
 from .wire import independence_groups, independent, minhash
 
 log = logging.getLogger(__name__)
+SEARCH_STORIES_BUDGET = "internal:search-stories"
+TAVILY_SEARCHES_BUDGET = "internal:tavily-searches"
 STOP = set("""a an the of in on at to for from by with and or but as is are was were be been has have had
 this that these those it its into over after before about after against amid says said will would can
 could may might also than then there their they he she his her them who whom which what when where why
@@ -176,7 +180,17 @@ def pick_stories(store: Store, n: int, focus: set[int] | None = None) -> list[di
 
 def discover(store: Store, tavily=None, n_stories: int | None = None, until: float | None = None,
              engines=(gnews, bing), focus: set[int] | None = None) -> dict:
-    n_stories = SETTINGS.search_stories_per_run if n_stories is None else n_stories
+    now = utcnow()
+    day = quota_day_key(now)
+    usage = store.quota_load(day)
+    searched_today = int(usage.get(SEARCH_STORIES_BUDGET, (0, 0))[0] or 0)
+    if n_stories is None:
+        accrued = accrued_limit(SETTINGS.search_stories_per_run, now)
+        n_stories = max(0, accrued - searched_today)
+    tavily_used = int(usage.get(TAVILY_SEARCHES_BUDGET, (0, 0))[0] or 0)
+    tavily_search_room = max(0, accrued_limit(SETTINGS.tavily_searches_per_run, now) - tavily_used)
+    if n_stories <= 0:
+        return {"stories": 0, "results": 0, "new_articles": 0, "unreadable": 0, "tavily_searches": 0}
     targets = pick_stories(store, n_stories, focus)
     stats = {"stories": len(targets), "results": 0, "new_articles": 0, "unreadable": 0, "tavily_searches": 0}
     if not targets:
@@ -187,6 +201,9 @@ def discover(store: Store, tavily=None, n_stories: int | None = None, until: flo
     for t in targets:
         if until and time.time() > until:
             break
+        # Record actual story-search attempts, not distinct stories: the same story can be revisited
+        # after search_every_hours, and each attempt consumes one of our soft hourly tranches.
+        store.quota_add(SEARCH_STORIES_BUDGET, day, 1, 0)
         s, members = t["story"], t["members"]
         have_owners = {owner_of(a["outlet"], a["url"]) for a in members}
         q = query_from(s["signature"])
@@ -203,7 +220,9 @@ def discover(store: Store, tavily=None, n_stories: int | None = None, until: flo
                 results += gnews(query_from(hindi[0]["title"]), "hi")
             except Exception as e:  # noqa: BLE001
                 log.info("hindi search failed: %s", str(e)[:150])
-        if not results and tavily is not None and tavily.enabled and stats["tavily_searches"] < SETTINGS.tavily_searches_per_run:
+        if not results and tavily is not None and tavily.enabled and stats["tavily_searches"] < tavily_search_room:
+            # Reserve the soft count before calling; actual Tavily credits are independently guarded by Tavily.
+            store.quota_add(TAVILY_SEARCHES_BUDGET, day, 1, 0)
             stats["tavily_searches"] += 1
             for r in tavily.search(q, days=3):
                 results.append({"title": r["title"], "link": r["url"], "outlet": None, "site": None,

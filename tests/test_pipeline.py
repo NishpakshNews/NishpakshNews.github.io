@@ -42,6 +42,59 @@ def test_independence_groups_union_by_wire_agency_outlet():
     assert g[4] != g[1]
 
 
+def test_internal_quota_banks_open_and_reset_at_gemini_pacific_midnight():
+    from nishpaksh.budget import accrued_limit, quota_day_start, quota_hours_open
+    # On Oct 11 2026 Pacific midnight is 07:00 UTC (daylight time).
+    first = dt.datetime(2026, 10, 11, 7, 5)
+    assert quota_day_start(first) == dt.datetime(2026, 10, 11, 7, 0)
+    assert quota_hours_open(first) == 1
+    assert accrued_limit(2, first) == 2
+    second = first + dt.timedelta(hours=1)
+    assert quota_hours_open(second) == 2
+    assert accrued_limit(2, second) == 4
+    reset = dt.datetime(2026, 10, 12, 7, 5)
+    assert quota_day_start(reset) == dt.datetime(2026, 10, 12, 7, 0)
+    assert quota_hours_open(reset) == 1
+    assert accrued_limit(2, reset) == 2
+
+
+def test_search_attempt_budget_banks_and_counts_attempts_not_distinct_stories(store, monkeypatch):
+    from nishpaksh import discover
+    from nishpaksh.budget import accrued_limit, quota_day_key
+    at = dt.datetime(2026, 10, 11, 8, 5)  # second quota-hour after Pacific midnight
+    monkeypatch.setattr(discover, "utcnow", lambda: at)
+    day = quota_day_key(at)
+    store.quota_add(discover.SEARCH_STORIES_BUDGET, day, 3, 0)
+    seen = {}
+    monkeypatch.setattr(discover, "pick_stories", lambda _store, n, focus=None: seen.setdefault("n", n) and [])
+    discover.discover(store, None)
+    assert seen["n"] == accrued_limit(discover.SETTINGS.search_stories_per_run, at) - 3
+
+
+def test_ingestion_caps_carry_unused_feed_and_article_slots_to_the_next_hour(store, monkeypatch):
+    from nishpaksh import ingest
+    from nishpaksh.budget import quota_day_start
+    from nishpaksh.db import feeds
+    settings = dataclasses.replace(ingest.SETTINGS, max_new_articles_per_run=2, max_new_per_feed=1)
+    monkeypatch.setattr(ingest, "SETTINGS", settings)
+    at = quota_day_start(NOW) + dt.timedelta(minutes=5)
+    monkeypatch.setattr(ingest, "utcnow", lambda: at)
+    store.exec(insert(feeds).values(name="Test Feed", url="https://feed.example/rss", lang="en", role="news",
+                                   disabled=False, fail_count=0))
+    monkeypatch.setattr(ingest, "fetch_feed", lambda _feed: [])
+    assert ingest.ingest(store) == 0  # no data this hour: both internal article slots remain banked
+
+    later = at + dt.timedelta(hours=1)
+    monkeypatch.setattr(ingest, "utcnow", lambda: later)
+    entries = [{"url": f"https://feed.example/story-{i}", "published_at": later,
+                "title": f"Story {i}", "summary": "Useful short story summary " * 4,
+                "author": None, "image": None} for i in range(3)]
+    monkeypatch.setattr(ingest, "fetch_feed", lambda _feed: entries)
+    monkeypatch.setattr(ingest, "fetch_article", lambda _url: {"text": "A report with enough detail. " * 50,
+                                                                "author": None, "image": None})
+    assert ingest.ingest(store) == 2  # both the per-feed cap and total article cap have accrued to two
+
+
 def test_parse_json_tolerates_fences_and_trailing_commas():
     assert parse_json('```json\n{"a": [1, 2,],}\n```') == {"a": [1, 2]}
     assert parse_json("noise {\"k\": 1} noise") == {"k": 1}
@@ -2038,18 +2091,20 @@ def test_only_the_best_ranked_stories_are_prepared(store, monkeypatch):
     assert lone not in P.queue(store, size=10) and horo not in P.queue(store, size=10)
 
 
-def test_the_desk_publishes_at_most_two_an_hour(store, monkeypatch):
-    """Owner, Oct 6 2026: at least one article an hour, at most two."""
+def test_the_desk_respects_the_accrued_daily_publishing_cap(store):
+    """The internal publisher cap accumulates each hour, and starts with one tranche after PT midnight."""
     from nishpaksh import desk
-    from nishpaksh.run import run
-    _seed(store)
-    run(store=store, backend=FakeBackend(), time_budget_min=30, ingest_news=False, verify_budget=VB)
-    at = store.rows(select(published.c.updated_at))[0]["updated_at"]     # the test must not depend on the clock hour
-    assert desk.published_this_hour(store, at) == 1
-    for k in range(2):
-        store.exec(insert(published).values(story_id=900 + k, version=1, updated_at=at, headline_en="h",
+    from nishpaksh.budget import quota_day_start
+    at = quota_day_start(NOW) + dt.timedelta(minutes=5)
+    # Three ordinary articles have already consumed the two general seats plus the overflow seat;
+    # the only remaining opening is reserved for a Domains/Sport article.
+    for k in range(3):
+        sid = 900 + k
+        store.exec(insert(stories).values(id=sid, created_at=at, updated_at=at, dirty=False,
+                                          qualifies=False, analysis={}))
+        store.exec(insert(published).values(story_id=sid, version=1, updated_at=at, headline_en="h",
                                             headline_hi="h", payload_en={}, payload_hi={}))
-    assert desk.published_this_hour(store, at) == 3
+    assert desk.seats(store, at) == (0, 1)
     stats = desk.work(store, _router(store, FakeBackend()), now=at)
     assert stats["tried"] == 0 and stats["published"] == []
 
@@ -3115,9 +3170,10 @@ def test_beat_stories_get_reserved_reading_places(store, monkeypatch):
     assert set(P.queue(store)) == set(gen)             # no beat story rated: its place goes back
 
 
-def test_the_desk_keeps_one_seat_for_domains_or_sport(store, monkeypatch):
-    """Two seats for any story, one only for a Domains/Sport story; empty when none is ready."""
+def test_the_desk_keeps_one_seat_for_domains_or_sport_and_banks_unused_seats(store, monkeypatch):
+    """Two general seats and one beat-only seat accrue each hour; unused beat seats stay reserved."""
     from nishpaksh import desk
+    from nishpaksh.budget import quota_day_start
     import nishpaksh.compose as C
     gen = [_story_with_sources(store, f"General {k}", 3) for k in range(4)]
     sport = _story_with_sources(store, "Hockey semi-final", 3)
@@ -3126,21 +3182,23 @@ def test_the_desk_keeps_one_seat_for_domains_or_sport(store, monkeypatch):
             analysis={"priority": {"score": 5 if sid != sport else 2, "beat": "sport" if sid == sport else None}}))
     order = gen + [sport]
     monkeypatch.setattr(desk, "ready", lambda store, now=None: list(order))
+    clock = [quota_day_start(NOW) + dt.timedelta(minutes=5)]
     done = []
 
     def fake_publish(store_, router, sid):
         done.append(sid)
-        store_.exec(insert(published).values(story_id=sid, version=1, updated_at=NOW, headline_en="h", payload_en={}))
+        store_.exec(insert(published).values(story_id=sid, version=1, updated_at=clock[0], headline_en="h", payload_en={}))
         return True
     monkeypatch.setattr(C, "publish_story", fake_publish)
     import nishpaksh.consolidate as K, nishpaksh.verify as V
     monkeypatch.setattr(K, "consolidate_story", lambda *a, **k: None)
     monkeypatch.setattr(V, "base_verdicts", lambda *a, **k: None)
-    st = desk.work(store, None, now=NOW)
+    st = desk.work(store, None, now=clock[0])
     assert done == gen[:2] + [sport] and st["beat_seat"] == [sport]
-    # next hour, nothing of a beat ready: two general articles and the seat stays empty
+    # Next hour carries two general seats forward; the unused beat seat remains reserved for sport.
     order[:] = gen[2:]
-    st = desk.work(store, None, now=NOW + dt.timedelta(hours=1))
+    clock[0] += dt.timedelta(hours=1)
+    st = desk.work(store, None, now=clock[0])
     assert st["published"] == gen[2:] and st["beat_seat"].startswith("empty")
 
 
