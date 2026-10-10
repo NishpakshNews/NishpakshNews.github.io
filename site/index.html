@@ -127,6 +127,9 @@
   #sheet.on { visibility: visible; }
   #sheet.anim { transition: clip-path 460ms var(--ease), -webkit-clip-path 460ms var(--ease), background-color 460ms ease; }
   #sheet.open { background: var(--ground); }
+  /* closing: the sheet fades away over the last 200 ms (the headline and picture are already over the card's), so the
+     card's body text and heading come in by crossfade instead of appearing all at once when the sheet is removed */
+  #sheet.anim.leaving { opacity: 0; transition: clip-path 460ms var(--ease), -webkit-clip-path 460ms var(--ease), background-color 460ms ease, opacity 200ms ease 260ms; }
   .sheet-scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; touch-action: pan-y pinch-zoom; overscroll-behavior: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .sheet-scroll::-webkit-scrollbar { display: none; }
   .col { max-width: 560px; margin: 0 auto; padding: 0 max(14px, env(safe-area-inset-right)) 48px max(14px, env(safe-area-inset-left)); }
@@ -177,9 +180,21 @@
   .hbox.morph .hpic { opacity: 1; }
   /* the image is laid out at its whole cover size (fitPic) and moved by its own transform, so on the way into and out
      of the card it is at exactly the card's zoom and crop: no zoom-in then snap (owner, Oct 10 2026) */
-  .hbox .hpic { -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); }
+  /* Oct 11 2026: the picture is made like the card's (a blurred copy under a sharp one, a white wash over both), and
+     closed it IS the card's: before, the article had one sharp image fading into the indigo, so on the way back the
+     bottom went blue -> white and then snapped to the card's blur. Open, the blurred copy and the wash are gone and the
+     sharp one dissolves into the indigo; the mask's two stops are registered properties so they glide between the two. */
+  @property --m1 { syntax: "<percentage>"; inherits: false; initial-value: 52%; }
+  @property --m2 { syntax: "<percentage>"; inherits: false; initial-value: 82%; }
+  .hbox .hpic .hsharp { position: absolute; inset: 0; --m1: 52%; --m2: 82%;
+                        -webkit-mask-image: linear-gradient(to bottom, #000 var(--m1), transparent var(--m2)); mask-image: linear-gradient(to bottom, #000 var(--m1), transparent var(--m2)); }
+  #sheet.open .hbox .hpic .hsharp { --m1: 45%; --m2: 100%; }
+  #sheet.anim .hbox .hpic .hsharp { transition: --m1 340ms ease, --m2 340ms ease; }
   .hbox .hpic img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; display: block;
                     transform-origin: 50% 50%; transform: var(--it, none); }
+  .hbox .hpic img.soft { filter: blur(var(--bl, 16px)) saturate(1.1); transform: var(--it2, translate(0px, 0px) scale(1) scale(1.15)); }
+  #sheet.open .hbox .hpic img.soft { opacity: 0; transform: translate(0px, 0px) scale(1) scale(1.15); }
+  #sheet.anim .hbox .hpic img.soft { transition: transform 460ms var(--ease), opacity 340ms ease; }
   #sheet.anim .hbox .hpic img { transition: transform 460ms var(--ease); will-change: transform; }
   #sheet.open .hbox .hpic img { transform: none; }
   .hbox .hpic .hwash { position: absolute; inset: 0; pointer-events: none; opacity: 1;
@@ -354,7 +369,7 @@
   .greeting.swap { opacity: 0; }
   @media (prefers-reduced-motion: reduce) {
     nav.sections, .sb, .track { transition-duration: 1ms !important; transition-delay: 0ms !important; }
-    #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer, #sheet.anim .hbox .hpic, #sheet.anim .hbox .hpic img, #sheet.anim .hbox .hpic .hwash, #sheet.anim .hbox .meta, #sheet.anim .hbox h1, #sheet.anim .hbox .hpic .pic-credit { transition-duration: 1ms !important; transition-delay: 0ms !important; }
+    #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer, #sheet.anim .hbox .hpic, #sheet.anim .hbox .hpic img, #sheet.anim .hbox .hpic .hsharp, #sheet.anim .hbox .hpic .hwash, #sheet.anim .hbox .meta, #sheet.anim .hbox h1, #sheet.anim .hbox .hpic .pic-credit { transition-duration: 1ms !important; transition-delay: 0ms !important; }
   }
 
   /* trial_version_2.1 (owner, Oct 9 2026): the menu at the left of the wordmark; the menu, the language switch and the
@@ -1019,10 +1034,10 @@ function setSheetPicture(id) {
   const pic = c && c.img && safeUrl(c.img.src) ? c.img : null;
   const box = $("hpic");
   hbox.classList.toggle("has-pic", !!pic);
-  box.innerHTML = pic ? `<img src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"><div class="hwash"></div>` +
+  box.innerHTML = pic ? `<img class="soft" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"><div class="hsharp"><img class="sharp" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"></div><div class="hwash"></div>` +
     (safeUrl(pic.href) ? `<a class="pic-credit" href="${esc(pic.href)}" target="_blank" rel="noopener noreferrer">${esc(T[lang].photo)}: ${esc(pic.by || "")}</a>`
                        : `<span class="pic-credit">${esc(T[lang].photo)}: ${esc(pic.by || "")}</span>`) : "";
-  const img = box.querySelector("img");
+  const img = box.querySelector("img.sharp");
   if (img) { if (img.complete) fitPic(); else img.addEventListener("load", fitPic, {once: true}); }
   if (img) img.addEventListener("error", () => { hbox.classList.remove("has-pic"); box.innerHTML = ""; }, {once: true});
 }
@@ -1072,13 +1087,15 @@ function fillSheet(row, card) {
     const head = (lang === "hi" && row.headline_hi) || row.headline_en || p.headline || "";
     $("sheet-h").textContent = head;
     const n = (p.counts || {}).independent_sources || 0;
-    $("sheet-meta").textContent = `${t.sources(n, (p.counts || {}).outlets)} · ${ago(row.updated_at)}`;
+    metaPre = `${t.sources(n, (p.counts || {}).outlets)} · `; metaAt = row.updated_at;
+    $("sheet-meta").textContent = metaPre + ago(metaAt);
     $("rise").innerHTML = articleHtml(row);
     markSentences(row);
     buildRail();
     document.title = `${head} · Nishpaksh`;
   } else if (card) {
     $("sheet-h").textContent = card.h;
+    metaPre = ""; metaAt = card.at;
     $("sheet-meta").textContent = ago(card.at);
     $("rise").innerHTML = `<div class="paper essay" aria-busy="true"><p style="color:var(--muted)">${esc(t.loading)}</p></div>`;
     $("rail").innerHTML = "";
@@ -1108,10 +1125,10 @@ let lastOff = {x: 22, y: 24, w: 0, pic: null};
 // the article's picture laid out at its whole cover size inside the 200px box (centred, the box clips it), so the
 // image itself can be scaled to the card's crop; only set once per picture, never animated
 function fitPic() {
-  const img = $("hpic").querySelector("img"), W = hbox.getBoundingClientRect().width;
+  const imgs = [...$("hpic").querySelectorAll("img")], img = imgs[0], W = hbox.getBoundingClientRect().width;
   if (!img || !img.naturalWidth || !W) return null;
   const iw = img.naturalWidth, ih = img.naturalHeight, s = Math.max(W / iw, 200 / ih), w = iw * s, h = ih * s;
-  Object.assign(img.style, {width: `${w}px`, height: `${h}px`, left: `${(W - w) / 2}px`, top: `${(200 - h) / 2}px`, objectFit: "fill"});
+  for (const el of imgs) Object.assign(el.style, {width: `${w}px`, height: `${h}px`, left: `${(W - w) / 2}px`, top: `${(200 - h) / 2}px`, objectFit: "fill"});
   return {iw, ih, s, W};
 }
 function placeOverCard(r, off = lastOff) {
@@ -1133,8 +1150,10 @@ function placeOverCard(r, off = lastOff) {
     if (f) {
       const m = Math.max(P.w / f.iw, P.h / f.ih) / (k * f.s), dy = P.h / (2 * k) - 100;
       st.setProperty("--it", `translate(0px, ${dy.toFixed(1)}px) scale(${m.toFixed(4)})`);
-    } else st.setProperty("--it", "none");
-  } else st.setProperty("--it", "none");
+      st.setProperty("--it2", `translate(0px, ${dy.toFixed(1)}px) scale(${m.toFixed(4)}) scale(1.15)`);   // the card's blurred copy is 1.15x
+      st.setProperty("--bl", `${(16 / (k * m)).toFixed(2)}px`);                                           // 16 px on screen, as on the card
+    } else { st.setProperty("--it", "none"); st.removeProperty("--it2"); st.removeProperty("--bl"); }
+  } else { st.setProperty("--it", "none"); st.removeProperty("--it2"); st.removeProperty("--bl"); }
 }
 async function openStory(id, fromCard, opts = {}) {
   if (closing) { clearTimeout(closing); closing = null; }
@@ -1152,7 +1171,7 @@ async function openStory(id, fromCard, opts = {}) {
     const u = `#/story/${encodeURIComponent(id)}`;
     if (location.hash !== u) { history.pushState({story: id}, "", u); openedFromDeck = true; }
   }
-  sheet.classList.remove("anim", "open");
+  sheet.classList.remove("anim", "open", "leaving");
   sheet.classList.add("on");
   document.documentElement.classList.add("reading"); sections.inert = true;
   if (r) {
@@ -1191,9 +1210,10 @@ function closeStory(animate = true) {
     placeOverCard(r, lastOff);
     flyBarBack(el);                // 2.1: the colour bar travels back into the card with the headline
     setClip(r); sheet.classList.remove("open");
-    closing = setTimeout(() => { sheet.classList.remove("on", "anim"); closing = null; }, 470);
+    sheet.classList.add("leaving");
+    closing = setTimeout(() => { sheet.classList.remove("on", "anim", "leaving"); closing = null; }, 470);
   } else {
-    sheet.classList.remove("on", "anim", "open");
+    sheet.classList.remove("on", "anim", "open", "leaving");
   }
   const el = track.querySelector(`.slot[data-i="${current}"] a.card`);
   if (el) el.focus({preventScroll: true});
@@ -1203,6 +1223,7 @@ $("back").addEventListener("click", () => {
   else { history.replaceState(null, "", location.pathname + location.search); closeStory(true); }
 });
 window.addEventListener("popstate", () => {
+  if (/^#\/recap/.test(location.hash)) { route(true); return; }
   if (openId || /^#\/story\//.test(location.hash)) { route(true); return; }
   const st = history.state;                          // the section this entry was made for
   if (st && st.np === "sec") { if (st.level !== level || st.sec !== sec || st.ter !== ter) goSection(st.level, st.sec, st.ter); }
@@ -1485,6 +1506,8 @@ document.addEventListener("keydown", e => {
 
 /* ---------- routing: #/ is the deck, #/story/<id> an article ---------- */
 function route(animate) {
+  const rc = location.hash.match(/^#\/recap(?:\/([\d-]+))?/);
+  if (rc) { openRecapLink(rc[1] || null); return; }
   const m = location.hash.match(/^#\/story\/([^/?#]+)/);
   if (m) { const id = decodeURIComponent(m[1]); if (id !== openId) openStory(id, null, {instant: true, noHistory: true}); }
   else if (openId) { openedFromDeck = false; closeStory(animate); }
@@ -1503,10 +1526,17 @@ document.addEventListener("visibilitychange", () => {
     const keep = cards[current] && cards[current].id;
     delete cardCache.en; delete cardCache.hi;
     showDeck(keep);
-  } else if (!openId) track.querySelectorAll(".ago").forEach((el, i) => {
-    const slot = el.closest(".slot"); const c = cards[Number(slot.dataset.i)]; if (c) el.textContent = ago(c.at);
-  });
+  } else tickAgo();
 });
+// "x min ago" stays live while the page is open (owner, Oct 11 2026: it stopped at what it said when the card was made)
+let metaAt = null, metaPre = "";
+function tickAgo() {
+  track.querySelectorAll(".ago").forEach(el => {
+    const slot = el.closest(".slot"), c = slot && cards[Number(slot.dataset.i)]; if (c) el.textContent = ago(c.at);
+  });
+  if (openId && metaAt) $("sheet-meta").textContent = metaPre + ago(metaAt);
+}
+setInterval(() => { if (!document.hidden) tickAgo(); }, 20000);
 
 /* opening (owner, Oct 8-9 2026): the indigo with the wordmark fades away, then "Hello." for a second, then
    the greeting for the time of day */
@@ -2191,30 +2221,37 @@ function notesHtml() {
 let recapData = null;
 const istNow = () => new Date(Date.now() + 5.5 * 3600e3);
 const istDay = () => istNow().toISOString().slice(0, 10);
+// Oct 11 2026: the recap used to be fetched only between 11 pm and midnight, for today's date, so a notification
+// tapped after midnight (or any visit before 11 pm) found nothing. Now the asked-for day (from the notification) or
+// else the newest recap is shown at any hour; only "being written" waits for tonight's.
+let recapWant = null;
 async function loadRecap() {
   recapData = null;
-  const day = istDay(), mins = istNow().getUTCHours() * 60 + istNow().getUTCMinutes();
+  const want = recapWant; recapWant = null;
+  const today = istDay(), mins = istNow().getUTCHours() * 60 + istNow().getUTCMinutes();
   let row = null;
-  if (mins >= 23 * 60) {
-    try { row = (await api(`recaps?select=day,payload_en,payload_hi&day=eq.${day}`))[0] || null; } catch (e) { row = null; }
-  }
+  const q = want ? `day=eq.${encodeURIComponent(want)}` : "order=day.desc&limit=1";
+  try { row = (await api(`recaps?select=day,payload_en,payload_hi&${q}`))[0] || null; } catch (e) { row = null; }
+  if (!row && want) { try { row = (await api("recaps?select=day,payload_en,payload_hi&order=day.desc&limit=1"))[0] || null; } catch (e) { row = null; } }
   if (me) await loadFollows();
-  recapData = {day, mins, row};
+  recapData = {day: today, mins, row, asked: !!want};
   if (sheetKind === "recap") renderSheet();
 }
 function recapHtml() {
   const t = T[lang];
   if (!recapData) return `<div class="bbody"><p class="bnote">…</p></div>`;
-  const {mins, row, day} = recapData, on = isF("recap", "daily");
+  const {mins, row, day, asked} = recapData, on = isF("recap", "daily");
   const left = (23 * 60 - mins + 1440) % 1440;
+  const waiting = !asked && mins >= 23 * 60 && !(row && row.day === day);     // tonight's is not out yet
   const toggle = `<div class="rnotify">${ICON.bellg}<span style="flex:1;font-size:16px">${esc(t.notifyMe)}</span>
     <button type="button" class="tog" role="switch" aria-checked="${on}" data-recapnotify="1" aria-label="${esc(t.notifyMe)}"><i></i></button></div>`;
-  if (mins < 23 * 60) return `<div class="bbody"><div class="rclock brand"><div style="font-size:14px;opacity:.85">${esc(t.recapAt)}</div><b class="big">${esc(t.recapTime)}</b>
+  if (!row && mins < 23 * 60) return `<div class="bbody"><div class="rclock brand"><div style="font-size:14px;opacity:.85">${esc(t.recapAt)}</div><b class="big">${esc(t.recapTime)}</b>
       <div style="font-size:16px;margin-top:8px">${esc(t.recapIn(t.hm(Math.floor(left / 60), left % 60)))}</div></div>
       <p class="bnote" style="font-size:14px;line-height:1.5;margin:4px 2px">${esc(t.recapAbout)}</p>${toggle}</div>`;
   if (!row) return `<div class="bbody"><div class="rclock brand"><div style="font-size:16px;line-height:1.5">${esc(t.recapMaking)}</div></div>${toggle}</div>`;
+  const note = waiting ? `<div class="rclock brand" style="margin-bottom:6px"><div style="font-size:16px;line-height:1.5">${esc(t.recapMaking)}</div></div>` : "";
   const p = (lang === "hi" && row.payload_hi) || row.payload_en || {}, items = p.stories || [];
-  const date = new Date(`${day}T12:00:00Z`).toLocaleDateString(lang === "hi" ? "hi-IN" : "en-IN", {weekday: "long", day: "numeric", month: "long"});
+  const date = new Date(`${row.day}T12:00:00Z`).toLocaleDateString(lang === "hi" ? "hi-IN" : "en-IN", {weekday: "long", day: "numeric", month: "long"});
   // the day's brief (owner, Oct 10 2026): section by section, one short sentence per story in the colour of the
   // lead it comes from; a tap on a sentence opens its article. Older recaps (headline + lead) still show as a list.
   const body = p.sections ? p.sections.map(sc => `<div class="flabel" style="margin-top:16px">${esc(sc.label)}</div>
@@ -2222,7 +2259,7 @@ function recapHtml() {
     : items.map(it => `<button type="button" class="ritem" data-rstory="${esc(it.id)}"><div class="h">${esc(it.h)}</div><p>${(it.lead || []).map(sentenceHtml).join("")}</p></button>`).join("");
   return `<div class="bbody" style="flex:1;min-height:0;gap:0">
     <div style="margin:4px 0 6px"><div class="bnote" style="font-size:14px">${esc(date)}</div><div style="font-weight:600">${esc(t.articles(items.length))}</div></div>
-    ${toggle}${body}</div>`;
+    ${note}${toggle}${body}</div>`;
 }
 
 bsheet.addEventListener("click", async e => {
@@ -2252,6 +2289,20 @@ bsheet.addEventListener("click", async e => {
   }
 }, true);
 
+// a tapped recap notification (#/recap/<day>): the link is cleared at once so the page behind is the plain deck,
+// then the recap opens as the sheet (after sign-in if needed)
+function openRecapLink(day) {
+  history.replaceState(history.state && history.state.np ? history.state : null, "", location.pathname + location.search);
+  if (openId) { openedFromDeck = false; closeStory(false); }
+  recapWant = day;
+  if (sheetKind) hideSheet();
+  setTimeout(() => asSheet("recap"), 60);
+}
+addEventListener("hashchange", () => { if (/^#\/recap/.test(location.hash)) route(true); });
+if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", e => {
+  const d = e.data || {};
+  if (d.np === "open" && typeof d.hash === "string" && /^#\//.test(d.hash)) location.hash = d.hash;
+});
 paintMe();
 if (me) { loadFollows(); countUnread(); }
 document.addEventListener("visibilitychange", () => { if (!document.hidden) countUnread(); });

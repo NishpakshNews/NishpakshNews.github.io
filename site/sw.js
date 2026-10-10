@@ -1,7 +1,7 @@
 // Nishpaksh offline support (nishpaksh_version_1.0). The page itself and its icons are kept for
 // offline use; news (the feed, articles) is always asked for fresh and the last copy is used offline;
 // fonts are kept once loaded.
-const VERSION = "np-main-31";
+const VERSION = "np-main-32";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-maskable-192.png",
                "./icon-maskable-512.png", "./apple-touch-icon.png", "./mark.png"];
 
@@ -51,11 +51,20 @@ self.addEventListener("push", e => {
 });
 self.addEventListener("notificationclick", e => {
   e.notification.close();
-  const url = (e.notification.data && e.notification.data.url) || "./";
+  const target = new URL((e.notification.data && e.notification.data.url) || "./", self.registration.scope);
   e.waitUntil((async () => {
     for (const c of await self.clients.matchAll({type: "window", includeUncontrolled: true})) {
-      if ("focus" in c && c.url.startsWith(self.registration.scope)) { await c.focus(); if ("navigate" in c) return c.navigate(url); return; }
+      if (!("focus" in c) || !c.url.startsWith(self.registration.scope)) continue;
+      const here = new URL(c.url);
+      await c.focus();
+      // same page and language: the open page is told which link to open (a bare navigate() to a new #hash did
+      // nothing in the page, so the recap and article never opened); otherwise load the link
+      if (here.origin === target.origin && here.pathname === target.pathname && here.search === target.search) {
+        c.postMessage({np: "open", hash: target.hash || ""});
+        return;
+      }
+      if ("navigate" in c) { try { await c.navigate(target.href); return; } catch (err) { /* open a new window */ } }
     }
-    return self.clients.openWindow(url);
+    return self.clients.openWindow(target.href);
   })());
 });
