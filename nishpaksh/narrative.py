@@ -1202,6 +1202,27 @@ def essay_ok(nar: dict, payload: dict) -> bool:
     return len(set(every) & set(nar.get("covers") or [])) >= COMPLETE * len(every)
 
 
+def essay_shortfall(nar: dict, payload: dict) -> dict:
+    """The numbers behind `essay_ok` and why it said no (owner, Oct 11 2026, story 16981: \"carries 36 statements,
+    short of the bar\" did not say which of the checks failed, nor how many statements the story had). Returns
+    {why, model, covered, total, need, sentences, rejected}; `why` is None when the essay passes: \"no essay\"
+    (no writer model, or no paragraphs), \"most sentences rejected\", or \"coverage\" (under COMPLETE of every
+    statement). The same tests as `essay_ok`, which stays the judge."""
+    every = {i["id"] for i in ordered_items(payload)}
+    covered = len(every & set(nar.get("covers") or []))
+    sents = sum(len(p) for p in nar.get("paragraphs") or [])
+    need = next(k for k in range(len(every) + 1) if k >= COMPLETE * len(every))     # the same comparison as essay_ok
+    out = {"why": None, "model": nar.get("model"), "covered": covered, "total": len(every), "need": need,
+           "sentences": sents, "rejected": nar.get("rejected", 0)}
+    if not nar.get("model") or not nar.get("paragraphs"):
+        out["why"] = "no essay"
+    elif nar.get("rejected", 0) > sents:
+        out["why"] = "most sentences rejected"
+    elif every and covered < need:
+        out["why"] = "coverage"
+    return out
+
+
 def _target_length(items: list[dict]) -> str:
     """Roughly how long the article should be: it follows the material, never padded."""
     lo = max(5, min(50, int(0.8 * len(items))))       # every statement is written: about one sentence each

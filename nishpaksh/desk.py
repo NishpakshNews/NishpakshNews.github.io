@@ -203,6 +203,8 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
         why = compose.LAST_OUTCOME.get("outcome", "?")
         if why in ("written short", "headline failed"):
             stats["tried"] += 1
+            if why == "written short" and compose.LAST_OUTCOME.get("detail"):    # which check failed, with the numbers
+                stats.setdefault("short", {})[str(sid)] = compose.LAST_OUTCOME["detail"]
         else:
             stats["skipped"][why] = stats["skipped"].get(why, 0) + 1
     if beat_room > 0:       # the seat stays empty (owner): say why

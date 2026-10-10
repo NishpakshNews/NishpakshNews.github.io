@@ -795,6 +795,14 @@ decision is tested as a plain function (no store).
 Writing desk (`desk.py`, after the pipeline in the same job): settled stories, most important first → follow-up? → page, written once
 (`compose.py`: threads, the news; `narrative.py`: the essay led by the news; `news.py`: headline) →
 Hindi. At most 2 per clock hour.
+A held essay says why (owner, Oct 11 2026, story 16981: "carries 36 statements, short of the bar" named neither the check nor the
+total): `narrative.essay_shortfall` gives {why, model, covered, total, need, sentences, rejected} with the same tests as
+`essay_ok` ("no essay", "most sentences rejected", "coverage" under 85% of every statement, or "writer model not
+allowed" added by `compose`). It is logged ("short of the bar (why): X of Y statements covered, Z needed ..."), kept in
+`stories.analysis.writer_failures.shortfall`, and listed per story in the desk stats as `short`. The writer's premium Flash
+models have `rpd: 20` a key (`models.yaml`), so a draft's fill passes often fall to 3.5 Flash-Lite; a held draft is resumed
+next hour. The length cap in `narrative._target_length` (50 sentences, up to 66) only blocks the 85% bar above about 77
+statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok` for every size up to 120 statements.
 
 ## Known quotas and facts learned from real data
 - Google counts **each text in an embedding batch** as one request: ~1,000 texts/day per key.

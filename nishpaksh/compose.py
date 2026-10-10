@@ -641,9 +641,9 @@ def _all_items_of(payload: dict) -> list[dict]:
 LAST_OUTCOME: dict[str, str] = {}
 
 
-def _outcome(story_id: int, what: str) -> bool:
+def _outcome(story_id: int, what: str, detail: dict | None = None) -> bool:
     LAST_OUTCOME.clear()
-    LAST_OUTCOME.update(story=str(story_id), outcome=what)
+    LAST_OUTCOME.update(story=str(story_id), outcome=what, detail=detail)
     return what == "published"
 
 
@@ -654,7 +654,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     it again (its colours mature by code, editions.mature). A development of an earlier article is
     published only if it earns a follow-up (editions.follow_up_ok). Returns True when written."""
     from .editions import follow_up_ok
-    from .narrative import essay_ok, input_hash, ordered_items, sections_from_payload, write_narrative
+    from .narrative import essay_ok, essay_shortfall, input_hash, ordered_items, sections_from_payload, write_narrative
     if store.one(select(published.c.story_id).where(published.c.story_id == story_id)):
         return _outcome(story_id, "already published")
     payload = build_payload(store, router, story_id)
@@ -700,7 +700,12 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         payload["headline"] = write_headline(router, news, items_, lead, banned, payload.get("_thread_ctx") or "")
     headline_missing = essay_good and not payload.get("headline")
     if not essay_good or headline_missing:
+        # which check failed, with the numbers (owner, Oct 11 2026, story 16981): kept with the failure and in the log
+        short = essay_shortfall(nar, payload)
+        if not short["why"] and not _keepable(nar):
+            short["why"] = "writer model not allowed"
         if not essay_good:
+            nar["shortfall"] = short
             _note_writer_failure(store, story_id, h, nar)
         if drafted and _keepable({"model": nar.get("model"), "paragraphs": [1]}):   # a writer model's draft
             an = dict((store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {})
@@ -712,9 +717,10 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         if headline_missing:
             log.info("story %s waits: written, but no headline passed; its draft is kept", story_id)
             return _outcome(story_id, "headline failed")
-        log.info("story %s waits: the article carries %d statements, short of the bar; its draft is kept",
-                 story_id, len(set(nar.get("covers") or [])))
-        return _outcome(story_id, "written short")
+        log.info("story %s waits: short of the bar (%s): %d of %d statements covered, %d needed; %d sentences, %d "
+                 "rejected; model %s; its draft is kept", story_id, short["why"], short["covered"], short["total"],
+                 short["need"], short["sentences"], short["rejected"], short["model"])
+        return _outcome(story_id, "written short", short)
     if draft:
         an = dict((store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {})
         an.pop("writer_draft", None)
@@ -763,5 +769,6 @@ def _note_writer_failure(store: Store, story_id: int, h: str, nar: dict) -> None
     n = prev_n if str(nar.get("failure") or "").startswith("error") else prev_n + 1
     a["writer_failures"] = {"hash": h, "n": n, "model": nar.get("model"), "failure": nar.get("failure"),
                             "rejected": nar.get("rejected"), "reasons": nar.get("reject_reasons"),
-                            "covers": len(nar.get("covers") or []), "at": utcnow().isoformat(timespec="minutes")}
+                            "covers": len(nar.get("covers") or []), "shortfall": nar.get("shortfall"),
+                            "at": utcnow().isoformat(timespec="minutes")}
     store.exec(update(stories).where(stories.c.id == story_id).values(analysis=a))

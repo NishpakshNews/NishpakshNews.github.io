@@ -3972,3 +3972,32 @@ def test_the_outlet_count_is_only_asked_when_the_cheap_checks_fail():
     assert calls == []
     assert editions.settle_decision(met + dt.timedelta(hours=2), met + dt.timedelta(hours=1, minutes=40), met, count, S) == "broad"
     assert calls == [1]
+
+
+# ---------------------------------------------------------------- why an essay was held (owner, Oct 11 2026, story 16981)
+
+def _essay_payload(n):
+    items = [{"id": i, "kind": "claim", "n_articles": 1, "minor": False, "verdict": "unverified"} for i in range(n)]
+    return {"timeline": [], "undated": [], "contested": [], "established": items, "context": []}
+
+
+def test_the_shortfall_says_which_check_failed_with_the_numbers_and_agrees_with_essay_ok():
+    from nishpaksh.narrative import essay_ok, essay_shortfall
+    nar = lambda covered, model="gemini-3.8-flash", rejected=0, paras=1: {
+        "model": model, "paragraphs": [[{"text": "x"}] * 10] * paras, "covers": list(range(covered)), "rejected": rejected}
+    p = _essay_payload(50)
+    s = essay_shortfall(nar(36), p)                               # story 16981: 36 covered, of how many?
+    assert (s["why"], s["covered"], s["total"], s["need"]) == ("coverage", 36, 50, 43)
+    assert s["model"] == "gemini-3.8-flash" and s["sentences"] == 10 and s["rejected"] == 0
+    assert essay_shortfall(nar(43), p)["why"] is None and essay_ok(nar(43), p)          # exactly the bar passes
+    assert essay_shortfall(nar(42), p)["why"] == "coverage" and not essay_ok(nar(42), p)
+    assert essay_shortfall(nar(50, model=None), p)["why"] == "no essay"
+    assert essay_shortfall({"model": "m", "paragraphs": [], "covers": []}, p)["why"] == "no essay"
+    assert essay_shortfall(nar(50, rejected=11), p)["why"] == "most sentences rejected"
+    # it is the same test as essay_ok, for every size of story and every number covered
+    for n in range(0, 121):
+        pay = _essay_payload(n)
+        for covered in range(0, n + 1):
+            for rejected in (0, 11):
+                a = nar(covered, rejected=rejected)
+                assert (essay_shortfall(a, pay)["why"] is None) == essay_ok(a, pay), (n, covered, rejected)
