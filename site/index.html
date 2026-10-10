@@ -192,6 +192,17 @@
   #sheet.anim .hbox .hpic .hsharp { transition: --m1 340ms ease, --m2 340ms ease; }
   .hbox .hpic img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; display: block;
                     transform-origin: 50% 50%; transform: var(--it, none); }
+  /* the blurred copy ends in a hard edge (the box clips it); the card hides that under the white wash. While the wash is
+     still coming in, a mask fades the copy's bottom, and closes up as the wash completes (owner, Oct 11 2026: a sharp line
+     showed at the bottom of the picture while coming out of an article) */
+  @property --s1 { syntax: "<percentage>"; inherits: false; initial-value: 100%; }
+  @property --s2 { syntax: "<percentage>"; inherits: false; initial-value: 100%; }
+  .hbox .hpic .hsoft { position: absolute; inset: 0; --s1: 100%; --s2: 100%;
+                       -webkit-mask-image: linear-gradient(to bottom, #000 var(--s1), transparent var(--s2)); mask-image: linear-gradient(to bottom, #000 var(--s1), transparent var(--s2)); }
+  #sheet.open .hbox .hpic .hsoft { --s1: 50%; --s2: 100%; }
+  #sheet.anim .hbox .hpic .hsoft { transition: --s1 200ms ease, --s2 200ms ease; }
+  #sheet.anim:not(.open) .hbox .hpic .hsoft { transition: --s1 300ms ease 80ms, --s2 300ms ease 80ms; }
+  #sheet.anim:not(.open) .hbox .hpic img.soft { transition: transform 460ms var(--ease), opacity 300ms ease 80ms; }
   .hbox .hpic img.soft { filter: blur(var(--bl, 16px)) saturate(1.1); transform: var(--it2, translate(0px, 0px) scale(1) scale(1.15)); }
   #sheet.open .hbox .hpic img.soft { opacity: 0; transform: translate(0px, 0px) scale(1) scale(1.15); }
   #sheet.anim .hbox .hpic img.soft { transition: transform 460ms var(--ease), opacity 340ms ease; }
@@ -369,7 +380,7 @@
   .greeting.swap { opacity: 0; }
   @media (prefers-reduced-motion: reduce) {
     nav.sections, .sb, .track { transition-duration: 1ms !important; transition-delay: 0ms !important; }
-    #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer, #sheet.anim .hbox .hpic, #sheet.anim .hbox .hpic img, #sheet.anim .hbox .hpic .hsharp, #sheet.anim .hbox .hpic .hwash, #sheet.anim .hbox .meta, #sheet.anim .hbox h1, #sheet.anim .hbox .hpic .pic-credit { transition-duration: 1ms !important; transition-delay: 0ms !important; }
+    #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer, #sheet.anim .hbox .hpic, #sheet.anim .hbox .hpic img, #sheet.anim .hbox .hpic .hsharp, #sheet.anim .hbox .hpic .hsoft, #sheet.anim .hbox .hpic .hwash, #sheet.anim .hbox .meta, #sheet.anim .hbox h1, #sheet.anim .hbox .hpic .pic-credit { transition-duration: 1ms !important; transition-delay: 0ms !important; }
   }
 
   /* trial_version_2.1 (owner, Oct 9 2026): the menu at the left of the wordmark; the menu, the language switch and the
@@ -1034,7 +1045,7 @@ function setSheetPicture(id) {
   const pic = c && c.img && safeUrl(c.img.src) ? c.img : null;
   const box = $("hpic");
   hbox.classList.toggle("has-pic", !!pic);
-  box.innerHTML = pic ? `<img class="soft" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"><div class="hsharp"><img class="sharp" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"></div><div class="hwash"></div>` +
+  box.innerHTML = pic ? `<div class="hsoft"><img class="soft" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"></div><div class="hsharp"><img class="sharp" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"></div><div class="hwash"></div>` +
     (safeUrl(pic.href) ? `<a class="pic-credit" href="${esc(pic.href)}" target="_blank" rel="noopener noreferrer">${esc(T[lang].photo)}: ${esc(pic.by || "")}</a>`
                        : `<span class="pic-credit">${esc(T[lang].photo)}: ${esc(pic.by || "")}</span>`) : "";
   const img = box.querySelector("img.sharp");
