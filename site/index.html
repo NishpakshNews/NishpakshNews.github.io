@@ -180,8 +180,10 @@
   .hbox .hpic { -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); }
   .hbox .hpic img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; display: block;
                     transform-origin: 50% 50%; transform: var(--it, none); }
-  #sheet.anim .hbox .hpic img { transition: transform 460ms var(--ease); will-change: transform; }
-  #sheet.open .hbox .hpic img { transform: none; }
+  .hbox .hpic img.hsoft { filter: blur(16px) saturate(1.1); transform: var(--it, none) scale(1.15); }
+  .hbox .hpic img.hsharp { -webkit-mask-image: linear-gradient(to bottom, #000 52%, transparent 82%); mask-image: linear-gradient(to bottom, #000 52%, transparent 82%); }
+  #sheet.anim .hbox .hpic img { transition: transform 460ms var(--ease), filter 460ms ease; will-change: transform, filter; }
+  #sheet.open .hbox .hpic img.hsharp { transform: none; }
   .hbox .hpic .hwash { position: absolute; inset: 0; pointer-events: none; opacity: 1;
                        background: linear-gradient(to bottom, rgba(255,255,255,0) 50%, rgba(255,255,255,0.55) 78%, #fff 100%); }
   .hbox .hpic .pic-credit { opacity: 0; }
@@ -211,8 +213,8 @@
   #sheet.anim .rise { transition: opacity 300ms ease 200ms, transform 420ms var(--ease) 160ms; }
   #sheet.open .rise { opacity: 1; transform: none; }
   /* closing: what is not on the card goes at once, so the headline and the picture travel back alone */
-  #sheet.anim:not(.open) .rise { transition: opacity 250ms ease 15ms, transform 280ms var(--ease), visibility 0s linear 300ms; visibility: hidden; }
-  #sheet.anim:not(.open) .hbox .meta, #sheet.anim:not(.open) .chrome { transition: opacity 230ms ease 10ms; }
+  #sheet.anim:not(.open) .rise { transition: opacity 390ms cubic-bezier(.22,.61,.36,1), transform 430ms var(--ease); opacity: 0; transform: translateY(12px); visibility: visible; }
+  #sheet.anim:not(.open) .hbox .meta, #sheet.anim:not(.open) .chrome { transition: opacity 320ms ease; }
   #sheet.anim:not(.open) .hbox .layer { transition: opacity 430ms ease 20ms; }
   #sheet.anim:not(.open) .hbox .hpic .hwash { transition: opacity 420ms ease 10ms; }
   #sheet.anim:not(.open) .hbox .hpic .pic-credit { transition: opacity 220ms ease; }
@@ -508,6 +510,9 @@
   .nrow { display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid #eeeef1; width: 100%; border-left: 0; border-right: 0; border-bottom: 0;
           background: none; text-align: start; color: var(--ink); cursor: pointer; }
   .nrow .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 7px; flex: none; }
+  .rdaynav { display: flex; gap: 8px; margin: 2px 0 14px; }
+  .rdaynav button { flex: 1; min-height: 38px; border: 1px solid var(--edge); border-radius: 12px; background: #fff; color: var(--ink-soft); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+  .rdaynav button.on { background: #2f3a72; border-color: #2f3a72; color: #fff; }
   .rclock { border-radius: 18px; color: #fff; padding: 22px 20px; margin-top: 6px; }
   .rclock b.big { display: block; font-family: var(--head); font-size: 40px; font-weight: 600; line-height: 1.1; margin-top: 2px; }
   .rnotify { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 14px; background: #f6f6f9; margin: 10px 0; }
@@ -1056,12 +1061,14 @@ function setSheetPicture(id) {
   const pic = c && c.img && safeUrl(c.img.src) ? c.img : null;
   const box = $("hpic");
   hbox.classList.toggle("has-pic", !!pic);
-  box.innerHTML = pic ? `<img src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"><div class="hwash"></div>` +
+  box.innerHTML = pic ? `<img class="hsoft" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"><img class="hsharp" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"><div class="hwash"></div>` +
     (safeUrl(pic.href) ? `<a class="pic-credit" href="${esc(pic.href)}" target="_blank" rel="noopener noreferrer">${esc(T[lang].photo)}: ${esc(pic.by || "")}</a>`
                        : `<span class="pic-credit">${esc(T[lang].photo)}: ${esc(pic.by || "")}</span>`) : "";
-  const img = box.querySelector("img");
-  if (img) { if (img.complete) fitPic(); else img.addEventListener("load", fitPic, {once: true}); }
-  if (img) img.addEventListener("error", () => { hbox.classList.remove("has-pic"); box.innerHTML = ""; }, {once: true});
+  const imgs = [...box.querySelectorAll("img")];
+  const fitWhenReady = () => { if (imgs.every(im => im.complete && im.naturalWidth)) fitPic(); };
+  imgs.forEach(img => { if (!img.complete) img.addEventListener("load", fitWhenReady, {once: true});
+    img.addEventListener("error", () => { hbox.classList.remove("has-pic"); box.innerHTML = ""; }, {once: true}); });
+  fitWhenReady();
 }
 // the article's sections as a rail under the top: the one being read is filled, a tap goes there
 function buildRail() {
@@ -1145,10 +1152,10 @@ let lastOff = {x: 22, y: 24, w: 0, pic: null};
 // the article's picture laid out at its whole cover size inside the 200px box (centred, the box clips it), so the
 // image itself can be scaled to the card's crop; only set once per picture, never animated
 function fitPic() {
-  const img = $("hpic").querySelector("img"), W = hbox.getBoundingClientRect().width;
-  if (!img || !img.naturalWidth || !W) return null;
+  const imgs = [...$("hpic").querySelectorAll("img")], img = imgs.find(x => x.naturalWidth), W = hbox.getBoundingClientRect().width;
+  if (!img || !W) return null;
   const iw = img.naturalWidth, ih = img.naturalHeight, s = Math.max(W / iw, 200 / ih), w = iw * s, h = ih * s;
-  Object.assign(img.style, {width: `${w}px`, height: `${h}px`, left: `${(W - w) / 2}px`, top: `${(200 - h) / 2}px`, objectFit: "fill"});
+  imgs.forEach(im => Object.assign(im.style, {width: `${w}px`, height: `${h}px`, left: `${(W - w) / 2}px`, top: `${(200 - h) / 2}px`, objectFit: "fill"}));
   return {iw, ih, s, W};
 }
 function placeOverCard(r, off = lastOff) {
@@ -2083,7 +2090,8 @@ Object.assign(T.en, {notes: "Notifications", myAudio: "My audio", noNotes: "Noth
   of: (a, b) => `${a} of ${b}`, wordsIntro: "We tell you when an article names it.", wordPh: "A word or a name, e.g. Supreme Court", followBtn: "Follow",
   recapAt: "Today's summary is written at", recapTime: "11:00 pm", recapIn: x => `in ${x}`, recapAbout: "A short summary of the day's news, section by section: Politics, Justice, Business, World and Life. One line for each story, in the colours of its article. Tap a line to read the full article.",
   recapMaking: "Today's summary is being written. It will be here in a few minutes.", recapMissing: "No saved summary is available for this day.", notifyMe: "Notify me when it is ready", listenRecap: "Listen",
-  articles: n => `${n} stories today`, hm: (h, m) => `${h} h ${m} min`, recapReadyHint: "Ready", recapTimeHint: "11 pm", stop: "Stop following"});
+  articles: n => `${n} stories today`, hm: (h, m) => `${h} h ${m} min`, recapReadyHint: "Ready", recapTimeHint: "11 pm", stop: "Stop following",
+  recapToday: "Today’s recap", recapYesterday: "Yesterday’s recap", recapSelected: "Selected day"});
 Object.assign(T.hi, {notes: "सूचनाएं", myAudio: "मेरे ऑडियो", noNotes: "अभी कुछ नहीं। कोई खंड, राज्य या शब्द फ़ॉलो करें, नया लेख आने पर हम बताएंगे।",
   noAudio: "आपने अभी कोई ऑडियो नहीं मांगा।", ready: l => `${l} · तैयार`, making: l => `${l} · बन रहा है, आमतौर पर एक घंटे में`, failed: l => `${l} · नहीं बन सका`,
   followIntro: "आप जो फ़ॉलो करते हैं, उसमें हर नया लेख आने पर हम बताते हैं। पूरा चुनने के लिए गोले पर, भीतर चुनने के लिए तीर पर टैप करें।",
@@ -2091,7 +2099,8 @@ Object.assign(T.hi, {notes: "सूचनाएं", myAudio: "मेरे ऑ�
   of: (a, b) => `${b} में से ${a}`, wordsIntro: "जिस लेख में यह नाम आए, हम बताएंगे।", wordPh: "कोई शब्द या नाम, जैसे Supreme Court", followBtn: "फ़ॉलो",
   recapAt: "आज का सार लिखा जाएगा", recapTime: "रात 11:00 बजे", recapIn: x => `${x} में`, recapAbout: "दिन की ख़बरों का छोटा सार, खंड के अनुसार: राजनीति, न्याय, बिज़नेस, दुनिया और जीवन। हर ख़बर की एक पंक्ति, उसके लेख के रंगों में। पूरा लेख पढ़ने के लिए किसी पंक्ति पर टैप करें।",
   recapMaking: "आज का सार लिखा जा रहा है। कुछ ही मिनटों में यहां होगा।", recapMissing: "इस दिन का कोई सहेजा हुआ सार उपलब्ध नहीं है।", notifyMe: "तैयार होने पर मुझे बताएं", listenRecap: "सुनें",
-  articles: n => `आज की ${n} ख़बरें`, hm: (h, m) => `${h} घंटे ${m} मिनट`, recapReadyHint: "तैयार", recapTimeHint: "रात 11", stop: "फ़ॉलो बंद करें"});
+  articles: n => `आज की ${n} ख़बरें`, hm: (h, m) => `${h} घंटे ${m} मिनट`, recapReadyHint: "तैयार", recapTimeHint: "रात 11", stop: "फ़ॉलो बंद करें",
+  recapToday: "आज का सार", recapYesterday: "कल का सार", recapSelected: "चुना हुआ दिन"});
 const STATES = [["andhra-pradesh", "Andhra Pradesh", "आंध्र प्रदेश"], ["arunachal-pradesh", "Arunachal Pradesh", "अरुणाचल प्रदेश"], ["assam", "Assam", "असम"], ["bihar", "Bihar", "बिहार"], ["chhattisgarh", "Chhattisgarh", "छत्तीसगढ़"], ["goa", "Goa", "गोवा"], ["gujarat", "Gujarat", "गुजरात"], ["haryana", "Haryana", "हरियाणा"], ["himachal-pradesh", "Himachal Pradesh", "हिमाचल प्रदेश"], ["jharkhand", "Jharkhand", "झारखंड"], ["karnataka", "Karnataka", "कर्नाटक"], ["kerala", "Kerala", "केरल"], ["madhya-pradesh", "Madhya Pradesh", "मध्य प्रदेश"], ["maharashtra", "Maharashtra", "महाराष्ट्र"], ["manipur", "Manipur", "मणिपुर"], ["meghalaya", "Meghalaya", "मेघालय"], ["mizoram", "Mizoram", "मिज़ोरम"], ["nagaland", "Nagaland", "नगालैंड"], ["odisha", "Odisha", "ओडिशा"], ["punjab", "Punjab", "पंजाब"], ["rajasthan", "Rajasthan", "राजस्थान"], ["sikkim", "Sikkim", "सिक्किम"], ["tamil-nadu", "Tamil Nadu", "तमिलनाडु"], ["telangana", "Telangana", "तेलंगाना"], ["tripura", "Tripura", "त्रिपुरा"], ["uttar-pradesh", "Uttar Pradesh", "उत्तर प्रदेश"], ["uttarakhand", "Uttarakhand", "उत्तराखंड"], ["west-bengal", "West Bengal", "पश्चिम बंगाल"], ["andaman-nicobar", "Andaman and Nicobar Islands", "अंडमान और निकोबार"], ["chandigarh", "Chandigarh", "चंडीगढ़"], ["dadra-daman-diu", "Dadra and Nagar Haveli and Daman and Diu", "दादरा और नगर हवेली और दमन और दीव"], ["delhi", "Delhi", "दिल्ली"], ["jammu-kashmir", "Jammu and Kashmir", "जम्मू-कश्मीर"], ["ladakh", "Ladakh", "लद्दाख"], ["lakshadweep", "Lakshadweep", "लक्षद्वीप"], ["puducherry", "Puducherry", "पुडुचेरी"]];
 const stateLabel = k => { const s = STATES.find(x => x[0] === k); return s ? s[lang === "hi" ? 2 : 1] : k; };
 
@@ -2272,12 +2281,16 @@ function recapHtml() {
   if (!recapData) return `<div class="bbody"><p class="bnote">…</p></div>`;
   const {mins, row, day, isToday} = recapData, on = isF("recap", "daily");
   const left = (23 * 60 - mins + 1440) % 1440;
+  const prevDay = new Date(new Date(`${istDay()}T12:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10);
+  const dayNav = `<div class="rdaynav" role="group" aria-label="${esc(t.recapSelected)}">
+    <button type="button" data-recapday="${istDay()}" class="${day === istDay() ? "on" : ""}">${esc(t.recapToday)}</button>
+    <button type="button" data-recapday="${prevDay}" class="${day === prevDay ? "on" : ""}">${esc(t.recapYesterday)}</button></div>`;
   const toggle = `<div class="rnotify">${ICON.bellg}<span style="flex:1;font-size:16px">${esc(t.notifyMe)}</span>
     <button type="button" class="tog" role="switch" aria-checked="${on}" data-recapnotify="1" aria-label="${esc(t.notifyMe)}"><i></i></button></div>`;
-  if (isToday && mins < 23 * 60) return `<div class="bbody"><div class="rclock brand"><div style="font-size:14px;opacity:.85">${esc(t.recapAt)}</div><b class="big">${esc(t.recapTime)}</b>
+  if (isToday && mins < 23 * 60) return `<div class="bbody">${dayNav}<div class="rclock brand"><div style="font-size:14px;opacity:.85">${esc(t.recapAt)}</div><b class="big">${esc(t.recapTime)}</b>
       <div style="font-size:16px;margin-top:8px">${esc(t.recapIn(t.hm(Math.floor(left / 60), left % 60)))}</div></div>
       <p class="bnote" style="font-size:14px;line-height:1.5;margin:4px 2px">${esc(t.recapAbout)}</p>${toggle}</div>`;
-  if (!row) return `<div class="bbody"><div class="rclock brand"><div style="font-size:16px;line-height:1.5">${esc(isToday ? t.recapMaking : t.recapMissing)}</div></div>${toggle}</div>`;
+  if (!row) return `<div class="bbody">${dayNav}<div class="rclock brand"><div style="font-size:16px;line-height:1.5">${esc(isToday ? t.recapMaking : t.recapMissing)}</div></div>${toggle}</div>`;
   const p = (lang === "hi" && row.payload_hi) || row.payload_en || {}, items = p.stories || [];
   const date = new Date(`${day}T12:00:00Z`).toLocaleDateString(lang === "hi" ? "hi-IN" : "en-IN", {weekday: "long", day: "numeric", month: "long"});
   // the day's brief (owner, Oct 10 2026): section by section, one short sentence per story in the colour of the
@@ -2285,7 +2298,7 @@ function recapHtml() {
   const body = p.sections ? p.sections.map(sc => `<div class="flabel" style="margin-top:16px">${esc(sc.label)}</div>
       <p class="rbrief">${sc.sents.map(x => `<span class="rs" role="button" tabindex="0" data-rstory="${esc(x.id)}">${sentenceHtml(x)}</span>`).join("")}</p>`).join("")
     : items.map(it => `<button type="button" class="ritem" data-rstory="${esc(it.id)}"><div class="h">${esc(it.h)}</div><p>${(it.lead || []).map(sentenceHtml).join("")}</p></button>`).join("");
-  return `<div class="bbody" style="flex:1;min-height:0;gap:0">
+  return `<div class="bbody" style="flex:1;min-height:0;gap:0">${dayNav}
     <div style="margin:4px 0 6px"><div class="bnote" style="font-size:14px">${esc(date)}</div><div style="font-weight:600">${esc(t.articles(items.length))}</div></div>
     ${toggle}${body}</div>`;
 }
@@ -2304,6 +2317,11 @@ bsheet.addEventListener("click", async e => {
       const recap = (b.dataset.nurl || "").match(/#\/recap(?:\/(\d{4}-\d{2}-\d{2}))?/);
       if (recap) setTimeout(() => asSheet("recap", recap[1] || null), 320);
     }
+    return;
+  }
+  if (b.dataset.recapday) {
+    e.stopImmediatePropagation();
+    loadRecap(b.dataset.recapday);
     return;
   }
   if (b.dataset.recapnotify) {
