@@ -782,6 +782,16 @@ perspectives → origins + fact/characterisation → verdicts (`verify.py`) → 
 colours of published articles mature → retention → health checks in `runs.stats.health` → (workflow
 step) articles older than 3 days to the archive branch. Rating (`priority.py`) comes after grouping;
 search, Tavily reads, reading and analysis cover the preparation queue only.
+Settled = (`editions.settle_decision`, first that holds) the 8-hour cap since the publishing rule was met, OR 3 quiet hours
+with no new independent outlet, OR (owner, Oct 11 2026: "either the rule got satisfied or X articles have been
+collected") BROAD coverage: `settle_early_outlets` (8) INDEPENDENT outlets (`wire.independence_groups`: wire copies, one
+owner and state media count once; not raw articles, so ten reprints of one wire story are one) and the rule met at least
+`settle_early_min_minutes` (60) ago, so the first wave of a burst has landed. 8 is above the publishing rule (about 3) and
+above `global_min_sources` (6, where a global comparison starts). `settle_early_outlets = 0` switches it off. A story
+closed early is never changed; later outlets gather in a follow-up candidate, which must clear the follow-up bar. Old
+news (newest source over 36 hours) is never written. `runs.stats.settled_broad` counts the stories ready ONLY because of
+the broad rule: raise X if follow-ups pile up behind early articles, lower it if it is always 0. NOT RUN ON REAL DATA: the
+decision is tested as a plain function (no store).
 Writing desk (`desk.py`, after the pipeline in the same job): settled stories, most important first → follow-up? → page, written once
 (`compose.py`: threads, the news; `narrative.py`: the essay led by the news; `news.py`: headline) →
 Hindi. At most 2 per clock hour.

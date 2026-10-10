@@ -99,6 +99,11 @@ class Settings:
     # if it carries a lot of new information or a major development.
     settle_quiet_hours: float = 3          # no new independent outlet for this long...
     settle_max_hours: float = 8            # ...or this long after the publishing rule was first met
+    # ...or when coverage is already broad (owner, Oct 11 2026): this many INDEPENDENT outlets (wire copies, one owner
+    # and state media count once) have been collected for the story, and the rule has been met for at least
+    # `settle_early_min_minutes` (the first wave of a burst has landed). 0 switches it off.
+    settle_early_outlets: int = 8
+    settle_early_min_minutes: float = 60
     stale_after_hours: float = 36          # a story whose newest source is older than this is not written (old news)
     followup_min_outlets: int = 3          # independent outlets carrying the new information
     followup_min_new: int = 4              # "a lot of new": this many new non-minor core statements...

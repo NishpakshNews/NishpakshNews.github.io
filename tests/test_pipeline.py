@@ -3924,3 +3924,51 @@ def test_the_reader_adds_learned_groups_after_the_hand_written_ones_and_ignores_
         assert relate.load_synonym_groups() == ["firm company"]                      # no learned file: nothing breaks
     with mock.patch("nishpaksh.config.load_yaml", return_value={"groups": "broken"}):
         assert relate.load_learned_groups() == []
+
+
+# ---------------------------------------------------------------- broad coverage settles a story early (owner, Oct 11 2026)
+
+def test_a_story_with_many_independent_outlets_is_ready_before_it_goes_quiet():
+    """Ready when ANY of: the 8-hour cap, 3 quiet hours, or 8+ independent outlets with the rule met for an hour."""
+    from nishpaksh import editions
+    S = dataclasses.replace(editions.SETTINGS, settle_quiet_hours=3, settle_max_hours=8, settle_early_outlets=8,
+                            settle_early_min_minutes=60, stale_after_hours=36)
+    met = dt.datetime(2026, 10, 11, 6, 0)
+    d = lambda now, last, m=met, n=3, s=S: editions.settle_decision(now, last, m, lambda: n, s)
+    at = lambda **kw: met + dt.timedelta(**kw)
+    # the old rule, unchanged: waits while outlets are still arriving, then 3 quiet hours, or the 8-hour cap
+    assert d(at(hours=2), at(hours=1, minutes=50)) is None
+    assert d(at(hours=5), at(hours=1)) == "quiet"
+    assert d(at(hours=8, minutes=1), at(hours=8)) == "cap"
+    # the new rule: 8 independent outlets, the rule met an hour ago, outlets still arriving
+    assert d(at(hours=2), at(hours=1, minutes=50), n=8) == "broad"
+    assert d(at(hours=2), at(hours=1, minutes=50), n=7) is None                       # one short
+    assert d(at(minutes=30), at(minutes=25), n=12) is None                            # the first wave has not landed yet
+    assert d(at(hours=1), at(minutes=50), n=8) == "broad"
+    # \"broad\" is only what the other two would still have kept waiting
+    assert d(at(hours=5), at(hours=1), n=20) == "quiet" and d(at(hours=9), at(hours=8), n=20) == "cap"
+    # old news is never written, however many outlets it had
+    assert d(at(hours=40), at(hours=1), n=30) is None
+    # no `met_at` (the rule is not met): the broad rule does not apply
+    assert d(at(hours=2), at(hours=1, minutes=50), m=None, n=30) is None
+    # switched off
+    assert d(at(hours=2), at(hours=1, minutes=50), n=30, s=dataclasses.replace(S, settle_early_outlets=0)) is None
+    # a story with no source time is never ready
+    assert editions.settle_decision(at(hours=2), None, met, lambda: 30, S) is None
+
+
+def test_the_outlet_count_is_only_asked_when_the_cheap_checks_fail():
+    from nishpaksh import editions
+    S = dataclasses.replace(editions.SETTINGS, settle_early_outlets=8, settle_early_min_minutes=60)
+    met = dt.datetime(2026, 10, 11, 6, 0)
+    calls = []
+
+    def count():
+        calls.append(1)
+        return 9
+    # quiet already: not asked; the rule met only 10 minutes ago: not asked; otherwise asked once
+    assert editions.settle_decision(met + dt.timedelta(hours=5), met + dt.timedelta(hours=1), met, count, S) == "quiet"
+    assert editions.settle_decision(met + dt.timedelta(minutes=10), met + dt.timedelta(minutes=5), met, count, S) is None
+    assert calls == []
+    assert editions.settle_decision(met + dt.timedelta(hours=2), met + dt.timedelta(hours=1, minutes=40), met, count, S) == "broad"
+    assert calls == [1]

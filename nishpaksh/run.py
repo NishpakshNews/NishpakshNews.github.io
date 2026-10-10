@@ -199,11 +199,13 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         if SETTINGS.model_verdicts and time.time() < deadline - 6 * 60 and (budget.get("judge", 0) > 0):
             checked += verify.verify_story(store, router, sid, budget)
     # writing is the desk's job (desk.py, its own workflow at :35); the pipeline only prepares
-    settled = [sid for sid in qualifying if editions.settled(store, sid)]
+    reasons = {sid: editions.settle_reason(store, sid) for sid in qualifying}
+    settled = [sid for sid, why in reasons.items() if why]
     # published articles: only their colours mature, by code (the 6-hour clock)
     matured = sum(1 for sid in sorted(frozen) if editions.mature(store, sid))
     stats.update(stories_dirty=len(dirty), analysed=len(analysed), qualifying=len(qualifying),
-                 settled=len(settled), claims_checked=checked, colours_matured=matured,
+                 settled=len(settled), settled_broad=sum(1 for why in reasons.values() if why == "broad"),
+                 claims_checked=checked, colours_matured=matured,
                  live_pages=len(store.rows(select(_published.c.story_id))),
                  left_for_next_run=len(dirty) - len(analysed))
     from . import heavy

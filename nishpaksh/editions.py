@@ -3,7 +3,9 @@
 Like a newspaper:
   * An article is written ONCE, when its coverage has settled: the publishing rule has been met and no
     new independent outlet has turned up for `settle_quiet_hours` (or `settle_max_hours` have passed
-    since the rule was first met, so a story that keeps growing is still written the same day).
+    since the rule was first met, so a story that keeps growing is still written the same day), OR the
+    coverage is already broad: `settle_early_outlets` independent outlets are in (owner, Oct 11 2026: a
+    story with that many outlets maps the news well, so it need not wait for a quiet spell or the cap).
     Measured on Oct 1-5 data: a 3-hour quiet wait sees 86% of the outlets a story ever gets, about
     4 hours after the rule is met.
   * A published article is closed. Its text, headline and statements never change; no model call is
@@ -131,19 +133,51 @@ def last_new_source(store: Store, sid: int) -> dt.datetime | None:
     return max(first.values()) if first else None
 
 
-def settled(store: Store, sid: int, now: dt.datetime | None = None) -> bool:
-    """Ready to be written: coverage has gone quiet, or the cap has passed. Old news is not written at
-    all (a story whose newest source is older than `stale_after_hours`: a paper does not print
-    Tuesday's story on Friday)."""
+def independent_outlets(store: Store, sid: int) -> int:
+    """How many independent outlets the story has: wire copies, one owner's outlets and one agency count once,
+    and state media not at all (the same count the desk ranks by)."""
+    from .wire import independence_groups, independent
+    arts = store.rows(select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.agency,
+                             articles.c.wire_group).where(articles.c.story_id == sid))
+    return len(independent(independence_groups(arts))) if arts else 0
+
+
+def settle_decision(now: dt.datetime, last: dt.datetime | None, met: dt.datetime | None, outlets, s=None) -> str | None:
+    """Why a story is ready to be written, or None when it is not (no store: the decision alone).
+    \"cap\"    the publishing rule was met `settle_max_hours` ago,
+    \"quiet\"  no new independent outlet for `settle_quiet_hours`,
+    \"broad\"  OR the rule has been met for `settle_early_min_minutes` and `outlets()` (called only when needed) is
+               at least `settle_early_outlets`: the coverage already maps the news (owner, Oct 11 2026).
+    A story whose newest source is older than `stale_after_hours` is never ready. The reason is the first that
+    holds, so \"broad\" counts only stories the other two would still have kept waiting."""
+    s = s or SETTINGS
+    if last is None or (now - last).total_seconds() >= s.stale_after_hours * 3600:
+        return None
+    if met and (now - met).total_seconds() >= s.settle_max_hours * 3600:
+        return "cap"
+    if (now - last).total_seconds() >= s.settle_quiet_hours * 3600:
+        return "quiet"
+    if (s.settle_early_outlets and met and (now - met).total_seconds() >= s.settle_early_min_minutes * 60
+            and outlets() >= s.settle_early_outlets):
+        return "broad"
+    return None
+
+
+def settle_reason(store: Store, sid: int, now: dt.datetime | None = None) -> str | None:
+    """\"cap\", \"quiet\", \"broad\" or None (see `settle_decision`)."""
     now = now or utcnow()
     last = last_new_source(store, sid)
-    if last is None or (now - last).total_seconds() >= SETTINGS.stale_after_hours * 3600:
-        return False
+    if last is None:
+        return None
     _, ed = _edition(store, sid)
-    met = _parse(ed.get("met_at"))
-    if met and (now - met).total_seconds() >= SETTINGS.settle_max_hours * 3600:
-        return True
-    return (now - last).total_seconds() >= SETTINGS.settle_quiet_hours * 3600
+    return settle_decision(now, last, _parse(ed.get("met_at")), lambda: independent_outlets(store, sid))
+
+
+def settled(store: Store, sid: int, now: dt.datetime | None = None) -> bool:
+    """Ready to be written: coverage has gone quiet, the cap has passed, or the coverage is already broad. Old
+    news is not written at all (a story whose newest source is older than `stale_after_hours`: a paper does not
+    print Tuesday's story on Friday)."""
+    return settle_reason(store, sid, now) is not None
 
 
 # ---------------------------------------------------------------------------- follow-ups
