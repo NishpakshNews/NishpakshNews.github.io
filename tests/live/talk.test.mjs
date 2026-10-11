@@ -180,3 +180,10 @@ test("silence in a quiet room never opens the gate; the reader talking from the 
   const g = new NoiseGate();                    // loud from the very first chunk: the floor is capped, so speech still passes
   assert.ok(feed(g, 0.12, 3000).every(Boolean));
 });
+
+test("setup carries the thinking setting only when the function sent one", () => {
+  assert.equal(setupMessage({ model: "m", instruction: "R", nested: true }).setup.generationConfig.thinkingConfig, undefined);
+  assert.deepEqual(setupMessage({ model: "m", instruction: "R", nested: true, thinking: { thinkingBudget: 0 } }).setup.generationConfig,
+    { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } }, thinkingConfig: { thinkingBudget: 0 } });
+  assert.deepEqual(setupMessage({ model: "m", instruction: "R", thinking: { thinkingBudget: 0 } }).setup.generationConfig, { thinkingConfig: { thinkingBudget: 0 } });
+});

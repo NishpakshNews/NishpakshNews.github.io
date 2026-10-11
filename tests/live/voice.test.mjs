@@ -1,7 +1,7 @@
 // The reader's voice settings: checked against fixed lists, written into the instruction by code, never copied from the request.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cleanStyle, DEFAULT_STYLE, voiceBlock, languageCode, VOICES, PACES, TONES, ACCENTS } from "../../supabase/functions/live-token/voice.ts";
+import { cleanStyle, DEFAULT_STYLE, voiceBlock, languageCode, thinkingConfig, VOICES, PACES, TONES, ACCENTS } from "../../supabase/functions/live-token/voice.ts";
 import { buildBrief } from "../../supabase/functions/live-token/brief.ts";
 
 const story = { story_id: 1, headline_en: "H", payload_en: { narrative: { paragraphs: [[{ text: "A thing happened.", class: "established", sources: [1] }]], sources: [{ n: 1, outlet: "PTI", read: true }] } } };
@@ -64,4 +64,18 @@ test("the language code: Hindi, Indian English, or neutral English", () => {
   assert.equal(languageCode("hi", "neutral"), "hi-IN");
   assert.equal(languageCode("en", "indian"), "en-IN");
   assert.equal(languageCode("en", "neutral"), "en-US");
+});
+
+test("the thinking setting is only passed on when it is a small, known shape", () => {
+  assert.equal(thinkingConfig(undefined), null);
+  assert.equal(thinkingConfig(""), null);
+  assert.equal(thinkingConfig("not json"), null);
+  assert.equal(thinkingConfig("[1]"), null);
+  assert.equal(thinkingConfig('{"other":1}'), null);
+  assert.deepEqual(thinkingConfig('{"thinkingBudget":0}'), { thinkingBudget: 0 });
+  assert.deepEqual(thinkingConfig('{"thinkingBudget":512,"includeThoughts":false,"x":"y"}'), { thinkingBudget: 512, includeThoughts: false });
+  assert.deepEqual(thinkingConfig('{"thinkingLevel":"minimal"}'), { thinkingLevel: "minimal" });
+  assert.equal(thinkingConfig('{"thinkingBudget":999999}'), null);
+  assert.equal(thinkingConfig('{"includeThoughts":true}'), null);       // the reader never gets the model's thoughts
+  assert.equal(thinkingConfig('{"thinkingLevel":"a b; drop"}'), null);
 });

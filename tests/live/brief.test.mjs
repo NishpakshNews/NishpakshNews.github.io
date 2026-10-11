@@ -156,3 +156,9 @@ test("the only function is highlight (nothing is fetched while the reader waits)
   assert.equal(TOOLS[0].functionDeclarations[0].behavior, undefined);
   assert.equal(toolsFor(true)[0].functionDeclarations[0].behavior, "NON_BLOCKING");
 });
+
+test("a big request is answered in parts, started at once, with few highlights (the guide must not go silent)", () => {
+  const ins = buildBrief(story(), "en").instruction;
+  for (const must of [/BIG REQUESTS/, /Do not plan the whole answer first/, /ONE short sentence straight away/, /Shall I go on\?/, /at most five times in one answer/,
+    /Never call it for several sentences before you start speaking/]) assert.match(ins, must);
+});

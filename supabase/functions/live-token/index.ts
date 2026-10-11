@@ -11,10 +11,10 @@
 // Deployed with verify_jwt off, like `account`: the site calls it with the publishable key, and the reader's own
 // access token is checked here. Secrets: GEMINI_API_KEY, GEMINI_API_KEY_2, ... (the same keys the pipeline uses;
 // each from its own project, so conversations are spread over them). Optional: LIVE_MODEL, FEED_URL, LIVE_LANGUAGE_CODE=1
-// (also send a language code to Gemini; off by default). The request may carry `style` {voice, pace, tone, accent}.
+// (also send a language code to Gemini; off by default), LIVE_NONBLOCKING=1, LIVE_THINKING_CONFIG (JSON, e.g. {"thinkingBudget":0}). The request may carry `style` {voice, pace, tone, accent}.
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { buildBrief, toolsFor, type Story } from "./brief.ts";
-import { cleanStyle, languageCode } from "./voice.ts";
+import { cleanStyle, languageCode, thinkingConfig } from "./voice.ts";
 
 const URL_ = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -23,6 +23,7 @@ const admin = createClient(URL_, SERVICE, { auth: { persistSession: false, autoR
 const MODEL = Deno.env.get("LIVE_MODEL") || "gemini-3.8-live";
 const SEND_LANGUAGE_CODE = Deno.env.get("LIVE_LANGUAGE_CODE") === "1";   // see voice.ts: off until the model is known to accept it
 const NON_BLOCKING = Deno.env.get("LIVE_NONBLOCKING") === "1";           // see brief.ts toolsFor: highlight need not stop the guide; off until the model is known to accept it
+const THINKING = thinkingConfig(Deno.env.get("LIVE_THINKING_CONFIG"));       // see voice.ts thinkingConfig: how long the model may reason before it speaks; nothing is sent unless the secret is set (a big question made the guide go silent)
 const FEED_URL = Deno.env.get("FEED_URL") || "https://raw.githubusercontent.com/NishpakshNews/NishpakshNews.github.io/feed";
 const KEYS = [...new Set(["GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3", "GEMINI_API_KEY_4", "GEMINI_API_KEY_5"]
   .map((k) => (Deno.env.get(k) || "").trim()).filter(Boolean))];
@@ -69,6 +70,7 @@ async function mint(key: string, instruction: string, voice: string): Promise<st
         generationConfig: {
           responseModalities: ["AUDIO"],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
+          ...(THINKING ? { thinkingConfig: THINKING } : {}),
         },
         systemInstruction: { parts: [{ text: instruction }] },
         tools: toolsFor(NON_BLOCKING),
@@ -167,7 +169,7 @@ Deno.serve(async (req) => {
     }
     return reply({
       token, model: MODEL, lang: brief.lang, headline: brief.headline, instruction: brief.instruction,
-      voice: style.voice, tools: toolsFor(NON_BLOCKING), silence_ms: SILENCE_MS, language_code: SEND_LANGUAGE_CODE ? languageCode(brief.lang, style.accent) : null,
+      voice: style.voice, tools: toolsFor(NON_BLOCKING), thinking: THINKING, silence_ms: SILENCE_MS, language_code: SEND_LANGUAGE_CODE ? languageCode(brief.lang, style.accent) : null,
       sentence_ids: brief.sentenceIds, max_seconds: MAX_SECONDS, hourly: HOURLY, session: data.id,
     });
   } catch (e) {

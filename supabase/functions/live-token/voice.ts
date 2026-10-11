@@ -66,3 +66,20 @@ export function voiceBlock(s: Style): string {
     "- If the reader asks you to speak slower, faster or differently, do it right away, then carry on.",
   ].join("\n");
 }
+
+/** How much the model may "think" before it speaks (the secret LIVE_THINKING_CONFIG, JSON, for example {"thinkingBudget":0}).
+ *  Long, multi-part questions are slow mostly because the model reasons silently first. The field names differ between Live
+ *  models and are NOT verified for ours, so nothing is sent unless the secret is set; only these keys, with these types, are
+ *  ever passed on, and anything else (or bad JSON) means "send nothing". Returns null for nothing. */
+export function thinkingConfig(raw: string | undefined | null): Record<string, number | string | boolean> | null {
+  if (!raw) return null;
+  let j: unknown;
+  try { j = JSON.parse(raw); } catch { return null; }
+  if (!j || typeof j !== "object" || Array.isArray(j)) return null;
+  const r = j as Record<string, unknown>;
+  const out: Record<string, number | string | boolean> = {};
+  if (typeof r.thinkingBudget === "number" && Number.isInteger(r.thinkingBudget) && r.thinkingBudget >= -1 && r.thinkingBudget <= 24576) out.thinkingBudget = r.thinkingBudget;
+  if (typeof r.thinkingLevel === "string" && /^[a-z_]{1,20}$/i.test(r.thinkingLevel)) out.thinkingLevel = r.thinkingLevel;
+  if (r.includeThoughts === false) out.includeThoughts = false;       // never ask for the thoughts to be sent to the reader
+  return Object.keys(out).length ? out : null;
+}

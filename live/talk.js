@@ -6,6 +6,7 @@
 //     getHeaders: async () => ({ apikey: SUPABASE_KEY, Authorization: `Bearer ${await token()}` }),
 //     introBase: "/live/",                      // intro.json: the words the guide says first (it says them itself, in its own voice)
 //     onState: (s) => ..., onHighlight: (id) => ..., onTranscript: (lines) => ..., onLevel: (rms) => ...,
+//     onSlow: (slow) => ...,                    // true when the guide has taken more than a few seconds to start answering, false when it starts
 //     onGrant: ({instruction, sentenceIds, maxSeconds, daily}) => ...,   // what the guide was given (for testing)
 //     onEnd: ({reason}) => ..., onError: ({code, message}) => ...,
 //   });
@@ -28,7 +29,8 @@ export const OUT_RATE = 24000;
 const INTRO_WAIT_MS = 15000;            // how long the intro waits for the server to be ready
 const INTRO_MAX_MS = 30000;             // and for the guide to finish saying it
 const THINK_AFTER_MS = 500;            // the reader's voice has been quiet this long: their turn is over, the guide is working on its answer
-const THINK_MAX_MS = 20000;            // "thinking" never lasts longer than this (the guide may simply have had nothing to say)
+const THINK_MAX_MS = 60000;            // "thinking" never lasts longer than this (the guide may simply have had nothing to say). It was 20 s: a big question takes longer, and the page then looked as if nothing was happening
+const SLOW_AFTER_MS = 2500;            // still no answer this long after the reader stopped: the page is told (onSlow) so it can say "this is a big one, working on it"
 const PING_SECONDS = 15;               // how often the page tells the function the conversation is still going
 export const IDLE_SECONDS = 45;          // nobody speaking (either side) this long: the conversation ends
 export const WRAP_UP_SECONDS = 20;       // before the longest conversation ends, the guide is asked to close
@@ -122,7 +124,7 @@ const HIGHLIGHT = {
 /** The first message on the socket. `instruction` comes from the live-token function (the same text its token is locked
  *  to). `nested`: put responseModalities and speechConfig under generationConfig (the older layout) if the server
  *  rejects the flat one. */
-export function setupMessage({ model, instruction, voice = "Kore", languageCode = null, nested = false, tools = null, silenceMs = 500 }) {
+export function setupMessage({ model, instruction, voice = "Kore", languageCode = null, nested = false, tools = null, silenceMs = 500, thinking = null }) {
   const speech = { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } };
   if (languageCode) speech.languageCode = languageCode;     // only when the function sends one (off by default: native-audio models pick the language themselves)
   const setup = {
@@ -137,6 +139,7 @@ export function setupMessage({ model, instruction, voice = "Kore", languageCode 
   };
   if (nested) setup.generationConfig = { responseModalities: ["AUDIO"], speechConfig: speech };
   else { setup.responseModalities = ["AUDIO"]; setup.speechConfig = speech; }
+  if (thinking) setup.generationConfig = { ...(setup.generationConfig || {}), thinkingConfig: thinking };    // only when the function sends one (the secret LIVE_THINKING_CONFIG): how long the model may reason before it speaks
   return { setup };
 }
 
@@ -227,11 +230,16 @@ export function createTalk(opts) {
   let state = "idle", ctx = null, stream = null, ws = null, proto = null, grant = null;
   let tapNode = null, tapSource = null, silent = null, muted = false, micOn = false, ending = false;
   let thinkTimer = null, voiced = false, lastVoice = 0, thinkSince = 0, pingTimer = null, introDone = false, ready = false, introStop = null, introWake = null, readyWake = null;
-  let nextAt = 0, quietTimer = null, idleTimer = null, maxTimer = null, wrapTimer = null, lastActive = 0;
+  let nextAt = 0, quietTimer = null, idleTimer = null, maxTimer = null, wrapTimer = null, lastActive = 0, slow = false;
   const playing = new Set();
   let runId = 0;                 // each start() is a run; stop() during connecting must stop THAT run from carrying on
 
-  const set = (s) => { if (state !== s) { state = s; o.onState(s); } };
+  const set = (s) => {
+    if (state === s) return;
+    state = s;
+    if (slow && s !== "thinking") { slow = false; o.onSlow?.(false); }       // the answer started (or the reader spoke again): the "big one" message is over
+    o.onState(s);
+  };
   const touch = () => { lastActive = Date.now(); };
 
   // playback: each chunk of the guide's voice is queued right after the one before
@@ -299,7 +307,11 @@ export function createTalk(opts) {
     thinkTimer = setInterval(() => {
       const now = Date.now();
       if (state === "listening" && voiced && !playing.size && now - lastVoice > THINK_AFTER_MS) { voiced = false; thinkSince = now; set("thinking"); }
-      else if (state === "thinking" && now - thinkSince > THINK_MAX_MS) set("listening");
+      else if (state === "thinking") {
+        touch();                                                   // waiting for the guide is not "nobody is speaking": the 45 s idle end must not fire while it works
+        if (!slow && now - thinkSince > SLOW_AFTER_MS) { slow = true; o.onSlow?.(true); }
+        if (now - thinkSince > THINK_MAX_MS) set("listening");
+      }
     }, 150);
   }
 
@@ -358,7 +370,7 @@ export function createTalk(opts) {
         goAway: () => end("goaway"),
       },
     });
-    ws.onopen = () => ws.send(JSON.stringify(setupMessage({ model: grant.model, instruction: grant.instruction, voice: grant.voice || undefined, languageCode: grant.language_code || null, nested: true, tools: grant.tools || null, silenceMs: Number(grant.silence_ms) || 500 })));
+    ws.onopen = () => ws.send(JSON.stringify(setupMessage({ model: grant.model, instruction: grant.instruction, voice: grant.voice || undefined, languageCode: grant.language_code || null, nested: true, tools: grant.tools || null, silenceMs: Number(grant.silence_ms) || 500, thinking: grant.thinking || null })));
     ws.onmessage = async (e) => {
       try { proto.handle(JSON.parse(typeof e.data === "string" ? e.data : await e.data.text())); }
       catch { /* one bad frame does not end the conversation */ }

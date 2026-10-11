@@ -2587,7 +2587,7 @@ Object.assign(T.en, {
   talkName: "Understand by talking", talkBanner: "Understand by talking", talkOpen: "Open the conversation", talkMin: "Minimise",
   talkWhy: "Sign in to talk about this story.", talkStart: "Start talking", talkAgain: "Talk again",
   talkReady: "Ask anything about this story", talkReadyHint: "Tap start, then just speak. You can interrupt any time.",
-  talkThinking: "Listening and thinking", talkThinkingHint: "Got it. Working on your answer. You can keep talking.",
+  talkThinking: "Listening and thinking", talkThinkingHint: "Got it. Working on your answer. You can keep talking.", talkSlowHint: "That is a big question, so it needs a few more seconds. I am putting the answer together.",
   talkConnecting: "Connecting…", talkConnectingHint: "Allow the microphone if your browser asks.",
   talkSpeaking: "Speaking…", talkSpeakingHint: "Start talking any time to interrupt.",
   talkListening: "Go ahead, I'm listening", talkListeningHint: "Ask about anything in this story.",
@@ -2603,7 +2603,7 @@ Object.assign(T.hi, {
   talkName: "बात करके समझें", talkBanner: "बात करके समझें", talkOpen: "बातचीत खोलें", talkMin: "छोटा करें",
   talkWhy: "इस ख़बर पर बात करने के लिए साइन इन करें।", talkStart: "बात शुरू करें", talkAgain: "फिर बात करें",
   talkReady: "इस ख़बर के बारे में कुछ भी पूछिए", talkReadyHint: "शुरू दबाएँ, फिर बस बोलिए। आप कभी भी बीच में टोक सकते हैं।",
-  talkThinking: "सुन रहे हैं, सोच रहे हैं", talkThinkingHint: "जवाब तैयार हो रहा है। आप बोलते रह सकते हैं।",
+  talkThinking: "सुन रहे हैं, सोच रहे हैं", talkThinkingHint: "जवाब तैयार हो रहा है। आप बोलते रह सकते हैं।", talkSlowHint: "यह बड़ा सवाल है, इसलिए कुछ सेकंड और लगेंगे। जवाब तैयार किया जा रहा है।",
   talkConnecting: "जुड़ रहे हैं…", talkConnectingHint: "ब्राउज़र माइक्रोफ़ोन की अनुमति माँगे तो दे दें।",
   talkSpeaking: "सुनिए…", talkSpeakingHint: "बीच में कभी भी बोलकर टोक सकते हैं।",
   talkListening: "बोलिए, हम सुन रहे हैं", talkListeningHint: "इस ख़बर में कुछ भी पूछिए।",
@@ -2658,6 +2658,7 @@ function talkInstance() {
     onHighlight: tkLight,
     onTranscript: lines => { const g = [...lines].reverse().find(l => l.role === "guide"); TK.cap = g ? g.text : ""; tkCaption(); },
     onLevel: v => { if (TK.card && (TK.st === "listening" || TK.st === "thinking")) TK.card.style.setProperty("--lv", Math.min(1, v * 7).toFixed(2)); },
+    onSlow: v => { TK.slow = !!v; if (TK.phase === "live") tkPaint(); },     // the guide is taking long: say so, so nobody wonders whether it heard
     onEnd: tkEnded,
     onError: e => console.warn("talk:", e.code, e.message),
   });
@@ -2772,7 +2773,7 @@ function tkPaint() {
   c.querySelector(".tkopen").textContent = t.tkSet;
   tkPaintSet();
   const isErr = errs.includes(TK.reason), msg = TK.reason === "limit" ? tkLimitText(t) : (t.talkMsg[TK.reason] || t.talkMsg.other);
-  const words = {ready: [t.talkReady, t.talkReadyHint], connecting: [t.talkConnecting, t.talkConnectingHint], speaking: [t.talkSpeaking, t.talkSpeakingHint], thinking: [t.talkThinking, t.talkThinkingHint],
+  const words = {ready: [t.talkReady, t.talkReadyHint], connecting: [t.talkConnecting, t.talkConnectingHint], speaking: [t.talkSpeaking, t.talkSpeakingHint], thinking: [t.talkThinking, TK.slow ? t.talkSlowHint : t.talkThinkingHint],
                  listening: [t.talkListening, t.talkListeningHint], ended: [isErr ? t.talkCant : t.talkEnded, msg]}[ph];
   const line = c.querySelector(".tkline");
   line.textContent = words[0];
