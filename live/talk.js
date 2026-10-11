@@ -29,6 +29,7 @@
 export const WS_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained";
 export const IN_RATE = 16000;
 export const OUT_RATE = 24000;
+const CLIP_LEAD_S = 0.25;               // the recording is scheduled this far ahead, so a speaker that is still waking up swallows silence, not words (Oct 12 2026: the first words were lost)
 const CLIP_WAIT_MS = 4000;              // the intro recording must have started within this long after the connection is ready, else the guide says the intro itself
 const INTRO_WAIT_MS = 15000;            // how long the intro waits for the server to be ready
 const INTRO_MAX_MS = 30000;             // and for the guide to finish saying it
@@ -414,18 +415,21 @@ export function createTalk(opts) {
   /** Start fetching the recording early (the page calls this before the reader taps), so the tap only has to play it. */
   function preload({ lang = "en", voice } = {}) { fetchClip(`intro-${safeVoice(voice)}-${lang === "hi" ? "hi" : "en"}.m4a`); }
   /** Begins the recording as soon as it is decoded. `started` resolves true (playing, `seconds` long) or false (none, or it could not be played). */
-  function startClip(lang, voice) {
+  function startClip(lang, voice, after = Promise.resolve()) {
     const run = { cancelled: false, seconds: 0 };
     run.started = (async () => {
       const bytes = await fetchClip(`intro-${safeVoice(voice)}-${lang === "hi" ? "hi" : "en"}.m4a`);
       if (!bytes || run.cancelled || ending || !ctx) return false;
       try {
-        const buf = await ctx.decodeAudioData(bytes.slice(0));
+        const buf = await ctx.decodeAudioData(bytes.slice(0));     // decoded NOW, while the microphone is being asked for
+        await after;                                               // ... but played once the microphone is open: opening it re-routes the phone's audio (Bluetooth most of all) and cut off the first words
+        if (run.cancelled || ending || !ctx) return false;
+        if (ctx.state !== "running") { try { await ctx.resume(); } catch { /* played or not below */ } }   // the permission box can pause the context
         if (run.cancelled || ending || !ctx) return false;
         const src = ctx.createBufferSource();
         src.buffer = buf;
         src.connect(ctx.destination);
-        const at = Math.max(ctx.currentTime + 0.02, nextAt);
+        const at = Math.max(ctx.currentTime + CLIP_LEAD_S, nextAt);
         src.start(at);
         nextAt = at + buf.duration;
         playing.add(src);
@@ -537,11 +541,13 @@ export function createTalk(opts) {
       outRs = null;                        // made on the first chunk, for this context's rate
       await ctx.resume();                  // inside the reader's tap, so the browser lets it play
       if (stale()) return;
-      const clip = startClip(lang, style?.voice);      // the recording starts now, not after the login and the socket
+      let micOpened; const micAsked = new Promise((r) => { micOpened = r; });
+      const clip = startClip(lang, style?.voice, micAsked);   // the recording is made ready now and plays the moment the microphone is open, before the login and the socket
       let mic;
       try {
         mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
-      } catch { throw new TalkError("mic", "the microphone is blocked"); }
+      } catch { micOpened(); throw new TalkError("mic", "the microphone is blocked"); }
+      micOpened();
       if (stale()) { try { mic.getTracks().forEach((t) => t.stop()); } catch { /* done */ } return; }   // never leave a microphone open
       stream = mic;
       grant = await grantFor(storyId, lang, style);
