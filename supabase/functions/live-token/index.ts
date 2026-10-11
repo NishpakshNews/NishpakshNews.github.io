@@ -26,7 +26,8 @@ const FEED_URL = Deno.env.get("FEED_URL") || "https://raw.githubusercontent.com/
 const KEYS = [...new Set(["GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3", "GEMINI_API_KEY_4", "GEMINI_API_KEY_5"]
   .map((k) => (Deno.env.get(k) || "").trim()).filter(Boolean))];
 
-const DAILY = 3;               // conversations per reader per IST day
+const HOURLY = Number(Deno.env.get("LIVE_HOURLY")) || 3;   // conversations per reader in any rolling hour (secret LIVE_HOURLY changes it)
+const DAILY = 20;              // a high backstop per reader per IST day: a bug or a script cannot burn the site's Gemini quota
 const CONCURRENT = Number(Deno.env.get("LIVE_CONCURRENT")) || 3;   // at the same moment, whole site; a guess to be tuned (Gemini 3.8 Live: 65K tokens a minute per project). Set the secret LIVE_CONCURRENT to change it
 const MAX_SECONDS = 480;       // the longest conversation: the token itself expires then
 const GEMINI = "https://generativelanguage.googleapis.com/v1beta/auth_tokens";
@@ -147,11 +148,11 @@ Deno.serve(async (req) => {
     if (!brief) return reply({ error: "gone" }, 404);
 
     const { data, error } = await admin.rpc("live_talk_begin", {
-      p_reader: user.id, p_story: story, p_lang: brief.lang, p_daily: DAILY, p_concurrent: CONCURRENT, p_seconds: MAX_SECONDS,
+      p_reader: user.id, p_story: story, p_lang: brief.lang, p_hourly: HOURLY, p_daily: DAILY, p_concurrent: CONCURRENT, p_seconds: MAX_SECONDS,
     });
     if (error) return reply({ error: error.message }, 500);
     const st = String(data?.status || "");
-    if (st === "limit") return reply({ error: "limit", daily: DAILY }, 429);
+    if (st === "limit") return reply({ error: "limit", hourly: HOURLY, retry_minutes: data.retry_minutes }, 429);
     if (st === "busy") return reply({ error: "busy" }, 503);
     if (st === "gone") return reply({ error: "gone" }, 404);
     if (st !== "ok") return reply({ error: st || "bad request" }, st === "login" ? 401 : 400);
@@ -169,7 +170,7 @@ Deno.serve(async (req) => {
     return reply({
       token, model: MODEL, lang: brief.lang, headline: brief.headline, instruction: brief.instruction,
       voice: style.voice, language_code: SEND_LANGUAGE_CODE ? languageCode(brief.lang, style.accent) : null,
-      sentence_ids: brief.sentenceIds, max_seconds: MAX_SECONDS, daily: DAILY, session: data.id,
+      sentence_ids: brief.sentenceIds, max_seconds: MAX_SECONDS, hourly: HOURLY, session: data.id,
     });
   } catch (e) {
     return reply({ error: String((e as Error).message || e) }, 500);

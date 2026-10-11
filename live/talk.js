@@ -406,7 +406,7 @@ export function createTalk(opts) {
       grant = await grantFor(storyId, lang, style);
       if (stale()) return;
       lang = grant.lang || lang;
-      if (o.onGrant) o.onGrant({ lang, headline: grant.headline, instruction: grant.instruction, sentenceIds: grant.sentence_ids, maxSeconds: grant.max_seconds, daily: grant.daily });
+      if (o.onGrant) o.onGrant({ lang, headline: grant.headline, instruction: grant.instruction, sentenceIds: grant.sentence_ids, maxSeconds: grant.max_seconds, hourly: grant.hourly });
       openSocket();
       startPings();
       await playIntro(lang);
