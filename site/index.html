@@ -600,10 +600,11 @@
   .tkcard.min { transform: translate(var(--dx, 0px), var(--dy, 0px)) scale(var(--s, 0.94)); opacity: 0; visibility: hidden; pointer-events: none;
                 transition: transform 420ms var(--ease), opacity 240ms ease 80ms, box-shadow 500ms ease, background-color 500ms ease, visibility 0s linear 420ms; }
   /* talking: the light blue effect */
-  .tkcard[data-ph="connecting"], .tkcard[data-ph="speaking"], .tkcard[data-ph="listening"] {
+  .tkcard[data-ph="connecting"], .tkcard[data-ph="speaking"], .tkcard[data-ph="listening"], .tkcard[data-ph="thinking"] {
     background: linear-gradient(180deg, #edf4fe 0%, #fff 60%);
     box-shadow: 0 0 0 1.5px rgba(74,134,214,0.55), 0 0 46px rgba(74,134,214,0.36), 0 20px 56px rgba(22,26,56,0.3); }
   .tkcard[data-ph="speaking"] { animation: tkglow 2.2s ease-in-out infinite; }
+  .tkcard[data-ph="thinking"] { animation: tkglow 1.5s ease-in-out infinite; }
   @keyframes tkglow { 50% { box-shadow: 0 0 0 1.5px rgba(74,134,214,0.8), 0 0 64px rgba(74,134,214,0.5), 0 20px 56px rgba(22,26,56,0.3); } }
 
   .tkhead { display: grid; grid-template-columns: 36px 1fr 36px; align-items: center; gap: 8px; }
@@ -616,13 +617,16 @@
   .tkstage { position: relative; height: 108px; margin: 10px 0 4px; display: flex; align-items: center; justify-content: center; gap: 6px; }
   .tkstage::before { content: ""; position: absolute; inset: 0 8px; border-radius: 50%; opacity: 0; transition: opacity 500ms ease;
                      background: radial-gradient(closest-side, rgba(74,134,214,0.26), rgba(74,134,214,0)); }
-  .tkcard[data-ph="speaking"] .tkstage::before, .tkcard[data-ph="listening"] .tkstage::before { opacity: 1; }
+  .tkcard[data-ph="speaking"] .tkstage::before, .tkcard[data-ph="listening"] .tkstage::before, .tkcard[data-ph="thinking"] .tkstage::before { opacity: 1; }
   .tkstage i { position: relative; width: 6px; height: 92px; border-radius: 3px; transform: scaleY(0.14); opacity: 0.5;
                background: linear-gradient(180deg, #a3c4f2 0%, #4a86d6 52%, #2f3a72 100%); transition: transform 110ms ease-out, opacity 300ms ease; }
   .tkcard[data-ph="connecting"] .tkstage i { opacity: 0.9; animation: tkwait 1.3s ease-in-out infinite; animation-delay: calc(var(--i) * -0.09s); }
+  /* thinking: the reader has finished, the guide has not started: a wave runs through the bars, back and forth */
+  .tkcard[data-ph="thinking"] .tkstage i { opacity: 1; animation: tkthink 1.2s ease-in-out infinite; animation-delay: calc(var(--i) * -0.1s); }
   .tkcard[data-ph="speaking"] .tkstage i { opacity: 1; animation: tkdance var(--p, 0.9s) ease-in-out infinite; animation-delay: var(--d, 0s); }
   .tkcard[data-ph="listening"] .tkstage i { opacity: 1; transform: scaleY(calc(0.14 + var(--lv, 0) * var(--k, 1) * 0.86)); }
   @keyframes tkdance { 0%, 100% { transform: scaleY(0.16); } 50% { transform: scaleY(var(--k, 1)); } }
+  @keyframes tkthink { 0%, 100% { transform: scaleY(0.2); } 50% { transform: scaleY(0.7); } }
   @keyframes tkwait { 0%, 100% { transform: scaleY(0.14); } 50% { transform: scaleY(0.4); } }
 
   .tkline { margin: 6px 0 0; min-height: 30px; font-family: var(--head); font-size: 22px; font-weight: 600; line-height: 1.25; color: var(--ink); }
@@ -632,8 +636,8 @@
   .tkslot { min-height: 72px; display: flex; align-items: center; justify-content: center; margin-top: 4px; }
   .tkcap { margin: 0 6px; font-size: 14px; line-height: 1.5; color: var(--ink-soft); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .tkcard .tkgo { width: 100%; }
-  .tkcard[data-ph="ready"] .tkcap, .tkcard[data-ph="ended"] .tkcap, .tkcard[data-ph="connecting"] .tkcap { display: none; }
-  .tkcard[data-ph="speaking"] .tkgo, .tkcard[data-ph="listening"] .tkgo, .tkcard[data-ph="connecting"] .tkgo { display: none; }
+  .tkcard[data-ph="ready"] .tkcap, .tkcard[data-ph="ended"] .tkcap, .tkcard[data-ph="connecting"] .tkcap, .tkcard[data-ph="thinking"] .tkcap { display: none; }
+  .tkcard[data-ph="speaking"] .tkgo, .tkcard[data-ph="listening"] .tkgo, .tkcard[data-ph="connecting"] .tkgo, .tkcard[data-ph="thinking"] .tkgo { display: none; }
   .tkpriv { margin: 8px 6px 2px; font-size: 12px; line-height: 1.45; color: var(--muted); }
 
   /* the floating button: translucent, at the bottom right while the card is minimised. Over the article's own button it takes
@@ -663,7 +667,7 @@
   .tkfloat::after { content: ""; position: absolute; inset: -2px; border-radius: 50%; border: 2px solid var(--talk); opacity: 0; pointer-events: none; }
   .tkfloat.speaking::after { animation: tkring 1.5s ease-out infinite; }
   @keyframes tkring { 0% { transform: scale(1); opacity: 0.55; } 100% { transform: scale(1.55); opacity: 0; } }
-  .tkfloat.connecting { animation: tkbreathe 1.6s ease-in-out infinite; }
+  .tkfloat.connecting, .tkfloat.thinking { animation: tkbreathe 1.6s ease-in-out infinite; }
   @keyframes tkbreathe { 50% { box-shadow: 0 0 0 7px rgba(74,134,214,0.2), 0 0 34px rgba(74,134,214,0.5), 0 8px 22px rgba(47,58,114,0.22); } }
   .tkprobe { position: fixed; left: 0; top: 0; width: 0; height: 0; visibility: hidden; pointer-events: none;
              padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
@@ -689,7 +693,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .talkpeek .tpin, .talkpeek .tpin span, .tkcard, .tkcard.min, .tkveil, .tkfloat, .tkfloat.on { transition-duration: 1ms !important; transition-delay: 0ms !important; }
-    .tkcard[data-ph="speaking"], .tkcard[data-ph="connecting"] .tkstage i, .tkfloat.connecting, .tkfloat.speaking::after { animation: none !important; }
+    .tkcard[data-ph="speaking"], .tkcard[data-ph="connecting"] .tkstage i, .tkcard[data-ph="thinking"], .tkcard[data-ph="thinking"] .tkstage i, .tkfloat.connecting, .tkfloat.thinking, .tkfloat.speaking::after { animation: none !important; }
     /* speaking still shows: the bars stand at different heights instead of dancing */
     .tkcard[data-ph="speaking"] .tkstage i { animation: none; transform: scaleY(calc(var(--k, 1) * 0.8)); }
     .tkfloat.speaking .wave i { animation: none; transform: scaleY(0.7); }
@@ -2579,6 +2583,7 @@ Object.assign(T.en, {
   talkName: "Understand by talking", talkBanner: "Understand by talking", talkOpen: "Open the conversation", talkMin: "Minimise",
   talkWhy: "Sign in to talk about this story.", talkStart: "Start talking", talkAgain: "Talk again",
   talkReady: "Ask anything about this story", talkReadyHint: "Tap start, then just speak. You can interrupt any time.",
+  talkThinking: "Thinking…", talkThinkingHint: "One moment.",
   talkConnecting: "Connecting…", talkConnectingHint: "Allow the microphone if your browser asks.",
   talkSpeaking: "Speaking…", talkSpeakingHint: "Start talking any time to interrupt.",
   talkListening: "Go ahead, I'm listening", talkListeningHint: "Ask about anything in this story.",
@@ -2586,7 +2591,7 @@ Object.assign(T.en, {
   talkPriv: "Your voice is processed by Google's Gemini to answer you. Nishpaksh does not keep it.",
   talkLangEnd: "Conversation ended because the language changed.",
   talkMsg: {idle: "It went quiet, so the conversation ended.", time: "A conversation can last 8 minutes at most.", closed: "The conversation ended.", goaway: "The conversation ended.",
-            limit: "You have used today's conversations. A new one is yours at 12 am.", busy: "Many readers are talking right now. Try again in a minute.",
+            limit: "You have used your conversations for this hour. Try again in a little while.", busy: "Many readers are talking right now. Try again in a minute.",
             gone: "This story is no longer live, so it can't be discussed.", mic: "The microphone is blocked. Allow it in your browser, then try again.",
             network: "Could not reach Nishpaksh. Check your connection and try again.", other: "The guide is not available right now. Try again in a moment."},
 });
@@ -2594,6 +2599,7 @@ Object.assign(T.hi, {
   talkName: "बात करके समझें", talkBanner: "बात करके समझें", talkOpen: "बातचीत खोलें", talkMin: "छोटा करें",
   talkWhy: "इस ख़बर पर बात करने के लिए साइन इन करें।", talkStart: "बात शुरू करें", talkAgain: "फिर बात करें",
   talkReady: "इस ख़बर के बारे में कुछ भी पूछिए", talkReadyHint: "शुरू दबाएँ, फिर बस बोलिए। आप कभी भी बीच में टोक सकते हैं।",
+  talkThinking: "सोच रहा हूँ…", talkThinkingHint: "एक पल।",
   talkConnecting: "जुड़ रहे हैं…", talkConnectingHint: "ब्राउज़र माइक्रोफ़ोन की अनुमति माँगे तो दे दें।",
   talkSpeaking: "सुनिए…", talkSpeakingHint: "बीच में कभी भी बोलकर टोक सकते हैं।",
   talkListening: "बोलिए, हम सुन रहे हैं", talkListeningHint: "इस ख़बर में कुछ भी पूछिए।",
@@ -2601,7 +2607,7 @@ Object.assign(T.hi, {
   talkPriv: "जवाब देने के लिए आपकी आवाज़ Google के Gemini से प्रोसेस होती है। निष्पक्ष उसे सहेजता नहीं।",
   talkLangEnd: "भाषा बदली, इसलिए बातचीत ख़त्म हो गई।",
   talkMsg: {idle: "कुछ देर कोई आवाज़ नहीं आई, इसलिए बातचीत ख़त्म हो गई।", time: "एक बातचीत ज़्यादा से ज़्यादा 8 मिनट की हो सकती है।", closed: "बातचीत ख़त्म हो गई।", goaway: "बातचीत ख़त्म हो गई।",
-            limit: "आज की बातचीत पूरी हो गई। रात 12 बजे नई मिलेगी।", busy: "अभी बहुत से पाठक बात कर रहे हैं। थोड़ी देर में फिर कोशिश करें।",
+            limit: "इस घंटे की बातचीत पूरी हो गई। थोड़ी देर बाद फिर कोशिश करें।", busy: "अभी बहुत से पाठक बात कर रहे हैं। थोड़ी देर में फिर कोशिश करें।",
             gone: "यह ख़बर अब उपलब्ध नहीं है, इसलिए इस पर बात नहीं हो सकती।", mic: "माइक्रोफ़ोन बंद है। ब्राउज़र में अनुमति दें, फिर दोबारा कोशिश करें।",
             network: "निष्पक्ष तक पहुँच नहीं हो सकी। इंटरनेट जाँचें और दोबारा कोशिश करें।", other: "अभी बातचीत उपलब्ध नहीं है। थोड़ी देर बाद कोशिश करें।"},
 });
@@ -2745,7 +2751,7 @@ function tkBuild() {
 /* ---- what the card says ---- */
 function tkPhase() {
   if (TK.phase !== "live") return TK.phase;
-  return TK.st === "speaking" || TK.st === "intro" ? "speaking" : TK.st === "listening" ? "listening" : "connecting";
+  return TK.st === "speaking" || TK.st === "intro" ? "speaking" : TK.st === "listening" ? "listening" : TK.st === "thinking" ? "thinking" : "connecting";
 }
 function tkCaption() { const c = TK.card && TK.card.querySelector(".tkcap"); if (c) c.textContent = TK.cap; }
 function tkPaint() {
@@ -2760,7 +2766,7 @@ function tkPaint() {
   c.querySelector(".tkopen").textContent = t.tkSet;
   tkPaintSet();
   const isErr = errs.includes(TK.reason), msg = t.talkMsg[TK.reason] || t.talkMsg.other;
-  const words = {ready: [t.talkReady, t.talkReadyHint], connecting: [t.talkConnecting, t.talkConnectingHint], speaking: [t.talkSpeaking, t.talkSpeakingHint],
+  const words = {ready: [t.talkReady, t.talkReadyHint], connecting: [t.talkConnecting, t.talkConnectingHint], speaking: [t.talkSpeaking, t.talkSpeakingHint], thinking: [t.talkThinking, t.talkThinkingHint],
                  listening: [t.talkListening, t.talkListeningHint], ended: [isErr ? t.talkCant : t.talkEnded, msg]}[ph];
   c.querySelector(".tkline").textContent = words[0];
   c.querySelector(".tkhint").textContent = words[1];
@@ -2775,6 +2781,7 @@ function tkPaint() {
     fl.el.setAttribute("aria-label", t.talkOpen);
     fl.el.classList.toggle("speaking", ph === "speaking");
     fl.el.classList.toggle("connecting", ph === "connecting");
+    fl.el.classList.toggle("thinking", ph === "thinking");
   }
 }
 

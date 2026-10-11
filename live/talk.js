@@ -27,6 +27,8 @@ export const IN_RATE = 16000;
 export const OUT_RATE = 24000;
 const INTRO_WAIT_MS = 15000;            // how long the intro waits for the server to be ready
 const INTRO_MAX_MS = 30000;             // and for the guide to finish saying it
+const THINK_AFTER_MS = 700;            // the reader's voice has been quiet this long: their turn is over, the guide is working on its answer
+const THINK_MAX_MS = 20000;            // "thinking" never lasts longer than this (the guide may simply have had nothing to say)
 const PING_SECONDS = 15;               // how often the page tells the function the conversation is still going
 export const IDLE_SECONDS = 45;          // nobody speaking (either side) this long: the conversation ends
 export const WRAP_UP_SECONDS = 20;       // before the longest conversation ends, the guide is asked to close
@@ -211,7 +213,7 @@ export function createTalk(opts) {
   const o = { introBase: "./", onState() {}, onHighlight() {}, onTranscript() {}, onLevel() {}, onEnd() {}, onError() {}, ...opts };
   let state = "idle", ctx = null, stream = null, ws = null, proto = null, grant = null;
   let tapNode = null, tapSource = null, silent = null, muted = false, micOn = false, ending = false;
-  let pingTimer = null, introDone = false, ready = false, introStop = null, introWake = null, readyWake = null;
+  let thinkTimer = null, voiced = false, lastVoice = 0, thinkSince = 0, pingTimer = null, introDone = false, ready = false, introStop = null, introWake = null, readyWake = null;
   let nextAt = 0, quietTimer = null, idleTimer = null, maxTimer = null, wrapTimer = null, lastActive = 0;
   const playing = new Set();
   let runId = 0;                 // each start() is a run; stop() during connecting must stop THAT run from carrying on
@@ -233,6 +235,7 @@ export function createTalk(opts) {
     src.start(at);
     nextAt = at + buf.duration;
     playing.add(src);
+    voiced = false;
     set("speaking");
     src.onended = () => {
       playing.delete(src);
@@ -259,7 +262,7 @@ export function createTalk(opts) {
       if (muted || !ws || ws.readyState !== 1) return;
       const level = rms(f32);
       o.onLevel(level);
-      if (level > 0.02) touch();
+      if (level > 0.02) { touch(); if (!playing.size && state !== "speaking") { voiced = true; lastVoice = Date.now(); if (state === "thinking") set("listening"); } }   // not while the guide speaks: its own voice may leak into the microphone   // talking again: the thinking was early
       ws.send(JSON.stringify({ realtimeInput: { audio: { data: int16ToBase64(floatTo16kPcm(f32, ctx.sampleRate)), mimeType: `audio/pcm;rate=${IN_RATE}` } } }));
     };
     try {
@@ -277,6 +280,12 @@ export function createTalk(opts) {
     micOn = true;
     touch();
     set("listening");
+    // the reader stopped talking and the guide has not started: show it is working on the answer
+    thinkTimer = setInterval(() => {
+      const now = Date.now();
+      if (state === "listening" && voiced && !playing.size && now - lastVoice > THINK_AFTER_MS) { voiced = false; thinkSince = now; set("thinking"); }
+      else if (state === "thinking" && now - thinkSince > THINK_MAX_MS) set("listening");
+    }, 150);
   }
 
   function maybeOpenMic() { if (introDone && ready && !ending) startMic(); }
@@ -336,7 +345,7 @@ export function createTalk(opts) {
         ready: () => { ready = true; readyWake?.(); maybeOpenMic(); },
         audio: playPcm,
         interrupted: interrupt,
-        turnComplete: () => { touch(); introWake?.(); },
+        turnComplete: () => { touch(); introWake?.(); if (state === "thinking" && !playing.size) set("listening"); },
         highlight: (id) => { touch(); o.onHighlight(id); },
         readArticle: async (id) => { touch(); return o.readArticle ? o.readArticle(id) : readOther(id); },
         transcript: (lines) => { touch(); o.onTranscript(lines); },
@@ -372,7 +381,7 @@ export function createTalk(opts) {
   function end(reason, detail) {
     if (ending) return;
     ending = true;
-    clearTimeout(quietTimer); clearInterval(idleTimer); clearTimeout(maxTimer); clearTimeout(wrapTimer);
+    clearTimeout(quietTimer); clearInterval(thinkTimer); clearInterval(idleTimer); clearTimeout(maxTimer); clearTimeout(wrapTimer);
     try { introStop?.(); } catch { /* done */ }
     try { for (const s of playing) { s.onended = null; s.stop(); } } catch { /* done */ }
     playing.clear();
@@ -388,7 +397,7 @@ export function createTalk(opts) {
 
   async function start({ storyId, lang, style }) {
     if (state !== "idle" && state !== "ended") return;
-    ending = false; muted = false; micOn = false; introDone = false; ready = false; nextAt = 0;
+    ending = false; muted = false; micOn = false; voiced = false; introDone = false; ready = false; nextAt = 0;
     const run = ++runId;
     const stale = () => ending || run !== runId;     // stopped (or restarted) while this run was waiting on something
     set("connecting");
