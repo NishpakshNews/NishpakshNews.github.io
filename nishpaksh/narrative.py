@@ -41,7 +41,7 @@ RANK = {"confirmed": 0, "corroborated": 0, "developing": 1, "unverified": 2, "pe
 CLASS = {0: "established", 1: "developing", 2: "unverified", 3: "partial", 4: "single", 5: "disputed", 6: "false"}
 STATUS_LABEL = {"corroborated": "ESTABLISHED", "confirmed": "ESTABLISHED", "developing": "REPORTED",
                 "disputed": "DISPUTED", "unverified": "REPORTED", "pending": "REPORTED", "false": "FALSE",
-                "single": "ONE OUTLET ONLY", "partial": "ONE OUTLET IN FULL, OTHERS IN PART"}
+                "single": "ONE OUTLET ONLY", "partial": "PARTLY BACKED BY OTHERS"}
 
 
 def shade(i: dict) -> str:

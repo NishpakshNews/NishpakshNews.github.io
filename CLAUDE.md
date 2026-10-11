@@ -353,12 +353,12 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   handled: two parts that say the same in other words that code calls "different" ("appropriate" / "fitting"); the
   dupes step has to propose those. Old articles are closed and keep their text. Tests ran on a stubbed harness
   (no sqlalchemy / snowball / pytest in the sandbox), not on real stories.
-- **Blue = one outlet in full, others in part (owner, Oct 11 2026).** A line that got folded (`fold_covered`) keeps its own
+- **Blue = "partly backed by others" (owner, Oct 11 2026; first called "one outlet in full, others in part").** A line that got folded (`fold_covered`) keeps its own
   verdict, but when its sentence then shows superscripts of 2+ INDEPENDENT outlets (its own group plus the groups of the
   lines folded into it, `item.groups` + `item.folded_groups`, owner groups and wire copies merged as everywhere) "one
   outlet only" would contradict what the reader sees. `narrative.shade` returns `partial`: RANK 3, between unverified
-  (2) and single (4) (ranks renumbered: disputed 5, false 6; `recap.CLASS_RANK` the same), writer label "ONE OUTLET IN
-  FULL, OTHERS IN PART", grammar shape plain like single. Only for verdict unverified/pending with n_sources <= 1; it
+  (2) and single (4) (ranks renumbered: disputed 5, false 6; `recap.CLASS_RANK` the same), writer label "PARTLY BACKED
+  BY OTHERS", grammar shape plain like single. Only for verdict unverified/pending with n_sources <= 1; it
   never makes anything green. Site: `--par` #2b62ad (text), `--bar-p` #4a86d6, `.s.partial`, legend and bar (key `p`
   after teal, in `feed.bar_counts` and the site's own `barCounts`), English and Hindi labels, `sw.js` cache np-main-31.
   Articles already published keep their old class (closed); `editions.mature` recomputes by `shade`, so a stored

@@ -3766,7 +3766,7 @@ def test_a_line_with_folded_outlets_is_blue_not_one_outlet_only():
     assert shade(big) == "single"
     p = {"timeline": [[big, small]], "undated": [], "established": [], "contested": [], "context": []}
     assert fold_covered(p, {"2": 1}) == 1
-    assert shade(big) == "partial" and STATUS_LABEL["partial"].startswith("ONE OUTLET IN FULL")
+    assert shade(big) == "partial" and STATUS_LABEL["partial"] == "PARTLY BACKED BY OTHERS"
     # between "not cross-checked" and "one outlet only"; never stronger than green, never weaker than purple
     assert RANK["unverified"] < RANK["partial"] < RANK["single"] and CLASS[RANK["partial"]] == "partial"
     assert bar_counts([[{"class": "partial"}]])["p"] == 1
