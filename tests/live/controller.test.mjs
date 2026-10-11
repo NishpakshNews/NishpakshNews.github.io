@@ -128,6 +128,14 @@ test("the reader's day is used up: the error says limit, nothing was opened, not
   assert.equal(talk.state, "ended");
 });
 
+test("a refused hour carries the time of the next reset (XX:00) and its scope to the page", async () => {
+  browser({ grantStatus: 429, grantBody: { error: "limit", scope: "hour", resets_at: "2026-10-11T09:30:00+00:00" } });
+  const seen = [];
+  const { talk } = make({ onEnd: (e) => seen.push([e.reason, e.resetsAt, e.scope]) });
+  await talk.start({ storyId: 7, lang: "en" });
+  assert.deepEqual(seen, [["limit", "2026-10-11T09:30:00+00:00", "hour"]]);
+});
+
 test("each refusal has its own code", async () => {
   for (const [status, body, code] of [[401, { error: "login" }, "login"], [503, { error: "busy" }, "busy"], [404, { error: "gone" }, "gone"], [503, { error: "unavailable" }, "unavailable"]]) {
     browser({ grantStatus: status, grantBody: body });

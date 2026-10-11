@@ -188,7 +188,7 @@ class PcmTap extends AudioWorkletProcessor {
 registerProcessor("pcm-tap", PcmTap);`;
 
 export class TalkError extends Error {
-  constructor(code, message) { super(message || code); this.code = code; }
+  constructor(code, message, extra = {}) { super(message || code); this.code = code; Object.assign(this, extra); }   // extra: for a limit, resetsAt (ISO time) and scope (hour or day)
 }
 
 // -- the controller (needs a browser) -------------------------------------------------------------------------
@@ -283,7 +283,7 @@ export function createTalk(opts) {
     try { j = await r.json(); } catch { /* no body */ }
     if (r.ok && j.token) return j;
     const code = r.status === 401 ? "login" : r.status === 429 ? "limit" : r.status === 503 && j.error === "busy" ? "busy" : r.status === 404 ? "gone" : "unavailable";
-    throw new TalkError(code, j.error || `HTTP ${r.status}`);
+    throw new TalkError(code, j.error || `HTTP ${r.status}`, code === "limit" ? { resetsAt: j.resets_at || null, scope: j.scope || "hour" } : {});
   }
 
   // The intro is spoken by the guide itself (owner, Oct 11 2026: the voice must match everywhere, whichever voice the
@@ -353,7 +353,7 @@ export function createTalk(opts) {
     }, PING_SECONDS * 1000);
   }
 
-  function end(reason, detail) {
+  function end(reason, detail, extra = {}) {
     if (ending) return;
     ending = true;
     clearTimeout(quietTimer); clearInterval(thinkTimer); clearInterval(idleTimer); clearTimeout(maxTimer); clearTimeout(wrapTimer);
@@ -367,7 +367,7 @@ export function createTalk(opts) {
     endSession();
     set("ended");
     if (reason === "refused" || reason === "error") o.onError({ code: reason, message: detail || reason });
-    o.onEnd({ reason, detail });
+    o.onEnd({ reason, detail, ...extra });
   }
 
   async function start({ storyId, lang, style }) {
@@ -403,7 +403,7 @@ export function createTalk(opts) {
       wrapTimer = setTimeout(() => proto?.send({ realtimeInput: { text: "The conversation is about to end. Say a short goodbye in one sentence." } }), Math.max(0, max - WRAP_UP_SECONDS * 1000));
       maxTimer = setTimeout(() => end("time"), max);
     } catch (e) {
-      if (!stale()) { const code = e instanceof TalkError ? e.code : "error"; end(code === "error" ? "error" : code, e.message); if (e instanceof TalkError) o.onError({ code: e.code, message: e.message }); }
+      if (!stale()) { const code = e instanceof TalkError ? e.code : "error"; end(code === "error" ? "error" : code, e.message, e instanceof TalkError ? { resetsAt: e.resetsAt, scope: e.scope } : {}); if (e instanceof TalkError) o.onError({ code: e.code, message: e.message }); }
     }
   }
 

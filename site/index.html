@@ -2591,7 +2591,7 @@ Object.assign(T.en, {
   talkPriv: "Your voice is processed by Google's Gemini to answer you. Nishpaksh does not keep it.",
   talkLangEnd: "Conversation ended because the language changed.",
   talkMsg: {idle: "It went quiet, so the conversation ended.", time: "A conversation can last 8 minutes at most.", closed: "The conversation ended.", goaway: "The conversation ended.",
-            limit: "You have used your conversations for this hour. Try again in a little while.", busy: "Many readers are talking right now. Try again in a minute.",
+            limit: "You have used your conversations for this hour. Try again in a little while.", limitHour: "You have used your conversations for this hour. The next reset is at {t}.", limitDay: "You have used your conversations for today. The next reset is at {t}.", busy: "Many readers are talking right now. Try again in a minute.",
             gone: "This story is no longer live, so it can't be discussed.", mic: "The microphone is blocked. Allow it in your browser, then try again.",
             network: "Could not reach Nishpaksh. Check your connection and try again.", other: "The guide is not available right now. Try again in a moment."},
 });
@@ -2607,7 +2607,7 @@ Object.assign(T.hi, {
   talkPriv: "जवाब देने के लिए आपकी आवाज़ Google के Gemini से प्रोसेस होती है। निष्पक्ष उसे सहेजता नहीं।",
   talkLangEnd: "भाषा बदली, इसलिए बातचीत ख़त्म हो गई।",
   talkMsg: {idle: "कुछ देर कोई आवाज़ नहीं आई, इसलिए बातचीत ख़त्म हो गई।", time: "एक बातचीत ज़्यादा से ज़्यादा 8 मिनट की हो सकती है।", closed: "बातचीत ख़त्म हो गई।", goaway: "बातचीत ख़त्म हो गई।",
-            limit: "इस घंटे की बातचीत पूरी हो गई। थोड़ी देर बाद फिर कोशिश करें।", busy: "अभी बहुत से पाठक बात कर रहे हैं। थोड़ी देर में फिर कोशिश करें।",
+            limit: "इस घंटे की बातचीत पूरी हो गई। थोड़ी देर बाद फिर कोशिश करें।", limitHour: "इस घंटे की बातचीत पूरी हो गई। अगला रीसेट {t} पर होगा।", limitDay: "आज की बातचीत पूरी हो गई। अगला रीसेट {t} पर होगा।", busy: "अभी बहुत से पाठक बात कर रहे हैं। थोड़ी देर में फिर कोशिश करें।",
             gone: "यह ख़बर अब उपलब्ध नहीं है, इसलिए इस पर बात नहीं हो सकती।", mic: "माइक्रोफ़ोन बंद है। ब्राउज़र में अनुमति दें, फिर दोबारा कोशिश करें।",
             network: "निष्पक्ष तक पहुँच नहीं हो सकी। इंटरनेट जाँचें और दोबारा कोशिश करें।", other: "अभी बातचीत उपलब्ध नहीं है। थोड़ी देर बाद कोशिश करें।"},
 });
@@ -2765,7 +2765,7 @@ function tkPaint() {
   c.querySelector('[data-tk="close"]').setAttribute("aria-label", t.close);
   c.querySelector(".tkopen").textContent = t.tkSet;
   tkPaintSet();
-  const isErr = errs.includes(TK.reason), msg = t.talkMsg[TK.reason] || t.talkMsg.other;
+  const isErr = errs.includes(TK.reason), msg = TK.reason === "limit" ? tkLimitText(t) : (t.talkMsg[TK.reason] || t.talkMsg.other);
   const words = {ready: [t.talkReady, t.talkReadyHint], connecting: [t.talkConnecting, t.talkConnectingHint], speaking: [t.talkSpeaking, t.talkSpeakingHint], thinking: [t.talkThinking, t.talkThinkingHint],
                  listening: [t.talkListening, t.talkListeningHint], ended: [isErr ? t.talkCant : t.talkEnded, msg]}[ph];
   c.querySelector(".tkline").textContent = words[0];
@@ -2807,9 +2807,17 @@ function tkBegin() {
   tkPaint();
   t.start({storyId: Number(TK.storyId), lang: TK.lang, style: tkStyle()});
 }
-function tkEnded({reason}) {
+// The limit resets on the clock: every XX:00, Indian Standard Time. The server says when (an IST midnight for the daily backstop);
+// without its answer the next IST hour is worked out here (IST is UTC+5:30 all year).
+function tkLimitText(t) {
+  let at = TK.resetsAt ? new Date(TK.resetsAt) : null;
+  if (!at || isNaN(at)) { const H = 3600000, O = 19800000; at = new Date(Math.ceil((Date.now() + O + 1) / H) * H - O); }
+  const time = new Intl.DateTimeFormat(lang === "hi" ? "hi-IN" : "en-IN", {hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata"}).format(at) + " IST";
+  return (TK.limitScope === "day" ? t.talkMsg.limitDay : t.talkMsg.limitHour).replace("{t}", time);
+}
+function tkEnded({reason, resetsAt, scope}) {
   if (TK.ui === "closed" || reason === "stopped") return;      // we stopped it ourselves
-  TK.phase = "ended"; TK.reason = reason; TK.cap = "";
+  TK.phase = "ended"; TK.reason = reason; TK.cap = ""; TK.resetsAt = reason === "limit" ? resetsAt || null : null; TK.limitScope = scope || "hour";
   tkUnlight();
   if (!me && (reason === "network" || reason === "login")) {   // the session was ended elsewhere: sign in again
     tkEndAll({noHistory: true});
@@ -2819,7 +2827,7 @@ function tkEnded({reason}) {
   }
   if (TK.ui === "mini") {                                        // nobody is looking at the card: say it and let the button go
     const t = T[lang];
-    toast(t.talkMsg[reason] || t.talkMsg.other);
+    toast(reason === "limit" ? tkLimitText(t) : (t.talkMsg[reason] || t.talkMsg.other));
     tkEndAll({noHistory: true});
   } else tkPaint();
 }

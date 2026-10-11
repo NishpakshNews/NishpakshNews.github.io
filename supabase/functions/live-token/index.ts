@@ -27,7 +27,7 @@ const FEED_URL = Deno.env.get("FEED_URL") || "https://raw.githubusercontent.com/
 const KEYS = [...new Set(["GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3", "GEMINI_API_KEY_4", "GEMINI_API_KEY_5"]
   .map((k) => (Deno.env.get(k) || "").trim()).filter(Boolean))];
 
-const HOURLY = Number(Deno.env.get("LIVE_HOURLY")) || 3;   // conversations per reader in any rolling hour (secret LIVE_HOURLY changes it)
+const HOURLY = Number(Deno.env.get("LIVE_HOURLY")) || 3;   // conversations per reader in each clock hour (XX:00 to XX:00, IST) (secret LIVE_HOURLY changes it)
 const DAILY = 20;              // a high backstop per reader per IST day: a bug or a script cannot burn the site's Gemini quota
 const CONCURRENT = Number(Deno.env.get("LIVE_CONCURRENT")) || 3;   // at the same moment, whole site; a guess to be tuned (Gemini 3.8 Live: 65K tokens a minute per project). Set the secret LIVE_CONCURRENT to change it
 // How long the reader must be quiet before the guide starts answering: every answer waits this long first. Google's guidance is
@@ -150,7 +150,7 @@ Deno.serve(async (req) => {
     });
     if (error) return reply({ error: error.message }, 500);
     const st = String(data?.status || "");
-    if (st === "limit") return reply({ error: "limit", hourly: HOURLY, retry_minutes: data.retry_minutes }, 429);
+    if (st === "limit") return reply({ error: "limit", hourly: HOURLY, scope: data.scope, resets_at: data.resets_at, retry_minutes: data.retry_minutes }, 429);
     if (st === "busy") return reply({ error: "busy" }, 503);
     if (st === "gone") return reply({ error: "gone" }, 404);
     if (st !== "ok") return reply({ error: st || "bad request" }, st === "login" ? 401 : 400);
