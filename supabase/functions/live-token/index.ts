@@ -27,7 +27,7 @@ const KEYS = [...new Set(["GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_
   .map((k) => (Deno.env.get(k) || "").trim()).filter(Boolean))];
 
 const DAILY = 3;               // conversations per reader per IST day
-const CONCURRENT = 4;          // at the same moment, whole site (Gemini 3.8 Live: 65K tokens a minute per project)
+const CONCURRENT = Number(Deno.env.get("LIVE_CONCURRENT")) || 3;   // at the same moment, whole site; a guess to be tuned (Gemini 3.8 Live: 65K tokens a minute per project). Set the secret LIVE_CONCURRENT to change it
 const MAX_SECONDS = 480;       // the longest conversation: the token itself expires then
 const GEMINI = "https://generativelanguage.googleapis.com/v1beta/auth_tokens";
 
@@ -98,6 +98,26 @@ Deno.serve(async (req) => {
   try { b = await req.json(); } catch { return reply({ error: "bad request" }, 400); }
   const lang = b.lang === "hi" ? "hi" : "en";
 
+  // the browser says it is still there (every 15 s): a conversation that goes quiet for 45 s frees its place
+  if (b.ping !== undefined) {
+    const id = Number(b.ping);
+    try {
+      const user = await me(req);
+      if (user && Number.isInteger(id) && id > 0) await admin.rpc("live_talk_ping", { p_id: id, p_reader: user.id });
+    } catch { /* the next ping will do */ }
+    return reply({ ok: true });
+  }
+
+  // the browser says a conversation is over: its place is free at once
+  if (b.end !== undefined) {
+    const id = Number(b.end);
+    try {
+      const user = await me(req);
+      if (user && Number.isInteger(id) && id > 0) await admin.rpc("live_talk_end", { p_id: id, p_reader: user.id });
+    } catch { /* nothing to do: the row expires by its age anyway */ }
+    return reply({ ok: true });
+  }
+
   // the guide asked to read another article (the function read_article): no limit is used, the reader must be logged in
   if (b.read !== undefined) {
     const id = Number(b.read);
@@ -149,7 +169,7 @@ Deno.serve(async (req) => {
     return reply({
       token, model: MODEL, lang: brief.lang, headline: brief.headline, instruction: brief.instruction,
       voice: style.voice, language_code: SEND_LANGUAGE_CODE ? languageCode(brief.lang, style.accent) : null,
-      sentence_ids: brief.sentenceIds, max_seconds: MAX_SECONDS, daily: DAILY,
+      sentence_ids: brief.sentenceIds, max_seconds: MAX_SECONDS, daily: DAILY, session: data.id,
     });
   } catch (e) {
     return reply({ error: String((e as Error).message || e) }, 500);

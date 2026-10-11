@@ -27,6 +27,7 @@ export const IN_RATE = 16000;
 export const OUT_RATE = 24000;
 const INTRO_WAIT_MS = 15000;            // how long the intro waits for the server to be ready
 const INTRO_MAX_MS = 30000;             // and for the guide to finish saying it
+const PING_SECONDS = 15;               // how often the page tells the function the conversation is still going
 export const IDLE_SECONDS = 45;          // nobody speaking (either side) this long: the conversation ends
 export const WRAP_UP_SECONDS = 20;       // before the longest conversation ends, the guide is asked to close
 
@@ -210,7 +211,7 @@ export function createTalk(opts) {
   const o = { introBase: "./", onState() {}, onHighlight() {}, onTranscript() {}, onLevel() {}, onEnd() {}, onError() {}, ...opts };
   let state = "idle", ctx = null, stream = null, ws = null, proto = null, grant = null;
   let tapNode = null, tapSource = null, silent = null, muted = false, micOn = false, ending = false;
-  let introDone = false, ready = false, introStop = null, introWake = null, readyWake = null;
+  let pingTimer = null, introDone = false, ready = false, introStop = null, introWake = null, readyWake = null;
   let nextAt = 0, quietTimer = null, idleTimer = null, maxTimer = null, wrapTimer = null, lastActive = 0;
   const playing = new Set();
   let runId = 0;                 // each start() is a run; stop() during connecting must stop THAT run from carrying on
@@ -351,6 +352,23 @@ export function createTalk(opts) {
     ws.onclose = (e) => { if (!ending) end(ready ? "closed" : "refused", `${e.code} ${e.reason || ""}`.trim()); };
   }
 
+  // tell the function the conversation is over, so its place on the site is free at once (best effort)
+  function endSession() {
+    clearInterval(pingTimer);
+    const id = grant?.session;
+    if (!id) return;
+    grant.session = null;
+    Promise.resolve(o.getHeaders()).then((h) => fetch(o.tokenUrl, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json", ...h }, body: JSON.stringify({ end: id }) })).catch(() => {});
+  }
+
+  function startPings() {         // "still here", so a closed tab or a dead phone frees its place within 45 s
+    const id = grant?.session;
+    if (!id) return;
+    pingTimer = setInterval(() => {
+      Promise.resolve(o.getHeaders()).then((h) => fetch(o.tokenUrl, { method: "POST", headers: { "Content-Type": "application/json", ...h }, body: JSON.stringify({ ping: id }) })).catch(() => {});
+    }, PING_SECONDS * 1000);
+  }
+
   function end(reason, detail) {
     if (ending) return;
     ending = true;
@@ -362,6 +380,7 @@ export function createTalk(opts) {
     try { tapNode && (tapNode.port ? (tapNode.port.onmessage = null) : (tapNode.onaudioprocess = null)); tapNode?.disconnect(); tapSource?.disconnect(); } catch { /* done */ }
     try { stream?.getTracks().forEach((t) => t.stop()); } catch { /* done */ }
     try { ctx && ctx.state !== "closed" && ctx.close(); } catch { /* done */ }
+    endSession();
     set("ended");
     if (reason === "refused" || reason === "error") o.onError({ code: reason, message: detail || reason });
     o.onEnd({ reason, detail });
@@ -389,6 +408,7 @@ export function createTalk(opts) {
       lang = grant.lang || lang;
       if (o.onGrant) o.onGrant({ lang, headline: grant.headline, instruction: grant.instruction, sentenceIds: grant.sentence_ids, maxSeconds: grant.max_seconds, daily: grant.daily });
       openSocket();
+      startPings();
       await playIntro(lang);
       if (stale()) return;
       introDone = true;
