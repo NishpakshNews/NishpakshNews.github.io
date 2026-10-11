@@ -82,6 +82,35 @@ export function base64ToInt16(b64) {
 
 export const rms = (f) => { let s = 0; for (let i = 0; i < f.length; i++) s += f[i] * f[i]; return f.length ? Math.sqrt(s / f.length) : 0; };
 
+// -- the noise gate (pure) ------------------------------------------------------------------------------------
+// Background noise (a fan, traffic, a TV, people talking far away) used to go to Gemini as it was, so its own speech detector heard
+// "someone still talking" and never ended the reader's turn: the guide kept listening instead of answering (owner, Oct 11 2026).
+// The gate learns how loud the room is and lets audio through only while something clearly louder than that is happening (the
+// reader). Everything else is sent as silence (zeros, so the stream keeps its timing), which the server's detector reads as "the
+// reader has finished". The floor follows the quietest recent level: down at once, up slowly (a long sentence must not raise it
+// into the speech), and it starts from the first 0.6 s of the microphone. Numbers are first guesses, to be tuned by ear.
+export const GATE = { minLevel: 0.02, ratio: 2.5, hangMs: 400, riseMs: 8000, maxFloor: 0.03, warmMs: 600 };
+
+export class NoiseGate {
+  constructor(opts = {}) {
+    this.c = { ...GATE, ...opts };
+    this.floor = null; this.age = 0; this.lastOpen = -Infinity; this.open = false;
+  }
+  /** One chunk: its rms level and its length in ms. Returns true when the chunk is the reader's voice (let it through). */
+  process(level, ms) {
+    const c = this.c;
+    this.age += ms;
+    if (this.floor === null) this.floor = Math.min(level, c.maxFloor);
+    else if (this.age < c.warmMs) this.floor = Math.min(c.maxFloor, this.floor + (level - this.floor) * 0.3);       // getting to know the room
+    else if (level < this.floor) this.floor = this.floor + (level - this.floor) * 0.5;                                    // quieter: at once
+    else this.floor = Math.min(c.maxFloor, this.floor + (level - this.floor) * Math.min(1, ms / c.riseMs));             // louder: slowly
+    const threshold = Math.max(c.minLevel, this.floor * c.ratio);
+    if (level > threshold) this.lastOpen = this.age;
+    this.open = this.age - this.lastOpen <= c.hangMs;
+    return this.open;
+  }
+}
+
 // -- the protocol (pure) --------------------------------------------------------------------------------------
 
 const HIGHLIGHT = {
@@ -242,12 +271,14 @@ export function createTalk(opts) {
     silent = ctx.createGain();
     silent.gain.value = 0;                // the tap must be connected to run, but must not be heard
     silent.connect(ctx.destination);
+    const gate = new NoiseGate();
     const onChunk = (f32) => {
       if (muted || !ws || ws.readyState !== 1) return;
       const level = rms(f32);
-      o.onLevel(level);
-      if (level > 0.02) { touch(); if (!playing.size && state !== "speaking") { voiced = true; lastVoice = Date.now(); if (state === "thinking") set("listening"); } }   // not while the guide speaks: its own voice may leak into the microphone   // talking again: the thinking was early
-      ws.send(JSON.stringify({ realtimeInput: { audio: { data: int16ToBase64(floatTo16kPcm(f32, ctx.sampleRate)), mimeType: `audio/pcm;rate=${IN_RATE}` } } }));
+      const voice = gate.process(level, (f32.length / ctx.sampleRate) * 1000);      // the reader, not the room
+      o.onLevel(voice ? level : 0);
+      if (voice) { touch(); if (!playing.size && state !== "speaking") { voiced = true; lastVoice = Date.now(); if (state === "thinking") set("listening"); } }   // not while the guide speaks: its own voice may leak into the microphone   // talking again: the thinking was early
+      ws.send(JSON.stringify({ realtimeInput: { audio: { data: int16ToBase64(floatTo16kPcm(voice ? f32 : new Float32Array(f32.length), ctx.sampleRate)), mimeType: `audio/pcm;rate=${IN_RATE}` } } }));
     };
     try {
       const url = URL.createObjectURL(new Blob([WORKLET], { type: "application/javascript" }));

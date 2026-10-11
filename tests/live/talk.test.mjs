@@ -1,7 +1,7 @@
 // node --test tests/live
 import test from "node:test";
 import assert from "node:assert/strict";
-import { LiveProtocol, setupMessage, floatTo16kPcm, pcm16ToFloat32, int16ToBase64, base64ToInt16, rms, createTalk, IN_RATE } from "../../live/talk.js";
+import { LiveProtocol, setupMessage, floatTo16kPcm, pcm16ToFloat32, int16ToBase64, base64ToInt16, rms, createTalk, IN_RATE, NoiseGate } from "../../live/talk.js";
 
 test("the module loads in a plain runtime and only touches the browser when started", () => {
   const t = createTalk({ tokenUrl: "x", getHeaders: async () => ({}) });
@@ -143,4 +143,40 @@ test("setup carries the chosen voice, and a language code only when one is given
   assert.equal(b.speechConfig.languageCode, "en-IN");
   const c = setupMessage({ model: "m", instruction: "R", languageCode: "hi-IN", nested: true }).setup;
   assert.equal(c.generationConfig.speechConfig.languageCode, "hi-IN");
+});
+
+// -- the noise gate: background noise must not keep the reader's turn open ----------------------------------------
+const feed = (g, level, ms, step = 32) => { const out = []; for (let t = 0; t < ms; t += step) out.push(g.process(level, step)); return out; };
+
+test("steady room noise (a fan, traffic) is shut out, once the gate knows the room", () => {
+  const g = new NoiseGate();
+  feed(g, 0.012, 1000);
+  assert.ok(feed(g, 0.012, 3000).every((o) => !o));
+  const g2 = new NoiseGate();                   // a noisier room, still below what the gate treats as speech
+  feed(g2, 0.03, 1000);
+  assert.ok(feed(g2, 0.03, 3000).every((o) => !o));
+});
+
+test("speech over the noise opens it at once, and it closes shortly after the reader stops", () => {
+  const g = new NoiseGate();
+  feed(g, 0.02, 1000);
+  assert.equal(g.process(0.15, 32), true);      // the first chunk of speech is let through
+  assert.ok(feed(g, 0.15, 6000).every(Boolean), "a long sentence is never cut: the floor cannot climb into the speech");
+  feed(g, 0.02, 500);                           // past the hangover
+  assert.equal(g.open, false);
+  assert.ok(feed(g, 0.02, 2000).every((o) => !o), "noise after the reader stopped goes through as silence, so the turn can end");
+});
+
+test("a breath between words does not close the gate; a real pause does", () => {
+  const g = new NoiseGate();
+  feed(g, 0.01, 1000);
+  feed(g, 0.12, 500);
+  assert.ok(feed(g, 0.01, 250).every(Boolean));
+  assert.equal(feed(g, 0.01, 600).pop(), false);
+});
+
+test("silence in a quiet room never opens the gate; the reader talking from the first moment still gets through", () => {
+  assert.ok(feed(new NoiseGate(), 0.001, 2000).every((o) => !o));
+  const g = new NoiseGate();                    // loud from the very first chunk: the floor is capped, so speech still passes
+  assert.ok(feed(g, 0.12, 3000).every(Boolean));
 });
