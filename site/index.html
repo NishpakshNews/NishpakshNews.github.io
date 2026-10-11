@@ -390,17 +390,19 @@
   .hbw { overflow: hidden; border-radius: 0 0 22px 22px; }
   .hbgr { height: 98px; background-size: 100% 98px; }
   .wmrow { position: relative; height: 30px; display: flex; align-items: center; justify-content: center; }
-  .wmrow .wordmark { line-height: 30px; padding: 0 66px; border: 0; background: none; color: inherit; cursor: pointer; }
+  .wmrow .wordmark { line-height: 30px; padding: 0 78px; border: 0; background: none; color: inherit; cursor: pointer; }
   /* the menu and the refresh button share one pill, made like the language pill: a dark translucent pill, white
      circles inside (owner, Oct 11 2026) */
-  .cpill { position: absolute; left: 0; top: 0; z-index: 1; display: flex; align-items: center; gap: 2px; height: 30px; padding: 2px;
+  .cpill { position: absolute; left: 0; top: 0; z-index: 1; display: flex; align-items: center; height: 30px; padding: 2px;
            background: rgba(18,12,30,0.34); border: 1px solid rgba(255,255,255,0.22); border-radius: 999px;
            -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
-  .cpill button { position: relative; flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: #fff; color: #1f2550;
+  /* as the language pill's two segments: the menu is the white one (like the selected EN), refresh the plain one */
+  .cpill button { position: relative; flex: none; min-width: 34px; height: 24px; padding: 0 9px; border: 0; border-radius: 999px; background: transparent; color: #fff;
                   display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 12.5px; font-weight: 700;
                   transition: background-color 200ms ease, color 200ms ease; }
-  .cpill button::after { content: ""; position: absolute; inset: -4px -1px; }
-  .cpill button:active, .mbtn[aria-expanded="true"] { background: #dfe2f2; }
+  .cpill .mbtn { background: #fff; color: #1f2550; }
+  .cpill .mbtn[aria-expanded="true"] { background: #dfe2f2; }
+  .cpill .rbtn:active { background: rgba(255,255,255,0.22); }
   .cpill svg { display: block; }
   .rbtn.spin svg { animation: rspin 800ms linear infinite; }
   @keyframes rspin { to { transform: rotate(360deg); } }
