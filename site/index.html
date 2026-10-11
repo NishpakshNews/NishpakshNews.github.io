@@ -192,17 +192,6 @@
   #sheet.anim .hbox .hpic .hsharp { transition: --m1 340ms ease, --m2 340ms ease; }
   .hbox .hpic img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; display: block;
                     transform-origin: 50% 50%; transform: var(--it, none); }
-  /* the blurred copy ends in a hard edge (the box clips it); the card hides that under the white wash. While the wash is
-     still coming in, a mask fades the copy's bottom, and closes up as the wash completes (owner, Oct 11 2026: a sharp line
-     showed at the bottom of the picture while coming out of an article) */
-  @property --s1 { syntax: "<percentage>"; inherits: false; initial-value: 100%; }
-  @property --s2 { syntax: "<percentage>"; inherits: false; initial-value: 100%; }
-  .hbox .hpic .hsoft { position: absolute; inset: 0; --s1: 100%; --s2: 100%;
-                       -webkit-mask-image: linear-gradient(to bottom, #000 var(--s1), transparent var(--s2)); mask-image: linear-gradient(to bottom, #000 var(--s1), transparent var(--s2)); }
-  #sheet.open .hbox .hpic .hsoft { --s1: 50%; --s2: 100%; }
-  #sheet.anim .hbox .hpic .hsoft { transition: --s1 200ms ease, --s2 200ms ease; }
-  #sheet.anim:not(.open) .hbox .hpic .hsoft { transition: --s1 300ms ease 80ms, --s2 300ms ease 80ms; }
-  #sheet.anim:not(.open) .hbox .hpic img.soft { transition: transform 460ms var(--ease), opacity 300ms ease 80ms; }
   .hbox .hpic img.soft { filter: blur(var(--bl, 16px)) saturate(1.1); transform: var(--it2, translate(0px, 0px) scale(1) scale(1.15)); }
   #sheet.open .hbox .hpic img.soft { opacity: 0; transform: translate(0px, 0px) scale(1) scale(1.15); }
   #sheet.anim .hbox .hpic img.soft { transition: transform 460ms var(--ease), opacity 340ms ease; }
@@ -380,7 +369,7 @@
   .greeting.swap { opacity: 0; }
   @media (prefers-reduced-motion: reduce) {
     nav.sections, .sb, .track { transition-duration: 1ms !important; transition-delay: 0ms !important; }
-    #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer, #sheet.anim .hbox .hpic, #sheet.anim .hbox .hpic img, #sheet.anim .hbox .hpic .hsharp, #sheet.anim .hbox .hpic .hsoft, #sheet.anim .hbox .hpic .hwash, #sheet.anim .hbox .meta, #sheet.anim .hbox h1, #sheet.anim .hbox .hpic .pic-credit { transition-duration: 1ms !important; transition-delay: 0ms !important; }
+    #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer, #sheet.anim .hbox .hpic, #sheet.anim .hbox .hpic img, #sheet.anim .hbox .hpic .hsharp, #sheet.anim .hbox .hpic .hwash, #sheet.anim .hbox .meta, #sheet.anim .hbox h1, #sheet.anim .hbox .hpic .pic-credit { transition-duration: 1ms !important; transition-delay: 0ms !important; }
   }
 
   /* trial_version_2.1 (owner, Oct 9 2026): the menu at the left of the wordmark; the menu, the language switch and the
@@ -691,8 +680,8 @@ async function getJSON(url, opts = {}, ms = 6000) {
     return await r.json();
   } finally { clearTimeout(timer); }
 }
-function api(path) {
-  return getJSON(`${SUPABASE_URL}/rest/v1/${path}`, {headers: {apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`}}, 12000);
+function api(path, ms = 12000) {
+  return getJSON(`${SUPABASE_URL}/rest/v1/${path}`, {headers: {apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`}}, ms);
 }
 
 /* ---------- data: the feed first, Supabase if the feed is missing ---------- */
@@ -722,6 +711,34 @@ function barCounts(paras) {                   // as nishpaksh/feed.py bar_counts
   }
   return c;
 }
+/* The time of a stored stamp as milliseconds: the feed and the database both give UTC without a "Z", which
+   `new Date()` would read as local time (and mix with stamps that do carry an offset). */
+function utcMs(ts) { return Date.parse(/Z|[+-]\d\d:?\d\d$/.test(ts) ? ts : ts + "Z"); }
+const knownAt = new Map();     // story id -> the `at` of its card: part of its file's address, so a story is never read
+                               // from a copy somebody's request left in a cache (and a not-yet-published 404 is not reused)
+const ROW_SELECT = "story_id,updated_at,headline_en,headline_hi,pe:payload_en->narrative->paragraphs," +
+  "ph:payload_hi->narrative->paragraphs,counts:payload_en->counts,thread:payload_en->thread," +
+  "parents:payload_en->parents,cat:payload_en->category,places:payload_en->places,people:payload_en->people";
+function rowCard(r, l) {       // a card from a database row (as nishpaksh/feed.py card())
+  const words = (r.pe || []).reduce((n, para) => n + (para || []).reduce((m, s) => m + String(s.text || "").split(/\s+/).filter(Boolean).length, 0), 0);
+  return {
+    id: r.story_id, at: new Date(utcMs(r.updated_at)).toISOString().slice(0, 19), thread: r.thread || r.story_id,
+    ongoing: !!(r.parents && r.parents.length), h: (l === "hi" && r.headline_hi) || r.headline_en,
+    paras: cardText(l === "hi" && r.ph && r.ph.length ? r.ph : r.pe), bar: barCounts(r.pe),
+    n: (r.counts || {}).independent_sources || 0, cat: normCat(r.cat), w: words,
+    pl: r.places || [], pp: (r.people || []).slice(0, 6)};
+}
+/* Articles the database has that the feed does not (yet). The feed is a set of files on GitHub's CDN, which keeps
+   serving the old ones for a while after a new set is pushed, and a push can fail: a notification could arrive for an
+   article the home page did not show until it was opened a few times (owner, Oct 11 2026). The database copy is made
+   before the notification is sent, so asking it for anything newer than the feed's newest card (a few hundred bytes
+   when there is nothing) makes the home page as fresh as the notification. */
+async function newerThanFeed(l, newestMs) {
+  const since = new Date(newestMs + 1000).toISOString().slice(0, 19);     // the feed's stamps are whole seconds
+  // 4 s: this must not hold up the home page when the database is slow (the feed alone is then shown)
+  const rows = await api(`published?select=${ROW_SELECT}&updated_at=gt.${since}&order=updated_at.desc&limit=30`, 4000);
+  return rows.filter(r => r.pe && r.pe.length).map(r => rowCard(r, l));
+}
 async function loadCards(l) {
   if (cardCache[l]) return cardCache[l];
   let stories = null;
@@ -735,24 +752,31 @@ async function loadCards(l) {
     if (d && Array.isArray(d.stories) && d.stories.length) stories = d.stories;
     if (d && d.sections && d.sections.tree3) SECTIONS[l] = d.sections;   // a feed from before Domains: the built-in names
   } catch (e) { /* the feed is missing or slow: read the database */ }
-  if (!stories) {
-    const rows = await api("published?select=story_id,updated_at,headline_en,headline_hi," +
-      "pe:payload_en->narrative->paragraphs,ph:payload_hi->narrative->paragraphs,counts:payload_en->counts," +
-      "thread:payload_en->thread,parents:payload_en->parents,cat:payload_en->category&order=updated_at.desc&limit=200");
-    stories = rows.filter(r => r.pe && r.pe.length).map(r => ({
-      id: r.story_id, at: r.updated_at, thread: r.thread || r.story_id, ongoing: !!(r.parents && r.parents.length),
-      h: (l === "hi" && r.headline_hi) || r.headline_en, paras: cardText(l === "hi" && r.ph && r.ph.length ? r.ph : r.pe),
-      bar: barCounts(r.pe), n: (r.counts || {}).independent_sources || 0, cat: normCat(r.cat)}));
+  if (stories) {
+    // whatever the database has newer than the feed (see newerThanFeed); a failure only means the feed's view
+    try {
+      const newest = Math.max(...stories.map(s => utcMs(s.at)));
+      const extra = await newerThanFeed(l, newest);
+      if (extra.length) {
+        const ids = new Set(extra.map(c => String(c.id)));
+        stories = extra.concat(stories.filter(s => !ids.has(String(s.id))));
+      }
+    } catch (e) { /* the feed alone */ }
   }
+  if (!stories) {
+    const rows = await api(`published?select=${ROW_SELECT}&order=updated_at.desc&limit=200`);
+    stories = rows.filter(r => r.pe && r.pe.length).map(r => rowCard(r, l));
+  }
+  for (const s of stories) knownAt.set(String(s.id), s.at);
   // one card per thread: its latest development, newest first (owner, Oct 6 2026)
   const byThread = new Map();
   for (const s of stories) {
     const k = s.thread || s.id, cur = byThread.get(k);
     s.cat = normCat(s.cat);
     if (!cur) byThread.set(k, {...s, size: 1});
-    else { cur.size += 1; if (new Date(s.at) > new Date(cur.at)) byThread.set(k, {...s, size: cur.size}); }
+    else { cur.size += 1; if (utcMs(s.at) > utcMs(cur.at)) byThread.set(k, {...s, size: cur.size}); }
   }
-  const all = [...byThread.values()].sort((a, b) => new Date(b.at) - new Date(a.at));
+  const all = [...byThread.values()].sort((a, b) => utcMs(b.at) - utcMs(a.at));
   cardCache[l] = all;
   return all;
 }
@@ -770,8 +794,11 @@ function loadStory(id) {
   id = String(id);
   if (!storyCache.has(id)) {
     const p = (async () => {
-      const u = `${FEED_URL}/story/${encodeURIComponent(id)}.json`;      // 15 s and a second try before the database (egress)
-      try { return await getJSON(u, {}, 15000).catch(() => getJSON(u, {}, 15000)); } catch (e) { /* fall through */ }
+      // ?v=: the story's own stamp, else the minute. A file asked for before it reached the CDN is answered "missing"
+      // from the cache for minutes; a new address is not (owner, Oct 11 2026). no-cache: a story's colours mature
+      const u = `${FEED_URL}/story/${encodeURIComponent(id)}.json?v=${encodeURIComponent(knownAt.get(id) || Math.floor(Date.now() / 60000))}`;
+      // 15 s and a second try before the database (egress)
+      try { return await getJSON(u, {cache: "no-cache"}, 15000).catch(() => getJSON(u, {cache: "no-cache"}, 15000)); } catch (e) { /* fall through */ }
       try { const rows = await api(`published?story_id=eq.${encodeURIComponent(id)}&select=*`); if (rows.length) return rows[0]; } catch (e) { /* fall through */ }
       return await fromArchive(id);
     })();
@@ -1045,7 +1072,7 @@ function setSheetPicture(id) {
   const pic = c && c.img && safeUrl(c.img.src) ? c.img : null;
   const box = $("hpic");
   hbox.classList.toggle("has-pic", !!pic);
-  box.innerHTML = pic ? `<div class="hsoft"><img class="soft" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"></div><div class="hsharp"><img class="sharp" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"></div><div class="hwash"></div>` +
+  box.innerHTML = pic ? `<img class="soft" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"><div class="hsharp"><img class="sharp" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"></div><div class="hwash"></div>` +
     (safeUrl(pic.href) ? `<a class="pic-credit" href="${esc(pic.href)}" target="_blank" rel="noopener noreferrer">${esc(T[lang].photo)}: ${esc(pic.by || "")}</a>`
                        : `<span class="pic-credit">${esc(T[lang].photo)}: ${esc(pic.by || "")}</span>`) : "";
   const img = box.querySelector("img.sharp");
@@ -1529,16 +1556,47 @@ let lastH = 0;
 new ResizeObserver(() => { const h = slotHeight(); if (h !== lastH) { lastH = h; if (cards.length) jumpTo(current); } }).observe(track);
 
 // coming back to the page after a while: fresh news and greeting
-let hiddenAt = 0;
+// Fresh news (owner, Oct 11 2026): a notification could arrive, and the reader open the page, before the home page had
+// the article, and only a few opens later did it appear. The page is now asked again when it comes back after 30
+// seconds (it was 2 minutes), when the service worker says a notification arrived (a page kept aside is not closed),
+// when the network returns, and every 3 minutes while it is looked at (a few hundred bytes: newerThanFeed).
+let hiddenAt = 0, freshWhileAway = false, freshTimer = null;
+function refreshDeck() {
+  const keep = cards[current] && cards[current].id;
+  delete cardCache.en; delete cardCache.hi;
+  if (openId) return;                       // an open article is not moved under the reader: the deck is read again on closing
+  showDeck(keep);
+}
+function wantFresh(story) {                 // news is waiting: read the home page again (and again, if the story is not there yet)
+  if (document.hidden) { freshWhileAway = true; return; }
+  refreshDeck();
+  clearTimeout(freshTimer);
+  if (story && !knownAt.has(String(story))) {
+    let n = 0;
+    const again = () => {
+      if (knownAt.has(String(story)) || ++n > 3 || document.hidden) return;
+      refreshDeck(); freshTimer = setTimeout(again, 8000 * n);
+    };
+    freshTimer = setTimeout(again, 6000);
+  }
+}
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) { hiddenAt = Date.now(); return; }
   if (greeted) $("greet").textContent = greeting();
-  if (hiddenAt && Date.now() - hiddenAt > 2 * 60000) {
-    const keep = cards[current] && cards[current].id;
-    delete cardCache.en; delete cardCache.hi;
-    showDeck(keep);
+  if (freshWhileAway || (hiddenAt && Date.now() - hiddenAt > 30000)) {
+    freshWhileAway = false;
+    refreshDeck();
   } else tickAgo();
 });
+addEventListener("pageshow", e => { if (e.persisted) refreshDeck(); });   // restored from the back/forward cache
+addEventListener("online", () => { if (!document.hidden) refreshDeck(); });
+setInterval(async () => {
+  if (document.hidden || openId || !cardCache[lang] || !cardCache[lang].length) return;
+  try {
+    const newest = Math.max(...cardCache[lang].map(c => utcMs(c.at)));
+    if ((await newerThanFeed(lang, newest)).length) refreshDeck();
+  } catch (e) { /* try again in 3 minutes */ }
+}, 3 * 60000);
 // "x min ago" stays live while the page is open (owner, Oct 11 2026: it stopped at what it said when the card was made)
 let metaAt = null, metaPre = "";
 function tickAgo() {
@@ -2312,7 +2370,8 @@ function openRecapLink(day) {
 addEventListener("hashchange", () => { if (/^#\/recap/.test(location.hash)) route(true); });
 if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", e => {
   const d = e.data || {};
-  if (d.np === "open" && typeof d.hash === "string" && /^#\//.test(d.hash)) location.hash = d.hash;
+  if (d.np === "fresh") { wantFresh(d.story); return; }       // a notification arrived (sw.js)
+  if (d.np === "open" && typeof d.hash === "string" && /^#\//.test(d.hash)) { location.hash = d.hash; wantFresh(d.story); }
 });
 paintMe();
 if (me) { loadFollows(); countUnread(); }

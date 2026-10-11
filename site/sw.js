@@ -1,7 +1,7 @@
 // Nishpaksh offline support (nishpaksh_version_1.0). The page itself and its icons are kept for
 // offline use; news (the feed, articles) is always asked for fresh and the last copy is used offline;
 // fonts are kept once loaded.
-const VERSION = "np-main-32";
+const VERSION = "np-main-33";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-maskable-192.png",
                "./icon-maskable-512.png", "./apple-touch-icon.png", "./mark.png"];
 
@@ -12,14 +12,22 @@ self.addEventListener("activate", e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
+// The feed's files are asked for with a changing address (?m=<minute>, ?v=<time>) so a CDN never answers with an old
+// copy. Kept under one fixed address instead, so the offline copy is found again and the cache does not fill with a
+// new entry every minute (owner, Oct 11 2026).
+function keyOf(req) {
+  const u = new URL(req.url);
+  return u.hostname === "raw.githubusercontent.com" ? u.origin + u.pathname : req;
+}
 async function fresh(req) {           // network first, the saved copy when offline
   const cache = await caches.open(VERSION);
+  const key = keyOf(req);
   try {
     const r = await fetch(req);
-    if (r.ok) cache.put(req, r.clone());
+    if (r.ok) cache.put(key, r.clone());
     return r;
   } catch (err) {
-    const hit = await cache.match(req, {ignoreSearch: req.mode === "navigate"});
+    const hit = await cache.match(key, {ignoreSearch: req.mode === "navigate"});
     if (hit) return hit;
     throw err;
   }
@@ -46,8 +54,16 @@ self.addEventListener("fetch", e => {
 self.addEventListener("push", e => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (err) { d = {title: "Nishpaksh", body: e.data ? e.data.text() : ""}; }
-  e.waitUntil(self.registration.showNotification(d.title || "Nishpaksh",
-    {body: d.body || "", tag: d.tag, data: {url: d.url || "./"}, icon: "icon-192.png", badge: "icon-192.png"}));
+  // Tell every open page that there is news: a page that was put aside (a phone keeps it frozen, not closed) drops
+  // what it holds and asks again when it is looked at, so the article the notification is about is on the home page
+  // the moment the reader opens it, not after a few opens (owner, Oct 11 2026).
+  e.waitUntil(Promise.all([
+    self.registration.showNotification(d.title || "Nishpaksh",
+      {body: d.body || "", tag: d.tag, data: {url: d.url || "./", story: d.story || null},
+       icon: "icon-192.png", badge: "icon-192.png"}),
+    self.clients.matchAll({type: "window", includeUncontrolled: true}).then(cs =>
+      cs.forEach(c => c.postMessage({np: "fresh", story: d.story || null}))),
+  ]));
 });
 self.addEventListener("notificationclick", e => {
   e.notification.close();
@@ -60,7 +76,7 @@ self.addEventListener("notificationclick", e => {
       // same page and language: the open page is told which link to open (a bare navigate() to a new #hash did
       // nothing in the page, so the recap and article never opened); otherwise load the link
       if (here.origin === target.origin && here.pathname === target.pathname && here.search === target.search) {
-        c.postMessage({np: "open", hash: target.hash || ""});
+        c.postMessage({np: "open", hash: target.hash || "", story: (e.notification.data || {}).story || null});
         return;
       }
       if ("navigate" in c) { try { await c.navigate(target.href); return; } catch (err) { /* open a new window */ } }

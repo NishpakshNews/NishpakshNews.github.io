@@ -955,3 +955,23 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   (`run.writer_silent`). `published.updated_at` is the publication time.
 - The news pick puts the newest day first and the past last (`news.pick_news`); sorted by support, old
   background outranked the new development and got tied to it with "after".
+- Notification came, article not on the home page until the app was opened a few times (owner, Oct 11 2026). The
+  feed is files on raw.githubusercontent.com, which keeps serving the old ones for minutes after a force-push; the
+  minute in the address did not help when the CDN origin itself lagged, and a story file asked for too early was
+  answered "missing" from cache. Now: `publish_feed.sh` pushes with 3 tries and waits (up to 240 s) until the CDN
+  serves THIS export's `generated_at` before the notification step; the push carries the story id and `sw.js` tells
+  open pages (`np: "fresh"`), which read the home page again, and again if that story is still missing; the site asks
+  the database for anything newer than the feed's newest card (`newerThanFeed`, ~0 bytes when nothing, 4 s limit,
+  also every 3 minutes while looked at) so the home page is as fresh as the notification whatever the CDN does;
+  returning to the page refreshes after 30 s (was 2 min); story files are asked for with `?v=<stamp>` and
+  `no-cache`; times are compared as UTC (`utcMs`), not as the phone's local time; the service worker keeps feed files
+  under one address (it kept one new entry a minute). Guard: do not send notifications before the feed step.
+- Unused hourly allowances carry to later hours (owner, Oct 11 2026, `nishpaksh/carry.py`, `SETTINGS.carry_over`).
+  Gemini requests already did (`router.pace_cap` is cumulative). Now also our own: the writer's seats
+  (`desk_per_hour`, `desk_beat_seat`: the articles published since midnight Pacific are subtracted from every hour's
+  seats so far; one run takes at most `desk_carry_burst_hours` = 3 hours' worth, and gets 2 more tries per extra seat),
+  stories searched per run, Tavily pages and searches per run (spending booked in `quota_usage` as `carry:<name>`,
+  at most `carry_burst_hours` = 6 hours' worth in one run). The bank is emptied at midnight Pacific, Google's reset
+  (`router.quota_day`). Hard limits (per minute, per day, Tavily's credits) are unchanged: carrying only moves our own
+  pacing. `desk_per_hour` is therefore an average now, not a ceiling for one clock hour; set `carry_over=False` for
+  the old rule. `prep_queue` is a width (how many stories are prepared), not an hourly quota, and is unchanged.

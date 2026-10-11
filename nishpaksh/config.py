@@ -74,6 +74,15 @@ class Settings:
     tavily_searches_per_run: int = 1     # only when the free searches found nothing
     tavily_daily_cap: int = 31          # 31 x 31 days < 1,000 even if Tavily's month is not the calendar month
 
+    # carry-over (owner, Oct 11 2026): what an hour's own limits (writer seats, searched stories, Tavily pages and
+    # searches: the `*_per_run` / `desk_per_hour` numbers above) did not use is added to the next hours, until the
+    # quota day ends (midnight Pacific: when Google resets the Gemini quotas). Gemini's own requests were already
+    # paced this way (router.pace_cap). `carry_burst_hours` caps how many hours' worth one run may spend at once
+    # (the desk has its own, smaller one: each article is minutes of writing). False: every hour starts from nothing.
+    carry_over: bool = True
+    carry_burst_hours: int = 6
+    desk_carry_burst_hours: int = 3
+
     # wire-copy detection (MinHash Jaccard on 5-word shingles)
     wire_jaccard: float = 0.45
     wire_window_hours: int = 72

@@ -175,10 +175,16 @@ def pick_stories(store: Store, n: int, focus: set[int] | None = None) -> list[di
 
 
 def discover(store: Store, tavily=None, n_stories: int | None = None, until: float | None = None,
-             engines=(gnews, bing), focus: set[int] | None = None) -> dict:
-    n_stories = SETTINGS.search_stories_per_run if n_stories is None else n_stories
+             engines=(gnews, bing), focus: set[int] | None = None, bank=None) -> dict:
+    """`bank` (carry.Bank): what earlier hours of the quota day did not use is added to this run's share of searched
+    stories and of Tavily searches, and what this run spends is booked (carry.py)."""
+    n_stories = (bank.left("search_stories", SETTINGS.search_stories_per_run) if bank is not None
+                 else SETTINGS.search_stories_per_run) if n_stories is None else n_stories
+    tavily_max = (bank.left("tavily_searches", SETTINGS.tavily_searches_per_run) if bank is not None
+                  else SETTINGS.tavily_searches_per_run)
     targets = pick_stories(store, n_stories, focus)
-    stats = {"stories": len(targets), "results": 0, "new_articles": 0, "unreadable": 0, "tavily_searches": 0}
+    stats = {"stories": len(targets), "results": 0, "new_articles": 0, "unreadable": 0, "tavily_searches": 0,
+             "searched": 0, "allowed": n_stories}
     if not targets:
         return stats
     known_urls = set()
@@ -203,7 +209,7 @@ def discover(store: Store, tavily=None, n_stories: int | None = None, until: flo
                 results += gnews(query_from(hindi[0]["title"]), "hi")
             except Exception as e:  # noqa: BLE001
                 log.info("hindi search failed: %s", str(e)[:150])
-        if not results and tavily is not None and tavily.enabled and stats["tavily_searches"] < SETTINGS.tavily_searches_per_run:
+        if not results and tavily is not None and tavily.enabled and stats["tavily_searches"] < tavily_max:
             stats["tavily_searches"] += 1
             for r in tavily.search(q, days=3):
                 results.append({"title": r["title"], "link": r["url"], "outlet": None, "site": None,
@@ -243,6 +249,10 @@ def discover(store: Store, tavily=None, n_stories: int | None = None, until: flo
                 extract_failures=0, found_by="search", image=(page or {}).get("image") or ""))
             added += 1
         stats["new_articles"] += added
+        stats["searched"] += 1
         store.exec(update(stories).where(stories.c.id == s["id"]).values(last_searched_at=utcnow()))
         log.info("search [%s] story %s %r: %d results, %d new outlets", t["kind"], s["id"], q, len(results), added)
+    if bank is not None:                  # what was not searched stays in the bank for the next hours
+        bank.spend("search_stories", stats["searched"])
+        bank.spend("tavily_searches", stats["tavily_searches"])
     return stats

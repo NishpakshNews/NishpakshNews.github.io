@@ -73,6 +73,11 @@ Tavily: 1,000 credits a month, at most 31 a day (unspent credits roll forward wi
 about 5 blocked pages read per run (5 pages = 1 credit) and 1 search per run when the free searches
 find nothing. Quotas reset at midnight Pacific (12:30 pm IST).
 
+Our own hourly limits carry over too (`nishpaksh/carry.py`): what an hour did not use of the writer's seats, the
+stories searched for more outlets, and the Tavily pages and searches is added to the next hours until the quota day
+ends (midnight Pacific, as above). Gemini's request quotas already worked this way (the pacing curve in `router.py`).
+Switch it off with `carry_over = False` in `nishpaksh/config.py`.
+
 ## Setup (about 20 minutes)
 
 1. **Gemini key.** Create one at aistudio.google.com. Then check that the model names resolve:

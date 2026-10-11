@@ -75,6 +75,8 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     from . import discover
     from .tavily import Tavily
     tavily = Tavily(store, daily_cap=SETTINGS.tavily_daily_cap) if search_news else None
+    from . import carry
+    bank = carry.Bank(store)       # our own hourly limits, unused shares carried to later hours (carry.py)
 
     def step(name, fn):
         """A failing optional step is recorded and skipped, never the end of the run."""
@@ -94,12 +96,12 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         # who else covered the stories we know? found articles are grouped like any other
         # the stories being prepared for the writer (ranked in earlier runs) are searched first
         stats["search"] = step("search", lambda: discover.discover(store, tavily, until=t0 + 8 * 60,
-                                                                   focus=set(priority.queue(store))))
+                                                                   focus=set(priority.queue(store)), bank=bank))
     stats["retracted_headline_only"] = extract.retract_unreadable(store)
     if tavily is not None:
         # pages we could not read, in stories worth reading (grouped in earlier runs)
         stats["tavily_pages_read"] = step("tavily", lambda: extract.read_blocked_pages(
-            store, tavily, SETTINGS.tavily_extract_pages_per_run, focus=set(priority.queue(store))))
+            store, tavily, SETTINGS.tavily_extract_pages_per_run, focus=set(priority.queue(store)), bank=bank))
     stats["wire_assigned"] = wire.assign_wire_groups(store)
     stats["grouped"] = step("grouping", lambda: story_mod.group_stories(store, router))   # a failure must not stop reading and writing
     # only the stories worth writing are read and analysed (priority.py, owner Oct 6 2026): each story
@@ -224,6 +226,10 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     stats["tier_calls"] = {k: dict(v) for k, v in sorted(router.tier_log.items())}
     if tavily is not None:
         stats["tavily"] = {"spent_this_run": tavily.spent_this_run, "left_today": tavily.allowance_today()}
+    if carry.enabled():       # what the hours still to come may spend, besides their own share (for the run's record)
+        stats["carried"] = {k: bank.left(k, per) for k, per in (
+            ("search_stories", SETTINGS.search_stories_per_run), ("tavily_pages", SETTINGS.tavily_extract_pages_per_run),
+            ("tavily_searches", SETTINGS.tavily_searches_per_run))}
     if then_write:
         from . import desk
         stats["desk"] = desk.work(store, router)

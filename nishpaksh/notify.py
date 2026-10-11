@@ -309,7 +309,8 @@ def send_pending(store: Store, now: dt.datetime | None = None, pusher=None) -> d
         subs.setdefault(str(s["reader"]), []).append(s)
     for r in rows:
         data = {"title": r["title"] or "Nishpaksh", "body": r["body"] or "", "url": r["url"] or SITE,
-                "tag": f"{r['kind']}-{r['ref']}", "id": r["id"]}
+                "tag": f"{r['kind']}-{r['ref']}", "id": r["id"],
+                "story": r.get("story_id")}       # the page checks its home page has this article (site/sw.js)
         for s in subs.get(str(r["reader"]), []):
             status = pusher(s, data)
             host = s["endpoint"].split("/")[2] if "//" in s["endpoint"] else "?"

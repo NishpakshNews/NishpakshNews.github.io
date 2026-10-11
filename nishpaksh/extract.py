@@ -372,10 +372,15 @@ def retract_unreadable(store: Store) -> int:
     return len(ids)
 
 
-def read_blocked_pages(store: Store, tavily, max_pages: int = 5, focus: set[int] | None = None) -> int:
+def read_blocked_pages(store: Store, tavily, max_pages: int = 5, focus: set[int] | None = None, bank=None) -> int:
     """Pages our fetcher could not read, in stories worth reading, fetched through Tavily: at most
-    one per independent source per story, stories closest to publishable first."""
-    if tavily is None or not tavily.enabled or max_pages <= 0:
+    one per independent source per story, stories closest to publishable first. `bank` (carry.Bank): pages the
+    earlier hours of the quota day did not read are added to `max_pages`; what is sent now is booked."""
+    if tavily is None or not tavily.enabled:
+        return 0
+    if bank is not None:
+        max_pages = bank.left("tavily_pages", max_pages)
+    if max_pages <= 0:
         return 0
     from .wire import independence_groups, independent
     rows = store.rows(select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.agency, articles.c.wire_group,
@@ -406,7 +411,10 @@ def read_blocked_pages(store: Store, tavily, max_pages: int = 5, focus: set[int]
     pick = [a for _, _, a in wanted[:max_pages]]
     if not pick:
         return 0
+    before = tavily.spent_this_run
     got = tavily.extract([a["url"] for a in pick])
+    if bank is not None and tavily.spent_this_run > before:    # credits were spent: those pages were sent
+        bank.spend("tavily_pages", len(pick))
     n = 0
     for a in pick:
         text = re.sub(r"\n{3,}", "\n\n", (got.get(a["url"]) or "")).strip()

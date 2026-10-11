@@ -5,6 +5,7 @@ import pytest
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "settle: keep the wait for coverage to settle (editions.py)")
+    config.addinivalue_line("markers", "carry: keep the carry-over of unused hourly allowances (carry.py)")
 
 
 @pytest.fixture(autouse=True)
@@ -41,3 +42,13 @@ def pipeline_then_desk(monkeypatch):
     import functools
     import nishpaksh.run as run_mod
     monkeypatch.setattr(run_mod, "run", functools.partial(run_mod.run, then_write=True))
+
+
+@pytest.fixture(autouse=True)
+def carry_over_off(monkeypatch, request):
+    """Unused hourly allowances carry to later hours (carry.py, Oct 11 2026). Older tests are about one hour at a
+    time, so carry-over is off unless a test is about it (marked `carry`)."""
+    if request.node.get_closest_marker("carry"):
+        return
+    import nishpaksh.config as cfg
+    monkeypatch.setattr(cfg, "SETTINGS", dataclasses.replace(cfg.SETTINGS, carry_over=False))

@@ -4001,3 +4001,105 @@ def test_the_shortfall_says_which_check_failed_with_the_numbers_and_agrees_with_
             for rejected in (0, 11):
                 a = nar(covered, rejected=rejected)
                 assert (essay_shortfall(a, pay)["why"] is None) == essay_ok(a, pay), (n, covered, rejected)
+
+
+# ---------------------------------------------------------------- carry-over (owner, Oct 11 2026)
+
+def _utc(pacific_hour, minute=5, day=11):
+    """A naive UTC time that is `pacific_hour`:`minute` Pacific (PDT, UTC-7) on 11 Oct 2026."""
+    return dt.datetime(2026, 10, day, 0, minute) + dt.timedelta(hours=pacific_hour + 7)
+
+
+@pytest.mark.carry
+def test_the_quota_day_is_googles_and_its_hours_each_add_a_share():
+    from nishpaksh import carry
+    assert carry.hours_open(_utc(0)) == 1 and carry.hours_open(_utc(5)) == 6 and carry.hours_open(_utc(23)) == 24
+    assert carry.day_of(_utc(23, 59)) == "2026-10-11"
+    assert carry.day_of(_utc(24, 0)) == "2026-10-12"          # midnight Pacific: the bank is gone
+    assert carry.day_start(_utc(9)) == dt.datetime(2026, 10, 11, 7, 0)
+    # a bank of unused shares, at most one burst at a time; nothing carried across the reset
+    assert carry.left(2, 0, _utc(0)) == 2
+    assert carry.left(2, 0, _utc(3), hours=3) == 6            # 4 hours banked, burst 3 hours' worth
+    assert carry.left(2, 5, _utc(3)) == 3
+    assert carry.left(2, 8, _utc(3)) == 0
+    assert carry.left(2, 0, _utc(24, 5)) == 2                 # the new day starts from one share
+
+
+@pytest.mark.carry
+def test_unused_seats_of_earlier_hours_are_there_for_the_desk(store):
+    """Owner, Oct 11 2026: what an hour did not publish is added to the next hours."""
+    from nishpaksh import desk
+    at = _utc(4)                                              # 04:05 Pacific: five hours of seats open
+    assert desk.seats(store, at) == (6, 3)                    # capped at 3 hours' worth in one run (2 and 1 an hour)
+    for k in range(4):                                        # four published today
+        store.exec(insert(published).values(story_id=800 + k, version=1, updated_at=at - dt.timedelta(minutes=k + 1),
+                                            headline_en="h", headline_hi="h", payload_en={}, payload_hi={}))
+    general, beat = desk.seats(store, at)
+    assert general == 6 and beat == 3                         # 10 and 5 open, minus 4: still more than a burst
+    for k in range(6):
+        store.exec(insert(published).values(story_id=900 + k, version=1, updated_at=at - dt.timedelta(minutes=10 + k),
+                                            headline_en="h", headline_hi="h", payload_en={}, payload_hi={}))
+    assert desk.seats(store, at)[0] == 0                      # ten published: the general seats are spent
+    # yesterday's articles use nothing today
+    assert desk.seats(store, _utc(24, 5))[0] == 2
+
+
+@pytest.mark.carry
+def test_the_desk_writes_more_than_two_when_seats_were_banked(store, monkeypatch):
+    from nishpaksh import compose, desk, verify
+    import nishpaksh.consolidate as K
+    queue = list(range(1, 11))
+    monkeypatch.setattr(desk, "ready", lambda store, now=None: queue)
+    monkeypatch.setattr(desk, "_beats", lambda store, ids: set())
+    monkeypatch.setattr(verify, "base_verdicts", lambda *a, **k: None)
+    monkeypatch.setattr(K, "consolidate_story", lambda *a, **k: None)
+    monkeypatch.setattr(compose, "publish_story", lambda store, router, sid: compose._outcome(sid, "published"))
+    stats = desk.work(store, router=None, now=_utc(3))        # nothing published since midnight: 4 hours banked
+    assert stats["seats"]["general"] == 6 and stats["published"] == [1, 2, 3, 4, 5, 6]
+
+
+@pytest.mark.carry
+def test_unused_searches_and_tavily_pages_are_carried_until_the_day_resets(store):
+    from nishpaksh import carry
+    at = _utc(2)
+    bank = carry.Bank(store, at)
+    assert bank.left("search_stories", 10) == 30 and bank.left("tavily_pages", 5) == 15
+    bank.spend("search_stories", 4)                           # a quiet hour: 4 of the 30 open
+    assert bank.left("search_stories", 10) == 26
+    bank.spend("tavily_pages", 15)
+    assert bank.left("tavily_pages", 5) == 0
+    assert carry.Bank(store, _utc(3)).left("tavily_pages", 5) == 5      # the next hour opens its own share
+    assert carry.Bank(store, _utc(24, 5)).left("tavily_pages", 5) == 5  # the day reset: the old spending is not counted
+    # Gemini's own request counters are untouched by these bookings
+    assert all(k.startswith("carry:") for k in store.quota_load("2026-10-11"))
+
+
+@pytest.mark.carry
+def test_discover_searches_what_the_bank_allows_and_books_what_it_searched(store):
+    from nishpaksh import carry, discover
+    at = _utc(1)
+    bank = carry.Bank(store, at)
+    for k in range(3):                                        # three stories worth a search, as in the test above
+        sid = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, dirty=False, qualifies=False,
+                                                     signature=f"Police fired at protesters in Imphal on Friday {k}"))
+        for j, outlet in enumerate(["The Hindu", "Times of India", "The Indian Express"]):
+            _put(store, f"Imphal firing {k} {j}", _vec(k, jitter=j), story_id=sid, outlet=outlet)
+    calls = []
+
+    def engine(q, lang="en"):
+        calls.append(q)
+        return []
+    stats = discover.discover(store, None, engines=(engine,), bank=bank)
+    assert stats["allowed"] == 20 and stats["searched"] == stats["stories"] == len(calls) == 3
+    assert bank.spent("search_stories") == 3                  # 17 stay in the bank for the next hours
+
+
+@pytest.mark.carry
+def test_carry_over_can_be_switched_off(store, monkeypatch):
+    import nishpaksh.config as cfg
+    from nishpaksh import carry, desk
+    monkeypatch.setattr(cfg, "SETTINGS", dataclasses.replace(cfg.SETTINGS, carry_over=False))
+    assert carry.left(10, 0, _utc(5)) == 10
+    carry.Bank(store, _utc(5)).spend("search_stories", 3)
+    assert store.quota_load("2026-10-11") == {}               # nothing booked either
+    assert desk.seats(store, _utc(5)) == (2, 1)               # the hour's own seats, as before

@@ -26,6 +26,7 @@ import time
 
 from sqlalchemy import func
 
+from . import carry
 from .config import SETTINGS, database_url, gemini_api_keys, load_yaml
 from .db import Store, articles, diagnostics, insert, published, select, stories, story_links, utcnow
 from .router import GeminiBackend, Router
@@ -53,13 +54,25 @@ def _beats(store: Store, ids: list[int]) -> set[int]:
 
 
 def seats(store: Store, now: dt.datetime | None = None) -> tuple[int, int]:
-    """(general seats left, beat seats left) in this clock hour. Beat articles published this hour fill the
-    beat seat first."""
+    """(general seats left, beat seats left) for this run. Beat articles published fill the beat seat first.
+
+    Unused seats carry (carry.py, owner Oct 11 2026): every hour of the quota day (Pacific, as Google's quotas)
+    adds `desk_per_hour` general and `desk_beat_seat` beat seats; the articles published since the day began
+    use them up, and a run may take what is left of all hours so far (at most `desk_carry_burst_hours` hours'
+    worth in one run). With carry-over off the seats are the current clock hour's, as before."""
     now = now or utcnow()
+    if not carry.enabled():
+        ids = [r["story_id"] for r in store.rows(select(published.c.story_id)
+                                                 .where(published.c.updated_at >= _hour_start(now)))]
+        beat_used = min(len(_beats(store, ids)), SETTINGS.desk_beat_seat)
+        return SETTINGS.desk_per_hour - (len(ids) - beat_used), SETTINGS.desk_beat_seat - beat_used
     ids = [r["story_id"] for r in store.rows(select(published.c.story_id)
-                                             .where(published.c.updated_at >= _hour_start(now)))]
-    beat_used = min(len(_beats(store, ids)), SETTINGS.desk_beat_seat)
-    return SETTINGS.desk_per_hour - (len(ids) - beat_used), SETTINGS.desk_beat_seat - beat_used
+                                             .where(published.c.updated_at >= carry.day_start(now)))]
+    beat_cap, general_cap = carry.cap(SETTINGS.desk_beat_seat, now), carry.cap(SETTINGS.desk_per_hour, now)
+    beat_used = min(len(_beats(store, ids)), beat_cap)
+    hours = SETTINGS.desk_carry_burst_hours
+    return (min(general_cap - (len(ids) - beat_used), carry.burst(SETTINGS.desk_per_hour, hours)),
+            min(beat_cap - beat_used, carry.burst(SETTINGS.desk_beat_seat, hours)))
 
 
 def published_this_hour(store: Store, now: dt.datetime | None = None) -> int:
@@ -169,9 +182,13 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
     now = now or utcnow()
     stats = {"already_this_hour": published_this_hour(store, now), "tried": 0, "published": []}
     room, beat_room = seats(store, now)
-    room = max(0, room)
+    room, beat_room = max(0, room), max(0, beat_room)
+    stats["seats"] = {"general": room, "beat": beat_room}
     if room <= 0 and beat_room <= 0:
         return stats
+    # banked seats need more tries than one hour's: two more stories per seat beyond the hour's own
+    extra = max(0, room - SETTINGS.desk_per_hour) + max(0, beat_room - SETTINGS.desk_beat_seat)
+    max_tries = SETTINGS.desk_tries + 2 * extra
     queue = ready(store, now)
     beats = _beats(store, queue)
     stats["ready"] = len(queue)
@@ -180,7 +197,7 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
     for n, sid in enumerate(queue):
         # a try is a story the writer was asked to write; stories turned away before that (not a
         # follow-up yet, no headline) do not use one up, but at most DESK_LOOK stories are looked at
-        if (room <= 0 and beat_room <= 0) or stats["tried"] >= SETTINGS.desk_tries or n >= DESK_LOOK \
+        if (room <= 0 and beat_room <= 0) or stats["tried"] >= max_tries or n >= DESK_LOOK + 5 * extra \
                 or (until and time.time() > until):
             break
         beat = sid in beats
