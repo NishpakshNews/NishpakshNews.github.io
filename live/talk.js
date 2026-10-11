@@ -322,7 +322,7 @@ export function createTalk(opts) {
         goAway: () => end("goaway"),
       },
     });
-    ws.onopen = () => ws.send(JSON.stringify(setupMessage({ model: grant.model, instruction: grant.instruction, voice: grant.voice || undefined, languageCode: grant.language_code || null })));
+    ws.onopen = () => ws.send(JSON.stringify(setupMessage({ model: grant.model, instruction: grant.instruction, voice: grant.voice || undefined, languageCode: grant.language_code || null, nested: true })));
     ws.onmessage = async (e) => {
       try { proto.handle(JSON.parse(typeof e.data === "string" ? e.data : await e.data.text())); }
       catch { /* one bad frame does not end the conversation */ }
