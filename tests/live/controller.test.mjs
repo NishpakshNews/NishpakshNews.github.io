@@ -58,12 +58,12 @@ test("happy path: intro, then the socket says ready, then the microphone opens a
   const w = browser({ clip: true });
   const { talk, ev } = make();
   const started = talk.start({ storyId: 7, lang: "en" });
-  // the intro clip is playing: end it by hand
+  // the intro recording is playing: end it by hand (the controller waits for its length on a timer, not for onended)
   await tick(20);
   assert.deepEqual(ev.states, ["connecting", "intro"]);
   assert.match(w.sockets[0].url, /BidiGenerateContentConstrained\?access_token=auth_tokens%2Fabc$/);
   assert.equal(ev.grants[0].instruction, "RULES");
-  w.sources.at(-1).onended();
+  talk.skipIntro();
   await started;
   // the socket opens: setup goes first, with the instruction from the grant
   const ws = w.sockets[0];
@@ -210,7 +210,7 @@ test("closed while the browser is still asking for the microphone: the microphon
   assert.equal(talk.state, "ended");
 });
 
-test("closed while the token is being fetched: no socket is opened, no intro plays, the microphone is off", async () => {
+test("closed while the token is being fetched: no socket is opened, the intro recording is silenced, the microphone is off", async () => {
   let give; const grantGate = new Promise((r) => { give = r; });
   const w = browser({ grantGate, clip: true });
   const { talk, ev } = make();
@@ -222,7 +222,8 @@ test("closed while the token is being fetched: no socket is opened, no intro pla
   await tick(10);
   assert.equal(w.sockets.length, 0);
   assert.ok(w.tracks.every((t) => t.stopped));
-  assert.ok(!ev.states.includes("intro"));
+  assert.ok(w.sources.every((s) => s.stopped || s.at === undefined && s.loop !== true), "nothing is left playing");   // the recording starts on the tap (before the login), so it must be stopped, and so must the keep-alive hiss
+  assert.ok(w.sources.filter((s) => s.at !== undefined).every((s) => s.stopped), "the intro recording was stopped");
   assert.deepEqual(ev.ends, ["stopped"]);
 });
 
@@ -254,8 +255,8 @@ test("the reader's style goes to the function, the voice from the grant goes int
   assert.equal(ws.sent.length, 0);
   ws.onopen();
   const setup = ws.sent[0].setup;
-  assert.equal(setup.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName, "Achird");
-  assert.equal(setup.speechConfig.languageCode, "en-IN");
+  assert.equal(setup.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName, "Achird");   // the controller sends the nested layout
+  assert.equal(setup.generationConfig.speechConfig.languageCode, "en-IN");
   await ws.onmessage({ data: JSON.stringify({ setupComplete: {} }) });
   talk.nudge("From now on, speak slowly.");
   assert.deepEqual(ws.sent.at(-1), { realtimeInput: { text: "From now on, speak slowly." } });
@@ -264,4 +265,25 @@ test("the reader's style goes to the function, the voice from the grant goes int
   talk.nudge("after the end");
   assert.equal(ws.sent.length, n);
   globalThis.fetch = f;
+});
+
+test("the speaker is kept awake from the tap until the intro is over, and the recording is scheduled well ahead (heard from mid-clip, Oct 12 2026)", async () => {
+  let give; const grantGate = new Promise((r) => { give = r; });
+  const w = browser({ clip: true, grantGate });
+  const { talk } = make();
+  const started = talk.start({ storyId: 7, lang: "en", style: { voice: "Orus" } });
+  await tick(30);
+  const hiss = w.sources.filter((s) => s.loop === true);
+  assert.equal(hiss.length, 1, "one looping keep-alive source, started on the tap");
+  assert.equal(hiss[0].at, undefined, "started at once, not scheduled");
+  assert.ok(!hiss[0].stopped, "still running while the recording has not played");
+  const clip = w.sources.filter((s) => s.at !== undefined);
+  assert.equal(clip.length, 1);
+  assert.ok(clip[0].at >= 0.9, `the recording is scheduled >= 0.9 s ahead of now (was ${clip[0].at})`);
+  give();
+  await tick(30);
+  talk.skipIntro();
+  await started;
+  assert.ok(hiss[0].stopped, "the hiss stops once the intro is over");
+  talk.stop();
 });
