@@ -83,8 +83,13 @@ export const rms = (f) => { let s = 0; for (let i = 0; i < f.length; i++) s += f
 
 const HIGHLIGHT = {
   name: "highlight",
-  description: "Light up the article sentence you are about to talk about, so the reader sees it. Call it before you speak about a sentence, with its id (the text in square brackets, for example p2s0). Never say the id aloud.",
+  description: "Light up the sentence of the article the reader is on that you are about to talk about, so the reader sees it. Call it before you speak about a sentence, with its id (the text in square brackets, for example p2s0). Never say the id aloud.",
   parameters: { type: "OBJECT", properties: { sentence_id: { type: "STRING", description: "The sentence id, for example p2s0" } }, required: ["sentence_id"] },
+};
+const READ_ARTICLE = {
+  name: "read_article",
+  description: "Read another Nishpaksh article from the list of other articles, with the status of each sentence and its outlets. Use the story id from the list. Then say it comes from another article.",
+  parameters: { type: "OBJECT", properties: { story_id: { type: "INTEGER", description: "The story id from the list of other articles" } }, required: ["story_id"] },
 };
 
 /** The first message on the socket. `instruction` comes from the live-token function (the same text its token is locked
@@ -98,7 +103,7 @@ export function setupMessage({ model, instruction, voice = "Kore", languageCode 
     systemInstruction: { parts: [{ text: instruction }] },
     inputAudioTranscription: {},
     outputAudioTranscription: {},
-    tools: [{ functionDeclarations: [HIGHLIGHT] }],
+    tools: [{ functionDeclarations: [HIGHLIGHT, READ_ARTICLE] }],
     // 500-800 ms of silence ends the reader's turn (Google's guidance: shorter splits a sentence at a breath)
     realtimeInputConfig: { automaticActivityDetection: { silenceDurationMs: 700, prefixPaddingMs: 100 } },
   };
@@ -153,7 +158,18 @@ export class LiveProtocol {
 
   _tools(calls) {
     const responses = [];
+    const reading = [];
     for (const fc of calls) {
+      if (fc.name === "read_article") {
+        // another article: fetched by the page, so the answer comes later; the model waits for it (no SILENT)
+        const id = Number(fc.args?.story_id);
+        reading.push((async () => {
+          let result = "that article could not be read";
+          try { if (Number.isInteger(id) && this.on.readArticle) result = (await this.on.readArticle(id)) || result; } catch { /* the model is told it could not be read */ }
+          return { id: fc.id, name: fc.name, response: { result } };
+        })());
+        continue;
+      }
       let result = "unknown function";
       if (fc.name === "highlight") {
         const id = this.validId(fc.args?.sentence_id);
@@ -163,6 +179,7 @@ export class LiveProtocol {
       responses.push({ id: fc.id, name: fc.name, response: { result }, scheduling: "SILENT" });
     }
     if (responses.length) this.send({ toolResponse: { functionResponses: responses } });
+    if (reading.length) Promise.all(reading).then((r) => this.send({ toolResponse: { functionResponses: r } }));
   }
 }
 
@@ -263,6 +280,14 @@ export function createTalk(opts) {
 
   function maybeOpenMic() { if (introDone && ready && !ending) startMic(); }
 
+  // another article for the guide (its read_article call): the same function gives the sentences with their statuses
+  async function readOther(id) {
+    const r = await fetch(o.tokenUrl, { method: "POST", headers: { "Content-Type": "application/json", ...(await o.getHeaders()) }, body: JSON.stringify({ read: id, lang: grant?.lang || "en" }) });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return typeof j?.text === "string" ? j.text : null;
+  }
+
   async function grantFor(storyId, lang, style) {
     let r;
     try {
@@ -312,6 +337,7 @@ export function createTalk(opts) {
         interrupted: interrupt,
         turnComplete: () => { touch(); introWake?.(); },
         highlight: (id) => { touch(); o.onHighlight(id); },
+        readArticle: async (id) => { touch(); return o.readArticle ? o.readArticle(id) : readOther(id); },
         transcript: (lines) => { touch(); o.onTranscript(lines); },
         goAway: () => end("goaway"),
       },

@@ -13,7 +13,7 @@
 // each from its own project, so conversations are spread over them). Optional: LIVE_MODEL, FEED_URL, LIVE_LANGUAGE_CODE=1
 // (also send a language code to Gemini; off by default). The request may carry `style` {voice, pace, tone, accent}.
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
-import { buildBrief, type Story } from "./brief.ts";
+import { articleDigest, buildBrief, TOOLS, type Other, type Story } from "./brief.ts";
 import { cleanStyle, languageCode } from "./voice.ts";
 
 const URL_ = Deno.env.get("SUPABASE_URL")!;
@@ -46,7 +46,7 @@ async function me(req: Request) {
   return data?.user || null;
 }
 
-async function mint(key: string, instruction: string): Promise<string> {
+async function mint(key: string, instruction: string, voice: string): Promise<string> {
   const now = Date.now();
   const r = await fetch(GEMINI, {
     method: "POST",
@@ -57,10 +57,19 @@ async function mint(key: string, instruction: string): Promise<string> {
       newSessionExpireTime: new Date(now + 60_000).toISOString(),
       expireTime: new Date(now + (60 + MAX_SECONDS) * 1000).toISOString(),
       // REST name of what the SDKs call liveConnectConstraints: the setup the token is locked to
+      // the token is locked to this whole setup (an empty field mask: the browser's own setup adds nothing), so everything the
+      // conversation needs is here: the voice, the functions, the transcripts and the turn-taking
       bidiGenerateContentSetup: {
         model: `models/${MODEL}`,
-        generationConfig: { responseModalities: ["AUDIO"] },
+        generationConfig: {
+          responseModalities: ["AUDIO"],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
+        },
         systemInstruction: { parts: [{ text: instruction }] },
+        tools: TOOLS,
+        inputAudioTranscription: {},
+        outputAudioTranscription: {},
+        realtimeInputConfig: { automaticActivityDetection: { silenceDurationMs: 700, prefixPaddingMs: 100 } },
       },
     }),
   });
@@ -70,13 +79,39 @@ async function mint(key: string, instruction: string): Promise<string> {
   return String(j.name);
 }
 
+// the other live articles (headline and id), for the guide's list; nothing is counted against anyone when this fails
+async function others(lang: string): Promise<Other[]> {
+  try {
+    const r = await fetch(`${FEED_URL}/${lang}.json`, { signal: AbortSignal.timeout(4000) });
+    if (!r.ok) return [];
+    const j = await r.json();
+    return (Array.isArray(j?.stories) ? j.stories : [])
+      .filter((c: { id?: unknown; h?: unknown }) => Number.isInteger(c?.id) && typeof c?.h === "string" && c.h.trim())
+      .map((c: { id: number; h: string }) => ({ id: c.id, headline: c.h }));
+  } catch { return []; }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return reply({ error: "POST only" }, 405);
   let b: Record<string, unknown> = {};
   try { b = await req.json(); } catch { return reply({ error: "bad request" }, 400); }
-  const story = Number(b.story_id);
   const lang = b.lang === "hi" ? "hi" : "en";
+
+  // the guide asked to read another article (the function read_article): no limit is used, the reader must be logged in
+  if (b.read !== undefined) {
+    const id = Number(b.read);
+    if (!Number.isInteger(id) || id < 1) return reply({ error: "bad request" }, 400);
+    try {
+      if (!(await me(req))) return reply({ error: "login" }, 401);
+      const page = await fetch(`${FEED_URL}/story/${id}.json`);
+      if (!page.ok) return reply({ error: "gone" }, 404);
+      const d = articleDigest((await page.json()) as Story, lang);
+      return d ? reply(d) : reply({ error: "gone" }, 404);
+    } catch (e) { return reply({ error: String((e as Error).message || e) }, 500); }
+  }
+
+  const story = Number(b.story_id);
   if (!Number.isInteger(story) || story < 1) return reply({ error: "bad request" }, 400);
   if (!KEYS.length) return reply({ error: "not configured" }, 500);
 
@@ -88,7 +123,7 @@ Deno.serve(async (req) => {
     const page = await fetch(`${FEED_URL}/story/${story}.json`);
     if (!page.ok) return reply({ error: "gone" }, 404);
     const style = cleanStyle(b.style);                  // the reader's voice, pace, tone and accent: checked against fixed lists
-    const brief = buildBrief((await page.json()) as Story, lang, style);
+    const brief = buildBrief((await page.json()) as Story, lang, style, await others(lang));
     if (!brief) return reply({ error: "gone" }, 404);
 
     const { data, error } = await admin.rpc("live_talk_begin", {
@@ -104,7 +139,7 @@ Deno.serve(async (req) => {
     // spread over the keys by how many conversations the day has had; a key that refuses hands over to the next
     let token = "", last = "";
     for (let k = 0; k < KEYS.length && !token; k++) {
-      try { token = await mint(KEYS[(Number(data.n) + k) % KEYS.length], brief.instruction); }
+      try { token = await mint(KEYS[(Number(data.n) + k) % KEYS.length], brief.instruction, style.voice); }
       catch (e) { last = String((e as Error).message || e); console.error("live-token mint failed:", last); }
     }
     if (!token) {
