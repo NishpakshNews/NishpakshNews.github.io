@@ -47,6 +47,44 @@ def intro_keys(fallback: list[str]) -> list[str]:
     return [own] if own else fallback
 
 
+class SlotPool:
+    """Every TTS model on every key, used in turn WITHOUT breaking the per-minute limit (Oct 11 2026: the log showed 429 after four quick
+    calls; the free tier allows 3 requests a minute a model, audio.TTS_RPM, and this job used to fire the next call as soon as the last
+    one returned, trying the first model again each time and only then the next). Each slot is used at most `rpm` times a minute; a call
+    goes to the first slot that is ready, and when none is, the pool waits for the soonest. A slot that fails `max_fail` times in a row
+    (the day's quota gone, a model down) is left alone for the rest of the run. `speak` returns None when no slot is left."""
+
+    def __init__(self, slots: list, rpm: int, now=time.time, sleep=time.sleep, max_fail: int = 3):
+        self.slots, self.gap, self.now, self.sleep, self.max_fail = list(slots), 60 / rpm + 1, now, sleep, max_fail
+        self.ready_at: dict = {}
+        self.fails: dict = {}
+
+    def speak(self, call) -> bytes | None:
+        """`call(slot) -> pcm bytes or None`; it may raise."""
+        while True:
+            live = [s for s in self.slots if self.fails.get((s[1], s[2]), 0) < self.max_fail]
+            if not live:
+                return None
+            t = self.now()
+            free = [s for s in live if self.ready_at.get((s[1], s[2]), 0) <= t]
+            if not free:
+                self.sleep(max(0.5, min(self.ready_at[(s[1], s[2])] for s in live) - t))
+                continue
+            slot = free[0]
+            key = (slot[1], slot[2])
+            self.ready_at[key] = t + self.gap
+            try:
+                pcm = call(slot)
+            except Exception as e:  # noqa: BLE001
+                self.fails[key] = self.fails.get(key, 0) + 1
+                log.info("tts %s key %d: %s", slot[1], slot[2] + 1, str(e)[:400])
+                continue
+            if pcm:
+                self.fails[key] = 0
+                return pcm
+            self.fails[key] = self.fails.get(key, 0) + 1
+
+
 def clip_name(voice: str, lang: str) -> str:
     """The file the browser asks for (live/talk.js: intro-<voice>-<lang>.m4a)."""
     return f"intro-{voice}-{lang}.m4a"
@@ -99,6 +137,7 @@ def main() -> None:
             slots.append((cl, m, k))
     if not slots:
         raise SystemExit("no TTS model on any key")
+    pool = SlotPool(slots, audio.TTS_RPM)
     out = pathlib.Path(args.dir)
     out.mkdir(parents=True, exist_ok=True)
     made = 0
@@ -109,15 +148,7 @@ def main() -> None:
                 continue
 
             def speak(text: str, lang=lang, voice=voice):
-                for cl, model, k in slots:
-                    try:
-                        pcm = cl.tts(model, f"{STYLE[lang]}\n\n{text}", voice)
-                        if pcm:
-                            return pcm
-                    except Exception as e:  # noqa: BLE001
-                        log.info("tts %s key %d: %s", model, k + 1, str(e)[:160])
-                    time.sleep(2)
-                return None
+                return pool.speak(lambda slot: slot[0].tts(slot[1], f"{STYLE[lang]}\n\n{text}", voice))
             try:
                 pcm = build_pcm(intro[lang], float(intro["pause_seconds"]), speak)
             except RuntimeError as e:                # the quota is gone (or the model is down): stop here, the next run carries on from this file
