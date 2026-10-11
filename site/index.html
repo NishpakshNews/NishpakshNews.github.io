@@ -653,7 +653,8 @@
      arrive; the older lines fade out at the top as they move up (and softly at the bottom edge). It used to be clamped to the first
      3 lines, so a long answer showed only its beginning while the guide kept talking. */
   .tkcap { margin: 0 6px; font-size: 14px; line-height: 1.5; color: var(--ink-soft); height: calc(4.5em + .6em); padding-bottom: .6em; overflow: hidden; position: relative;
-           -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 .9em, #000 calc(100% - .6em), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 .9em, #000 calc(100% - .6em), transparent 100%); }
+           -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - .6em), transparent 100%); mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - .6em), transparent 100%); }
+  /* no fade at the top edge: the top line is fully clear until it moves out, and then fades by itself (.old) as it goes up */
   .tkcap .tkin { transition: transform .6s cubic-bezier(.22,.7,.2,1); will-change: transform; }
   /* a whole line at a time (owner, Oct 12 2026): the line comes up from below while it fades in; the top line fades out as it moves up.
      The line is shown when the voice reaches its first word (talk.js pace()), so the text keeps the speed of the speech. */
