@@ -39,3 +39,14 @@ def test_a_broken_intro_file_is_refused(tmp_path, bad):
     p.write_text(json.dumps(bad), encoding="utf-8")
     with pytest.raises(ValueError):
         live_intro.load(p)
+
+
+def test_the_voices_are_the_ones_the_reader_can_pick_and_the_file_names_are_what_the_browser_asks_for():
+    import pathlib
+    import re
+    ts = (pathlib.Path(live_intro.__file__).resolve().parent.parent / "supabase" / "functions" / "live-token" / "voice.ts").read_text(encoding="utf-8")
+    listed = re.search(r"export const VOICES = \[(.*?)\] as const", ts, re.S).group(1)
+    assert live_intro.VOICES == re.findall(r'"([A-Za-z]+)"', listed)
+    assert live_intro.VOICES[0] == "Kore"
+    assert live_intro.clip_name("Kore", "en") == "intro-Kore-en.m4a"
+    assert live_intro.clip_name("Sadachbia", "hi") == "intro-Sadachbia-hi.m4a"

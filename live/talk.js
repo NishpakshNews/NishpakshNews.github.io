@@ -15,8 +15,10 @@
 //   talk.nudge("From now on, speak slowly.");  // asks the guide to sound different mid-conversation        // from a tap: the browser asks for the microphone then
 //   talk.skipIntro(); talk.setMuted(true); talk.stop();
 //
-// What happens: microphone permission -> the live-token function (login, limits, the article's brief, a one-use Gemini
-// token) -> the fixed intro recording plays while the WebSocket opens -> the microphone opens -> the reader talks and can
+// What happens: the intro recording of the reader's chosen voice starts AT ONCE on the tap (intro-<voice>-<lang>.m4a, see
+// nishpaksh/live_intro.py) while microphone permission -> the live-token function (login, limits, the article's brief, a
+// one-use Gemini token) -> the WebSocket all happen behind it; without that recording the guide says the intro itself once
+// the socket is ready (slower: several seconds of nothing) -> the microphone opens -> the reader talks and can
 // interrupt at any time (Gemini detects speech; this module stops its own playback the moment the server says
 // "interrupted"). States: idle, connecting, intro, listening, speaking, ended.
 //
@@ -27,6 +29,7 @@
 export const WS_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained";
 export const IN_RATE = 16000;
 export const OUT_RATE = 24000;
+const CLIP_WAIT_MS = 4000;              // the intro recording must have started within this long after the connection is ready, else the guide says the intro itself
 const INTRO_WAIT_MS = 15000;            // how long the intro waits for the server to be ready
 const INTRO_MAX_MS = 30000;             // and for the guide to finish saying it
 const THINK_AFTER_MS = 500;            // the reader's voice has been quiet this long: their turn is over, the guide is working on its answer
@@ -241,6 +244,7 @@ export function createTalk(opts) {
   let askEnd = 0, firstTool = 0, toolCount = 0;      // timing of one answer: when the reader stopped, when the guide first called a function, when its voice began
   let nextAt = 0, quietTimer = null, idleTimer = null, maxTimer = null, wrapTimer = null, lastActive = 0, slow = false;
   const playing = new Set();
+  const clipBytes = new Map();   // intro recordings already asked for: name -> Promise of its bytes (or null)
   let runId = 0;                 // each start() is a run; stop() during connecting must stop THAT run from carrying on
 
   const set = (s) => {
@@ -359,6 +363,42 @@ export function createTalk(opts) {
     throw new TalkError(code, j.error || `HTTP ${r.status}`, code === "limit" ? { resetsAt: j.resets_at || null, scope: j.scope || "hour" } : {});
   }
 
+  // The intro recording (owner, Oct 11 2026: "the card is instant but the voice comes after a long time"). It is one file per voice and language,
+  // so it sounds like the guide the reader picked; it is fetched before the tap when the page asks (preload) and starts the moment the tap's
+  // audio context is running, while everything else (microphone, login, token, socket) is still going on behind it.
+  const safeVoice = (v) => (typeof v === "string" && /^[A-Za-z]{2,20}$/.test(v) ? v : "Kore");
+  function fetchClip(name) {
+    if (!clipBytes.has(name)) clipBytes.set(name, (async () => {
+      try { const r = await fetch(`${o.introBase}${name}`); return r.ok ? await r.arrayBuffer() : null; } catch { return null; }
+    })());
+    return clipBytes.get(name);
+  }
+  /** Start fetching the recording early (the page calls this before the reader taps), so the tap only has to play it. */
+  function preload({ lang = "en", voice } = {}) { fetchClip(`intro-${safeVoice(voice)}-${lang === "hi" ? "hi" : "en"}.m4a`); }
+  /** Begins the recording as soon as it is decoded. `started` resolves true (playing, `seconds` long) or false (none, or it could not be played). */
+  function startClip(lang, voice) {
+    const run = { cancelled: false, seconds: 0 };
+    run.started = (async () => {
+      const bytes = await fetchClip(`intro-${safeVoice(voice)}-${lang === "hi" ? "hi" : "en"}.m4a`);
+      if (!bytes || run.cancelled || ending || !ctx) return false;
+      try {
+        const buf = await ctx.decodeAudioData(bytes.slice(0));
+        if (run.cancelled || ending || !ctx) return false;
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(ctx.destination);
+        const at = Math.max(ctx.currentTime + 0.02, nextAt);
+        src.start(at);
+        nextAt = at + buf.duration;
+        playing.add(src);
+        run.seconds = buf.duration;
+        set("intro");
+        return true;
+      } catch { return false; }
+    })();
+    return run;
+  }
+
   // The intro is spoken by the guide itself (owner, Oct 11 2026: the voice must match everywhere, whichever voice the
   // reader picked): once the server is ready, it is asked to say the fixed words (live/intro.json) and nothing else.
   // The microphone opens only after it has finished, so it never hears itself.
@@ -457,6 +497,7 @@ export function createTalk(opts) {
       ctx = new AC();
       await ctx.resume();                  // inside the reader's tap, so the browser lets it play
       if (stale()) return;
+      const clip = startClip(lang, style?.voice);      // the recording starts now, not after the login and the socket
       let mic;
       try {
         mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
@@ -469,7 +510,14 @@ export function createTalk(opts) {
       if (o.onGrant) o.onGrant({ lang, headline: grant.headline, instruction: grant.instruction, sentenceIds: grant.sentence_ids, maxSeconds: grant.max_seconds, hourly: grant.hourly });
       openSocket();
       startPings();
-      await playIntro(lang);
+      const played = await Promise.race([clip.started, new Promise((r) => setTimeout(() => r(false), CLIP_WAIT_MS))]);
+      if (!played) clip.cancelled = true;              // too late (or none): the guide says the intro itself, and the recording must not start on top of it
+      if (stale()) return;
+      if (played) {
+        const left = Math.max(0, (nextAt - ctx.currentTime) * 1000);          // what is still to play of the recording
+        if (left > 0) await sleep(left + 150, (stop) => { introStop = stop; });
+        introStop = null;
+      } else await playIntro(lang);
       if (stale()) return;
       introDone = true;
       maybeOpenMic();
@@ -485,6 +533,7 @@ export function createTalk(opts) {
 
   return {
     start,
+    preload,
     stop: () => end("stopped"),
     // ask the guide, in words, to sound different from now on (pace, tone, accent); best effort, nothing happens when not talking
     nudge: (text) => { if (ws && ws.readyState === 1 && ready && !ending && text) ws.send(JSON.stringify({ realtimeInput: { text: String(text).slice(0, 300) } })); },

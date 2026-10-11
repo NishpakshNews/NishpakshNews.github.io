@@ -2644,9 +2644,12 @@ const htmlEl = document.documentElement;
 
 function loadTalk() {
   if (TK.mod) return Promise.resolve(TK.mod);
-  if (!TK.modP) TK.modP = import("./live/talk.js").then(m => { TK.mod = m; htmlEl.classList.add("talk-on"); tkPaint(); return m; })
+  if (!TK.modP) TK.modP = import("./live/talk.js").then(m => { TK.mod = m; htmlEl.classList.add("talk-on"); tkPaint(); tkPreloadIntro(); return m; })
     .catch(err => { TK.modP = null; console.warn("Understand by talking is off: live/talk.js did not load (copy live/ next to index.html).", err); return null; });
   return TK.modP;
+}
+function tkPreloadIntro() {                  // the intro recording of the chosen voice is fetched before the tap, so the tap only has to play it
+  try { talkInstance().preload({lang: TK.lang || lang, voice: tkStyle().voice}); } catch (e) { /* the guide then says the intro itself */ }
 }
 function talkInstance() {
   if (TK.talk) return TK.talk;
@@ -2690,6 +2693,7 @@ function tkStyle() {
 function tkSetStyle(next) {
   const old = tkStyle();
   safeSet("np-voice", JSON.stringify(next));
+  if (old.voice !== next.voice) tkPreloadIntro();
   for (const k of Object.keys(STYLE_OPTS)) if (old[k] !== next[k]) TK.nudges[k] = NUDGE[k][next[k]];
   tkFlushNudges();
   tkPaintSet();
