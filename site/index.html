@@ -1088,6 +1088,12 @@ function setSheetPicture(id) {
   const c = (pool || []).find(x => String(x.id) === String(id)) || (cards || []).find(x => String(x.id) === String(id));
   const pic = c && c.img && safeUrl(c.img.src) ? c.img : null;
   const box = $("hpic");
+  // the article arrives while the sheet is still opening and fillSheet runs again for the same story: the picture is
+  // kept as it is, not rebuilt (a rebuilt one is blank until its images load and is not placed over the card's, so
+  // the picture and headline box flashed at the end of the opening; owner, Oct 11 2026)
+  const src = pic ? pic.src : "";
+  if (box.dataset.src === src && (!pic || box.firstElementChild)) { hbox.classList.toggle("has-pic", !!pic); return; }
+  box.dataset.src = src;
   hbox.classList.toggle("has-pic", !!pic);
   box.innerHTML = pic ? `<div class="hsoft"><img class="soft" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"><div class="hwash"></div></div><div class="hsharp s1"><img class="sharp" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"></div><div class="hsharp s2"><img class="sharp" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"></div>` +
     (safeUrl(pic.href) ? `<a class="pic-credit" href="${esc(pic.href)}" target="_blank" rel="noopener noreferrer">${esc(T[lang].photo)}: ${esc(pic.by || "")}</a>`
