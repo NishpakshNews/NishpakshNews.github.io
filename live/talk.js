@@ -270,6 +270,7 @@ export function createTalk(opts) {
   let wsOpenAt = 0;
   let toolReplyAt = 0, silentAt = 0, nudged = false;   // the watchdog: when a function call was last answered, when the guide last ended a turn without a sound, and whether this question was already pushed once
   let askEnd = 0, firstTool = 0, toolCount = 0;      // timing of one answer: when the reader stopped, when the guide first called a function, when its voice began
+  let turnStart = 0, turnTotal = 0;   // the guide's current stretch of speech: when it began playing (audio clock) and how many seconds of it have been queued; the captions follow this
   let nextAt = 0, quietTimer = null, idleTimer = null, maxTimer = null, wrapTimer = null, lastActive = 0, slow = false;
   const playing = new Set();
   let keepAlive = null;           // the inaudible hiss that keeps the speaker awake until the intro has played
@@ -297,6 +298,7 @@ export function createTalk(opts) {
     const f = outRs.process(pcm16ToFloat32(int16));
     if (!f.length) return;
     const at = Math.max(ctx.currentTime + 0.02, nextAt);
+    if (!playing.size && at > nextAt + 1e-4) { turnStart = at; turnTotal = 0; }     // a new stretch of speech
     if (at > nextAt + 1e-4) {                                // a new stretch of speech (not the next chunk of one): 3 ms fade-in, so it does not start with a click
       const m = Math.min(f.length, Math.floor(ctx.sampleRate * 0.003));
       for (let i = 0; i < m; i++) f[i] *= i / m;
@@ -308,6 +310,7 @@ export function createTalk(opts) {
     src.connect(ctx.destination);
     src.start(at);
     nextAt = at + buf.duration;
+    turnTotal += buf.duration;
     playing.add(src);
     voiced = false;
     set("speaking");
@@ -322,7 +325,7 @@ export function createTalk(opts) {
   function interrupt() {            // the reader started talking over the guide: stop at once
     for (const s of playing) { try { s.onended = null; s.stop(); } catch { /* already stopped */ } }
     playing.clear();
-    nextAt = 0;
+    nextAt = 0; turnStart = 0; turnTotal = 0;
     outRs?.reset();
     if (micOn && !ending) set("listening");
   }
@@ -615,6 +618,11 @@ export function createTalk(opts) {
     setMuted: (m) => {
       muted = !!m;
       if (muted && ws && ws.readyState === 1) ws.send(JSON.stringify({ realtimeInput: { audioStreamEnd: true } }));   // flush what was heard
+    },
+    // how much of the guide's current speech has been HEARD so far, 0..1 (1 when nothing is playing): the captions follow it so the words keep the pace of the voice
+    pace: () => {
+      if (!ctx || !turnTotal || !playing.size) return 1;
+      return Math.max(0, Math.min(1, (ctx.currentTime - turnStart) / turnTotal));
     },
     get state() { return state; },
   };

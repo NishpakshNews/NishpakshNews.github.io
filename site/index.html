@@ -652,14 +652,15 @@
   /* a live transcript (owner, Oct 12 2026): three lines high, no scrollbar, follows the guide by itself. New words fade in as they
      arrive; the older lines fade out at the top as they move up (and softly at the bottom edge). It used to be clamped to the first
      3 lines, so a long answer showed only its beginning while the guide kept talking. */
-  .tkcap { margin: 0 6px; font-size: 14px; line-height: 1.5; color: var(--ink-soft); max-height: calc(4.5em + .6em); padding-bottom: .6em; overflow: hidden;
-           scrollbar-width: none; scroll-behavior: smooth;
-           -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - .6em), transparent 100%); mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - .6em), transparent 100%); }
-  .tkcap::-webkit-scrollbar { display: none; }
-  .tkcap.more { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 1.4em, #000 calc(100% - .6em), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 1.4em, #000 calc(100% - .6em), transparent 100%); }
-  .tkcap .tkw { animation: tkwin .5s ease-out both; }
-  @keyframes tkwin { from { opacity: 0; } to { opacity: 1; } }
-  @media (prefers-reduced-motion: reduce) { .tkcap { scroll-behavior: auto; } .tkcap .tkw { animation: none; } }
+  .tkcap { margin: 0 6px; font-size: 14px; line-height: 1.5; color: var(--ink-soft); height: calc(4.5em + .6em); padding-bottom: .6em; overflow: hidden; position: relative;
+           -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 .9em, #000 calc(100% - .6em), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 .9em, #000 calc(100% - .6em), transparent 100%); }
+  .tkcap .tkin { transition: transform .6s cubic-bezier(.22,.7,.2,1); will-change: transform; }
+  /* a whole line at a time (owner, Oct 12 2026): the line comes up from below while it fades in; the top line fades out as it moves up.
+     The line is shown when the voice reaches its first word (talk.js pace()), so the text keeps the speed of the speech. */
+  .tkcap .tkw { opacity: 0; transition: opacity .6s ease; }
+  .tkcap .tkw.on { opacity: 1; }
+  .tkcap .tkw.old { opacity: 0; }
+  @media (prefers-reduced-motion: reduce) { .tkcap .tkin, .tkcap .tkw { transition: none; } }
   .tkcard .tkgo { width: 100%; }
   .tkcard[data-ph="ready"] .tkcap, .tkcard[data-ph="ended"] .tkcap, .tkcard[data-ph="connecting"] .tkcap, .tkcard[data-think] .tkcap { display: none; }          /* the guide's last words belong to the last answer */
   .tkcard[data-ph="speaking"] .tkgo, .tkcard[data-ph="listening"] .tkgo, .tkcard[data-ph="connecting"] .tkgo, .tkcard[data-ph="thinking"] .tkgo { display: none; }
@@ -2801,17 +2802,58 @@ function tkPhase() {
 }
 function tkCaption() {
   const c = TK.card && TK.card.querySelector(".tkcap"); if (!c) return;
-  const now = TK.cap || "", had = c._shown || "";
-  if (now !== had) {
-    if (had && now.startsWith(had)) {                   // the guide is still talking: only the new words are added, and they fade in
-      const w = document.createElement("span"); w.className = "tkw"; w.textContent = now.slice(had.length); c.appendChild(w);
-    } else c.textContent = now;                          // a new answer
+  const now = TK.cap || "";
+  let inn = c.querySelector(".tkin");
+  if (!inn) { inn = document.createElement("div"); inn.className = "tkin"; c.appendChild(inn); c._words = []; c._shown = ""; c._k = 0; }
+  if (now !== c._shown) {
+    if (c._shown && now.startsWith(c._shown) && c._words.length) {      // the guide is still talking: the new words are added (hidden until the voice gets there)
+      tkAddWords(inn, c, now.slice(c._shown.length));
+    } else {                                                            // a new answer
+      inn.textContent = ""; inn.style.transform = ""; c._words = []; c._k = 0; c._line = -1;
+      tkAddWords(inn, c, now);
+    }
     c._shown = now;
   }
-  // follow the end of what the guide says (3 lines high, no scrollbar); the top line fades once there is more above it
-  const over = c.scrollHeight > c.clientHeight + 1;
-  c.classList.toggle("more", over);
-  if (over) c.scrollTop = c.scrollHeight;
+  tkCapStep(c);
+}
+function tkAddWords(inn, c, text) {
+  for (const part of text.split(/(\s+)/)) {
+    if (!part) continue;
+    if (/^\s+$/.test(part)) { inn.appendChild(document.createTextNode(" ")); c._tail = " "; continue; }
+    const last = c._words[c._words.length - 1];
+    if (last && !/\s$/.test(c._tail || " ")) { last.textContent += part; c._tail = part; continue; }   // a word split between two pieces
+    const w = document.createElement("span"); w.className = "tkw"; w.textContent = part; inn.appendChild(w); c._words.push(w); c._tail = part;
+  }
+}
+/* the number of words that have been "said" by now: while the voice plays, in step with it; when it has stopped, all of them */
+function tkCapTarget(c) {
+  const n = c._words.length;
+  if (TK.st !== "speaking" && TK.st !== "intro") return n;
+  let f = 1; try { f = TK.talk && TK.talk.pace ? TK.talk.pace() : 1; } catch (e) { f = 1; }
+  return Math.min(n, Math.ceil(n * f));
+}
+function tkCapStep(c) {
+  const ws = c._words; if (!ws || !ws.length) { cancelAnimationFrame(c._raf); return; }
+  const inn = c.querySelector(".tkin");
+  const k = Math.max(c._k || 0, tkCapTarget(c));          // never goes back
+  c._k = k;
+  const line = ws[Math.min(k, ws.length) - 1 > 0 ? Math.min(k, ws.length) - 1 : 0];
+  // lines are found by the words' heights (all words are laid out, only the ones reached are visible)
+  const lh = parseFloat(getComputedStyle(c).lineHeight) || 21;
+  const tops = ws.map(w => w.offsetTop);
+  const row = i => Math.round(tops[i] / lh);
+  const cur = k ? row(Math.min(k, ws.length) - 1) : 0;     // the line of the latest word said
+  // the whole line shows at once: every word on a line up to the current one is on (words after the voice's position on this line too)
+  let lastOn = -1;
+  for (let i = 0; i < ws.length; i++) { if (row(i) <= cur && k) lastOn = i; }
+  for (let i = 0; i < ws.length; i++) {
+    const r = row(i), on = i <= lastOn && r > cur - 3, old = i <= lastOn && r <= cur - 3;
+    ws[i].classList.toggle("on", on); ws[i].classList.toggle("old", old);
+  }
+  inn.style.transform = `translateY(${-Math.max(0, cur - 2) * lh}px)`;
+  const more = cur > 2; c.classList.toggle("more", more);
+  cancelAnimationFrame(c._raf);
+  if (k < ws.length || TK.st === "speaking") c._raf = requestAnimationFrame(() => tkCapStep(c));
 }
 function tkPaint() {
   if (!TK.card) return;
