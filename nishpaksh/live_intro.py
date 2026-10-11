@@ -106,12 +106,12 @@ MAX_WORDS_PER_SEC = 1.5                # a sentence is rejected when it is spoke
 def load(path: pathlib.Path = INTRO_FILE) -> dict:
     d = json.loads(path.read_text(encoding="utf-8"))
     for lang in ("en", "hi"):
-        if not (isinstance(d.get(lang), list) and len(d[lang]) == 2 and all(isinstance(x, str) and x.strip() for x in d[lang])):
-            raise ValueError(f"intro.json: {lang} needs two non-empty sentences (the welcome, then the question)")
+        if not (isinstance(d.get(lang), list) and len(d[lang]) in (1, 2) and all(isinstance(x, str) and x.strip() for x in d[lang])):
+            raise ValueError(f"intro.json: {lang} needs one or two non-empty sentences")
     for lang in ("en", "hi"):                         # the recap's words are optional, but when there, valid
         r = d.get(f"recap_{lang}")
-        if r is not None and not (isinstance(r, list) and len(r) == 2 and all(isinstance(x, str) and x.strip() for x in r)):
-            raise ValueError(f"intro.json: recap_{lang} needs two non-empty sentences (the welcome, then the question)")
+        if r is not None and not (isinstance(r, list) and len(r) in (1, 2) and all(isinstance(x, str) and x.strip() for x in r)):
+            raise ValueError(f"intro.json: recap_{lang} needs one or two non-empty sentences")
     if not 0.2 <= float(d.get("pause_seconds", 0)) <= 3:
         raise ValueError("intro.json: pause_seconds must be between 0.2 and 3")
     return d

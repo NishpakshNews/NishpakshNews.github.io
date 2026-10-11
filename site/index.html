@@ -2873,7 +2873,7 @@ function tkPaint() {
                  listening: [t.talkListening, TK.recap ? t.talkListeningHintR : t.talkListeningHint], ended: [isErr ? t.talkCant : t.talkEnded, msg]}[ph];
   const line = c.querySelector(".tkline");
   line.textContent = words[0];
-  if (think) { const d = document.createElement("span"); d.className = "tkdots"; d.setAttribute("aria-hidden", "true"); d.innerHTML = '<i style="--j:0"></i><i style="--j:1"></i><i style="--j:2"></i>'; line.appendChild(d); }
+  if (think || ph === "connecting") { const d = document.createElement("span"); d.className = "tkdots"; d.setAttribute("aria-hidden", "true"); d.innerHTML = '<i style="--j:0"></i><i style="--j:1"></i><i style="--j:2"></i>'; line.appendChild(d); }
   c.querySelector(".tkhint").textContent = words[1];
   const go = c.querySelector(".tkgo");
   go.textContent = ph === "ended" ? t.talkAgain : t.talkStart;

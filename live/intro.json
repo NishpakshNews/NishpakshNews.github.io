@@ -1,19 +1,15 @@
 {
   "pause_seconds": 0.9,
   "en": [
-    "This is a live conversation, so you can interrupt me at any time. Just start talking.",
-    "What would you like to know about this story?"
+    "Hey, let's start the discussion on this article."
   ],
   "hi": [
-    "यह एक लाइव बातचीत है, इसलिए आप मुझे कभी भी बीच में टोक सकते हैं। बस बोलना शुरू कीजिए।",
-    "आप इस ख़बर के बारे में क्या जानना चाहेंगे?"
+    "चलिए, इस ख़बर पर चर्चा शुरू करते हैं।"
   ],
   "recap_en": [
-    "This is a live conversation, so you can interrupt me at any time. Just start talking.",
-    "What would you like to know about today's news?"
+    "Hey, let's start the discussion on today's news."
   ],
   "recap_hi": [
-    "यह एक लाइव बातचीत है, इसलिए आप मुझे कभी भी बीच में टोक सकते हैं। बस बोलना शुरू कीजिए।",
-    "आप आज की ख़बरों के बारे में क्या जानना चाहेंगे?"
+    "चलिए, आज की ख़बरों पर चर्चा शुरू करते हैं।"
   ]
 }

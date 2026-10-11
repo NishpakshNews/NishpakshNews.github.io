@@ -29,8 +29,8 @@
 export const WS_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained";
 export const IN_RATE = 16000;
 export const OUT_RATE = 24000;
-const CLIP_LEAD_S = 0.9;                // the recording is scheduled this far ahead of "now" (owner, Oct 12 2026: heard from mid-clip, while a screen recording had it from the first word): opening the microphone makes the phone / Bluetooth / laptop re-route its audio, and until that settles the speaker swallows what it is given. The clips start with ~0.2 s of near-silence, so the first WORDS still land after the device is awake
-const KEEPALIVE_GAIN = 0.0008;         // an inaudible hiss played from the tap until the intro is over, so the output device never goes back to sleep between the tap and the recording (digital silence lets many of them power down)
+const CLIP_RATE = { slow: 0.85, natural: 1, fast: 1.15 };   // the recording is one file per voice, so the reader's pace choice is applied to it as its playback speed (owner, Oct 12 2026)
+const CLIP_LEAD_S = 1.2;                // the recording is scheduled this far ahead of "now" (owner, Oct 12 2026: heard from mid-clip, while a screen recording had it from the first word): opening the microphone makes the phone / Bluetooth / laptop re-route its audio, and until that settles the speaker swallows what it is given. The clips start with ~0.2 s of near-silence, so the first WORDS still land after the device is awake
 const CLIP_WAIT_MS = 4000;              // the intro recording must have started within this long after the connection is ready, else the guide says the intro itself
 const INTRO_WAIT_MS = 15000;            // how long the intro waits for the server to be ready
 const INTRO_MAX_MS = 30000;             // and for the guide to finish saying it
@@ -273,7 +273,6 @@ export function createTalk(opts) {
   let turnStart = 0, turnTotal = 0;   // the guide's current stretch of speech: when it began playing (audio clock) and how many seconds of it have been queued; the captions follow this
   let nextAt = 0, quietTimer = null, idleTimer = null, maxTimer = null, wrapTimer = null, lastActive = 0, slow = false;
   const playing = new Set();
-  let keepAlive = null;           // the inaudible hiss that keeps the speaker awake until the intro has played
   const clipBytes = new Map();   // intro recordings already asked for: name -> Promise of its bytes (or null)
   let runId = 0;                 // each start() is a run; stop() during connecting must stop THAT run from carrying on
 
@@ -403,23 +402,6 @@ export function createTalk(opts) {
     throw new TalkError(code, j.error || `HTTP ${r.status}`, code === "limit" ? { resetsAt: j.resets_at || null, scope: j.scope || "hour" } : {});
   }
 
-  /** Keeps the output device awake: a looping, near-inaudible hiss (not digital silence, which a speaker or Bluetooth link may power down on). */
-  function startKeepAlive() {
-    if (keepAlive || !ctx) return;
-    try {
-      const n = ctx.sampleRate;                                   // one second, looped
-      const f = new Float32Array(n);
-      for (let i = 0; i < n; i++) f[i] = (Math.random() * 2 - 1) * KEEPALIVE_GAIN;
-      const buf = ctx.createBuffer(1, n, ctx.sampleRate);
-      buf.copyToChannel(f, 0);
-      const src = ctx.createBufferSource();
-      src.buffer = buf; src.loop = true;
-      src.connect(ctx.destination);
-      src.start();
-      keepAlive = src;
-    } catch { keepAlive = null; }                                 // best effort: the lead time alone still helps
-  }
-  function stopKeepAlive() { try { keepAlive?.stop(); } catch { /* done */ } keepAlive = null; }
 
   // The intro recording (owner, Oct 11 2026: "the card is instant but the voice comes after a long time"). It is one file per voice and language,
   // so it sounds like the guide the reader picked; it is fetched before the tap when the page asks (preload) and starts the moment the tap's
@@ -441,7 +423,7 @@ export function createTalk(opts) {
   /** Start fetching the recording early (the page calls this before the reader taps), so the tap only has to play it. */
   function preload({ lang = "en", voice, kind } = {}) { fetchClip(clipName(voice, lang, kind)); }
   /** Begins the recording as soon as it is decoded. `started` resolves true (playing, `seconds` long) or false (none, or it could not be played). */
-  function startClip(lang, voice, after = Promise.resolve(), kind = "article") {
+  function startClip(lang, voice, after = Promise.resolve(), kind = "article", pace = "natural") {
     const run = { cancelled: false, seconds: 0 };
     run.started = (async () => {
       const bytes = await fetchClip(clipName(voice, lang, kind));
@@ -455,12 +437,14 @@ export function createTalk(opts) {
         const src = ctx.createBufferSource();
         src.buffer = buf;
         src.connect(ctx.destination);
+        const rate = CLIP_RATE[pace] || 1;
+        src.playbackRate.value = rate;
         const at = Math.max(ctx.currentTime + CLIP_LEAD_S, nextAt);
         src.start(at);
-        nextAt = at + buf.duration;
+        nextAt = at + buf.duration / rate;
         playing.add(src);
-        run.seconds = buf.duration;
-        set("intro");
+        run.seconds = buf.duration / rate;
+        setTimeout(() => { if (!ending && playing.has(src)) set("intro"); }, Math.max(0, (at - ctx.currentTime) * 1000));   // "connecting" stays on the card until the voice is really heard (the first moments are the device waking up)
         return true;
       } catch { return false; }
     })();
@@ -478,13 +462,13 @@ export function createTalk(opts) {
     let text = null;
     try { text = await (await fetch(`${o.introBase}intro.json`)).json(); } catch { /* none */ }
     const words = (kind === "recap" && text?.[`recap_${lang}`]) || text?.[lang];
-    if (ending || !Array.isArray(words) || words.length < 2) return;     // no words: the guide just waits for the reader
+    if (ending || !Array.isArray(words) || words.length < 1) return;     // no words: the guide just waits for the reader
     set("intro");
     if (!ready) await sleep(INTRO_WAIT_MS, (stop) => { readyWake = stop; });
     readyWake = null;
     if (ending || !ready) return;
     const hindi = lang === "hi";
-    proto.send({ realtimeInput: { text: `${hindi ? "In Hindi, say" : "Say"} these two sentences aloud now, exactly as written, with a short pause between them, and nothing else. Do not call any function. First: "${words[0]}" Then: "${words[1]}"` } });
+    proto.send({ realtimeInput: { text: `${hindi ? "In Hindi, say" : "Say"} this one sentence aloud now, exactly as written, and nothing else. Do not call any function. "${words.join(" ")}"` } });
     await sleep(INTRO_MAX_MS, (stop) => { introWake = stop; introStop = stop; });    // the end of the guide's turn
     introWake = null; introStop = null;
     if (ending) return;
@@ -545,7 +529,6 @@ export function createTalk(opts) {
     try { introStop?.(); } catch { /* done */ }
     try { for (const s of playing) { s.onended = null; s.stop(); } } catch { /* done */ }
     playing.clear();
-    stopKeepAlive();
     try { ws && ws.readyState <= 1 && ws.close(1000); } catch { /* done */ }
     try { tapNode && (tapNode.port ? (tapNode.port.onmessage = null) : (tapNode.onaudioprocess = null)); tapNode?.disconnect(); tapSource?.disconnect(); } catch { /* done */ }
     try { stream?.getTracks().forEach((t) => t.stop()); } catch { /* done */ }
@@ -559,7 +542,7 @@ export function createTalk(opts) {
   async function start({ storyId, recap, lang, style }) {
     const kind = recap ? "recap" : "article";
     if (state !== "idle" && state !== "ended") return;
-    ending = false; muted = false; micOn = false; voiced = false; introDone = false; ready = false; nextAt = 0; stopKeepAlive();
+    ending = false; muted = false; micOn = false; voiced = false; introDone = false; ready = false; nextAt = 0
     const run = ++runId;
     const stale = () => ending || run !== runId;     // stopped (or restarted) while this run was waiting on something
     set("connecting");
@@ -569,9 +552,8 @@ export function createTalk(opts) {
       outRs = null;                        // made on the first chunk, for this context's rate
       await ctx.resume();                  // inside the reader's tap, so the browser lets it play
       if (stale()) return;
-      startKeepAlive();                    // the speaker is woken now and stays awake through the microphone permission / re-routing
       let micOpened; const micAsked = new Promise((r) => { micOpened = r; });
-      const clip = startClip(lang, style?.voice, micAsked, kind);   // the recording is made ready now and plays the moment the microphone is open, before the login and the socket
+      const clip = startClip(lang, style?.voice, micAsked, kind, style?.pace);   // the recording is made ready now and plays the moment the microphone is open, before the login and the socket
       let mic;
       try {
         mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
@@ -595,7 +577,6 @@ export function createTalk(opts) {
       } else await playIntro(lang, kind);
       if (stale()) return;
       introDone = true;
-      stopKeepAlive();
       maybeOpenMic();
       touch();
       idleTimer = setInterval(() => { if (Date.now() - lastActive > IDLE_SECONDS * 1000) end("idle"); }, 2000);
