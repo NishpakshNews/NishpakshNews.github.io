@@ -31,6 +31,8 @@ const INTRO_WAIT_MS = 15000;            // how long the intro waits for the serv
 const INTRO_MAX_MS = 30000;             // and for the guide to finish saying it
 const THINK_AFTER_MS = 500;            // the reader's voice has been quiet this long: their turn is over, the guide is working on its answer
 const THINK_MAX_MS = 60000;            // "thinking" never lasts longer than this (the guide may simply have had nothing to say). It was 20 s: a big question takes longer, and the page then looked as if nothing was happening
+const TOOL_STALL_MS = 1800;            // the guide was answered about a highlight and has said nothing since: it is waiting, so it is told to go on (see the watchdog)
+const NO_ANSWER_MS = 7000;             // the reader finished and nothing at all came back (the end of their turn was not noticed): the guide is told to go on
 const SLOW_AFTER_MS = 2500;            // still no answer this long after the reader stopped: the page is told (onSlow) so it can say "this is a big one, working on it"
 const PING_SECONDS = 15;               // how often the page tells the function the conversation is still going
 export const IDLE_SECONDS = 45;          // nobody speaking (either side) this long: the conversation ends
@@ -148,7 +150,8 @@ export function setupMessage({ model, instruction, voice = "Kore", languageCode 
  *  and the callbacks are all it touches. `sentenceIds`: the ids the model may highlight (from the article's brief);
  *  anything else it names is ignored, so a made-up id can never light up the wrong sentence. */
 export class LiveProtocol {
-  constructor({ sentenceIds, send, on }) {
+  constructor({ sentenceIds, send, on, nonBlocking = false }) {
+    this.nonBlocking = !!nonBlocking;       // only a function declared NON_BLOCKING may be answered SILENT; for any other the answer must let the model carry on
     this.ids = new Set(sentenceIds || []);
     this.send = send;
     this.on = on || {};
@@ -197,10 +200,12 @@ export class LiveProtocol {
         const id = this.validId(fc.args?.sentence_id);
         if (id) { this.on.highlight?.(id); result = "ok"; } else result = "no such sentence id";
       }
-      // SILENT: the model carries on with what it was saying instead of talking about the call
-      responses.push({ id: fc.id, name: fc.name, response: { result }, scheduling: "SILENT" });
+      // SILENT means "write this into the conversation but do NOT generate": right for a non-blocking function (the model is already talking),
+      // WRONG for an ordinary one, where the model has stopped to wait for this answer and then never carries on until the reader speaks again
+      // (the guide went quiet for 10+ seconds after a highlight, owner, Oct 11 2026). So it is only sent for a function declared NON_BLOCKING.
+      responses.push(this.nonBlocking ? { id: fc.id, name: fc.name, response: { result }, scheduling: "SILENT" } : { id: fc.id, name: fc.name, response: { result } });
     }
-    if (responses.length) this.send({ toolResponse: { functionResponses: responses } });
+    if (responses.length) { this.send({ toolResponse: { functionResponses: responses } }); this.on.toolReplied?.(); }
   }
 }
 
@@ -232,6 +237,7 @@ export function createTalk(opts) {
   let state = "idle", ctx = null, stream = null, ws = null, proto = null, grant = null;
   let tapNode = null, tapSource = null, silent = null, muted = false, micOn = false, ending = false;
   let thinkTimer = null, voiced = false, lastVoice = 0, thinkSince = 0, pingTimer = null, introDone = false, ready = false, introStop = null, introWake = null, readyWake = null;
+  let toolReplyAt = 0, silentAt = 0, nudged = false;   // the watchdog: when a function call was last answered, when the guide last ended a turn without a sound, and whether this question was already pushed once
   let askEnd = 0, firstTool = 0, toolCount = 0;      // timing of one answer: when the reader stopped, when the guide first called a function, when its voice began
   let nextAt = 0, quietTimer = null, idleTimer = null, maxTimer = null, wrapTimer = null, lastActive = 0, slow = false;
   const playing = new Set();
@@ -281,6 +287,20 @@ export function createTalk(opts) {
     if (micOn && !ending) set("listening");
   }
 
+  // The reader's question has been heard but nothing has come back. Saying "go ahead and tell me now" always made the guide answer at once, so
+  // when the guide is stuck the page says that for the reader, once per question. Stuck means: (1) it was answered about a highlight and stayed
+  // quiet, or (2) nothing at all came back for NO_ANSWER_MS and the guide did not end a turn (the end of the reader's turn was not noticed).
+  // A guide that ended a turn without a sound and without a function call had nothing to say (noise): that is left alone.
+  function watchdog(now) {
+    if (!askEnd || nudged || !ready || ending || playing.size || !ws || ws.readyState !== 1) return;
+    const afterTool = toolReplyAt > askEnd && now - toolReplyAt > TOOL_STALL_MS;
+    const noAnswer = silentAt <= askEnd && now - askEnd > NO_ANSWER_MS;
+    if (!afterTool && !noAnswer) return;
+    nudged = true;
+    o.onMetric?.({ nudged: afterTool ? "after-highlight" : "no-answer", afterMs: now - askEnd });
+    proto.send({ realtimeInput: { text: "Go ahead and answer now." } });
+  }
+
   async function startMic() {
     if (micOn || ending || !ctx || !stream) return;
     tapSource = ctx.createMediaStreamSource(stream);
@@ -315,12 +335,13 @@ export function createTalk(opts) {
     // the reader stopped talking and the guide has not started: show it is working on the answer
     thinkTimer = setInterval(() => {
       const now = Date.now();
-      if (state === "listening" && voiced && !playing.size && now - lastVoice > THINK_AFTER_MS) { voiced = false; thinkSince = now; askEnd = lastVoice; firstTool = 0; toolCount = 0; set("thinking"); }
+      if (state === "listening" && voiced && !playing.size && now - lastVoice > THINK_AFTER_MS) { voiced = false; thinkSince = now; askEnd = lastVoice; firstTool = 0; toolCount = 0; nudged = false; set("thinking"); }
       else if (state === "thinking") {
         touch();                                                   // waiting for the guide is not "nobody is speaking": the 45 s idle end must not fire while it works
         if (!slow && now - thinkSince > SLOW_AFTER_MS) { slow = true; o.onSlow?.(true); }
         if (now - thinkSince > THINK_MAX_MS) set("listening");
       }
+      watchdog(now);
     }, 150);
   }
 
@@ -369,11 +390,13 @@ export function createTalk(opts) {
     proto = new LiveProtocol({
       sentenceIds: grant.sentence_ids,
       send: (m) => ws && ws.readyState === 1 && ws.send(JSON.stringify(m)),
+      nonBlocking: (grant.tools || []).some((t) => (t.functionDeclarations || []).some((d) => d.behavior === "NON_BLOCKING")),
       on: {
         ready: () => { ready = true; readyWake?.(); maybeOpenMic(); },
         audio: playPcm,
         interrupted: interrupt,
-        turnComplete: () => { touch(); introWake?.(); if (state === "thinking" && !playing.size) set("listening"); },
+        toolReplied: () => { toolReplyAt = Date.now(); },
+        turnComplete: () => { touch(); if (askEnd) silentAt = Date.now(); introWake?.(); if (state === "thinking" && !playing.size) set("listening"); },
         tool: () => { if (askEnd && !firstTool) firstTool = Date.now(); toolCount++; },
         highlight: (id) => { touch(); o.onHighlight(id); },
         transcript: (lines) => { touch(); o.onTranscript(lines); },

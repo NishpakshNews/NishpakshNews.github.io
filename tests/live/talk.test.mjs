@@ -112,7 +112,10 @@ test("highlight: a real id lights up and is answered silently; a made-up id is i
   p.handle({ toolCall: { functionCalls: [{ id: "a", name: "highlight", args: { sentence_id: "p0s0" } }, { id: "b", name: "highlight", args: { sentence_id: "p9s9" } }] } });
   assert.deepEqual(log.hl, ["p0s0"]);
   const r = log.sent[0].toolResponse.functionResponses;
-  assert.deepEqual(r.map((x) => [x.id, x.response.result, x.scheduling]), [["a", "ok", "SILENT"], ["b", "no such sentence id", "SILENT"]]);
+  assert.deepEqual(r.map((x) => [x.id, x.response.result, x.scheduling]), [["a", "ok", undefined], ["b", "no such sentence id", undefined]]);       // an ordinary function: answered so the model carries on
+  const nb = []; const p2 = new LiveProtocol({ sentenceIds: ["p0s0"], send: (m) => nb.push(m), on: {}, nonBlocking: true });
+  p2.handle({ toolCall: { functionCalls: [{ id: "a", name: "highlight", args: { sentence_id: "p0s0" } }] } });
+  assert.equal(nb[0].toolResponse.functionResponses[0].scheduling, "SILENT");                // only a NON_BLOCKING function may be answered silently
 });
 
 test("a part id lights up when the sentence has parts; the bare sentence id of a split sentence is not valid", () => {
