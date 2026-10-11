@@ -88,8 +88,9 @@ class SlotPool:
 def clip_name(voice: str, lang: str) -> str:
     """The file the browser asks for (live/talk.js: intro-<voice>-<lang>.m4a)."""
     return f"intro-{voice}-{lang}.m4a"
-STYLE = {"en": "Say this warmly and calmly, like a friendly news reader inviting a conversation, exactly as written:",
-         "hi": "इसे गर्मजोशी और शांति से, एक मित्रवत समाचार-वाचक की तरह, जैसा लिखा है वैसा ही बोलें:"}
+# NO style instruction in the prompt (Oct 11 2026): the Gemini TTS model speaks EVERYTHING it is given, so the old "Say this warmly and
+# calmly ... exactly as written:" line was read aloud in front of each sentence (a 7 s intro came out 16-26 s long). Only the words go in.
+MAX_WORDS_PER_SEC = 1.5                # a sentence is rejected when it is spoken slower than this (it means extra words were spoken)
 
 
 def load(path: pathlib.Path = INTRO_FILE) -> dict:
@@ -103,13 +104,22 @@ def load(path: pathlib.Path = INTRO_FILE) -> dict:
 
 
 def build_pcm(parts: list[str], pause_seconds: float, speak) -> bytes:
-    """The spoken parts one after another with a pause between them. `speak(text) -> pcm bytes` (None = failed)."""
+    """The spoken parts one after another with a pause between them. `speak(text) -> pcm bytes` (None = failed).
+    A part that comes out far longer than its words need (the model said something else too) is asked for once more, then refused."""
     gap = b"\x00\x00" * int(RATE * pause_seconds)
     out = []
     for text in parts:
-        pcm = speak(text)
-        if not pcm:
-            raise RuntimeError(f"no speech for: {text[:40]}")
+        limit = 1.5 + len(text.split()) / MAX_WORDS_PER_SEC
+        for attempt in (1, 2):
+            pcm = speak(text)
+            if not pcm:
+                raise RuntimeError(f"no speech for: {text[:40]}")
+            secs = len(pcm) / 2 / RATE
+            if secs <= limit:
+                break
+            log.info("too long (%.1f s for %d words, limit %.1f s), attempt %d: %s", secs, len(text.split()), limit, attempt, text[:40])
+        else:
+            raise ValueError(f"the model keeps saying more than the words: {text[:40]}")
         out.append(pcm)
     return gap.join(out)
 
@@ -148,7 +158,7 @@ def main() -> None:
                 continue
 
             def speak(text: str, lang=lang, voice=voice):
-                return pool.speak(lambda slot: slot[0].tts(slot[1], f"{STYLE[lang]}\n\n{text}", voice))
+                return pool.speak(lambda slot: slot[0].tts(slot[1], text, voice))
             try:
                 pcm = build_pcm(intro[lang], float(intro["pause_seconds"]), speak)
             except RuntimeError as e:                # the quota is gone (or the model is down): stop here, the next run carries on from this file
