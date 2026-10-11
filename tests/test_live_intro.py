@@ -65,3 +65,53 @@ def test_the_workflow_hands_the_job_the_intro_secret():
     import pathlib
     yml = (pathlib.Path(live_intro.__file__).resolve().parent.parent / ".github" / "workflows" / "live-intro.yml").read_text(encoding="utf-8")
     assert "GEMINI_API_KEY_INTRO: ${{ secrets.GEMINI_API_KEY_INTRO }}" in yml
+
+
+class _Clock:
+    def __init__(self):
+        self.t = 1000.0
+
+    def now(self):
+        return self.t
+
+    def sleep(self, s):
+        self.t += s
+
+
+def test_a_slot_is_not_called_more_than_three_times_a_minute_and_the_next_model_takes_the_overflow():
+    c = _Clock()
+    pool = live_intro.SlotPool([(None, "m1", 0), (None, "m2", 0)], rpm=3, now=c.now, sleep=c.sleep)
+    calls = []
+    for _ in range(8):
+        pool.speak(lambda slot: calls.append((slot[1], c.t)) or b"\x01\x01")
+    for m in ("m1", "m2"):
+        times = [t for name, t in calls if name == m]
+        assert all(b - a >= 20 for a, b in zip(times, times[1:]))      # 3 a minute: at least 20 s between calls of one model
+    assert {name for name, _ in calls} == {"m1", "m2"}                 # the second model was used while the first was cooling down
+
+
+def test_a_slot_that_keeps_failing_is_dropped_and_no_slot_left_means_none():
+    c = _Clock()
+    pool = live_intro.SlotPool([(None, "m1", 0)], rpm=3, now=c.now, sleep=c.sleep, max_fail=3)
+    n = []
+
+    def boom(slot):
+        n.append(1)
+        raise RuntimeError("429 RESOURCE_EXHAUSTED")
+    assert pool.speak(boom) is None
+    assert len(n) == 3                                                 # tried three times, then left alone
+    assert pool.speak(boom) is None and len(n) == 3                    # and not tried again on the next call
+
+
+def test_one_failure_does_not_end_the_run_and_a_success_resets_the_count():
+    c = _Clock()
+    pool = live_intro.SlotPool([(None, "m1", 0), (None, "m2", 0)], rpm=3, now=c.now, sleep=c.sleep)
+    seen = []
+
+    def call(slot):
+        seen.append(slot[1])
+        if slot[1] == "m1":
+            raise RuntimeError("429")
+        return b"\x01\x01"
+    assert pool.speak(call) == b"\x01\x01"
+    assert seen == ["m1", "m2"]
