@@ -2658,6 +2658,7 @@ function talkInstance() {
     onHighlight: tkLight,
     onTranscript: lines => { const g = [...lines].reverse().find(l => l.role === "guide"); TK.cap = g ? g.text : ""; tkCaption(); },
     onLevel: v => { if (TK.card && (TK.st === "listening" || TK.st === "thinking")) TK.card.style.setProperty("--lv", Math.min(1, v * 7).toFixed(2)); },
+    onMetric: m => console.info("talk timing (ms after you stopped talking; about 1000 of it is waiting for the end of your turn):", m),
     onSlow: v => { TK.slow = !!v; if (TK.phase === "live") tkPaint(); },     // the guide is taking long: say so, so nobody wonders whether it heard
     onEnd: tkEnded,
     onError: e => console.warn("talk:", e.code, e.message),

@@ -24,6 +24,7 @@ const MODEL = Deno.env.get("LIVE_MODEL") || "gemini-3.8-live";
 const SEND_LANGUAGE_CODE = Deno.env.get("LIVE_LANGUAGE_CODE") === "1";   // see voice.ts: off until the model is known to accept it
 const NON_BLOCKING = Deno.env.get("LIVE_NONBLOCKING") === "1";           // see brief.ts toolsFor: highlight need not stop the guide; off until the model is known to accept it
 const THINKING = thinkingConfig(Deno.env.get("LIVE_THINKING_CONFIG"));       // see voice.ts thinkingConfig: how long the model may reason before it speaks; nothing is sent unless the secret is set (a big question made the guide go silent)
+const NOISE_GATE = Deno.env.get("LIVE_NOISE_GATE") !== "0";           // "0" turns the browser's noise gate off (live/talk.js NoiseGate): the microphone audio then goes to Gemini as it is, for a reader the gate keeps shutting out
 const FEED_URL = Deno.env.get("FEED_URL") || "https://raw.githubusercontent.com/NishpakshNews/NishpakshNews.github.io/feed";
 const KEYS = [...new Set(["GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3", "GEMINI_API_KEY_4", "GEMINI_API_KEY_5"]
   .map((k) => (Deno.env.get(k) || "").trim()).filter(Boolean))];
@@ -169,7 +170,7 @@ Deno.serve(async (req) => {
     }
     return reply({
       token, model: MODEL, lang: brief.lang, headline: brief.headline, instruction: brief.instruction,
-      voice: style.voice, tools: toolsFor(NON_BLOCKING), thinking: THINKING, silence_ms: SILENCE_MS, language_code: SEND_LANGUAGE_CODE ? languageCode(brief.lang, style.accent) : null,
+      voice: style.voice, tools: toolsFor(NON_BLOCKING), thinking: THINKING, noise_gate: NOISE_GATE, silence_ms: SILENCE_MS, language_code: SEND_LANGUAGE_CODE ? languageCode(brief.lang, style.accent) : null,
       sentence_ids: brief.sentenceIds, max_seconds: MAX_SECONDS, hourly: HOURLY, session: data.id,
     });
   } catch (e) {

@@ -6,6 +6,7 @@
 //     getHeaders: async () => ({ apikey: SUPABASE_KEY, Authorization: `Bearer ${await token()}` }),
 //     introBase: "/live/",                      // intro.json: the words the guide says first (it says them itself, in its own voice)
 //     onState: (s) => ..., onHighlight: (id) => ..., onTranscript: (lines) => ..., onLevel: (rms) => ...,
+//     onMetric: ({firstAudioMs, firstToolMs, tools}) => ...,   // how long one answer took to start, after the reader stopped talking
 //     onSlow: (slow) => ...,                    // true when the guide has taken more than a few seconds to start answering, false when it starts
 //     onGrant: ({instruction, sentenceIds, maxSeconds, daily}) => ...,   // what the guide was given (for testing)
 //     onEnd: ({reason}) => ..., onError: ({code, message}) => ...,
@@ -91,7 +92,7 @@ export const rms = (f) => { let s = 0; for (let i = 0; i < f.length; i++) s += f
 // reader). Everything else is sent as silence (zeros, so the stream keeps its timing), which the server's detector reads as "the
 // reader has finished". The floor follows the quietest recent level: down at once, up slowly (a long sentence must not raise it
 // into the speech), and it starts from the first 0.6 s of the microphone. Numbers are first guesses, to be tuned by ear.
-export const GATE = { minLevel: 0.02, ratio: 2.5, hangMs: 400, riseMs: 8000, maxFloor: 0.03, warmMs: 600 };
+export const GATE = { minLevel: 0.012, ratio: 2, hangMs: 500, riseMs: 8000, maxFloor: 0.02, warmMs: 600 };   // Oct 11 2026, evening: it was 0.02 / 2.5 / 400 / 0.03 and shut out a reader who speaks softly (the trailing words of a sentence were lost)
 
 export class NoiseGate {
   constructor(opts = {}) {
@@ -190,6 +191,7 @@ export class LiveProtocol {
   _tools(calls) {
     const responses = [];
     for (const fc of calls) {
+      this.on.tool?.(fc.name);
       let result = "unknown function";
       if (fc.name === "highlight") {
         const id = this.validId(fc.args?.sentence_id);
@@ -230,6 +232,7 @@ export function createTalk(opts) {
   let state = "idle", ctx = null, stream = null, ws = null, proto = null, grant = null;
   let tapNode = null, tapSource = null, silent = null, muted = false, micOn = false, ending = false;
   let thinkTimer = null, voiced = false, lastVoice = 0, thinkSince = 0, pingTimer = null, introDone = false, ready = false, introStop = null, introWake = null, readyWake = null;
+  let askEnd = 0, firstTool = 0, toolCount = 0;      // timing of one answer: when the reader stopped, when the guide first called a function, when its voice began
   let nextAt = 0, quietTimer = null, idleTimer = null, maxTimer = null, wrapTimer = null, lastActive = 0, slow = false;
   const playing = new Set();
   let runId = 0;                 // each start() is a run; stop() during connecting must stop THAT run from carrying on
@@ -246,6 +249,11 @@ export function createTalk(opts) {
   function playPcm(int16) {
     if (!ctx || ending) return;
     touch();
+    if (askEnd) {           // the first sound of an answer: how long after the reader stopped (this includes the ~1 s of waiting for the end of their turn)
+      const now = Date.now();
+      o.onMetric?.({ firstAudioMs: now - askEnd, firstToolMs: firstTool ? firstTool - askEnd : null, tools: toolCount });
+      askEnd = 0; firstTool = 0; toolCount = 0;
+    }
     const f = pcm16ToFloat32(int16);
     const buf = ctx.createBuffer(1, f.length, OUT_RATE);
     buf.copyToChannel(f, 0);
@@ -280,13 +288,14 @@ export function createTalk(opts) {
     silent.gain.value = 0;                // the tap must be connected to run, but must not be heard
     silent.connect(ctx.destination);
     const gate = new NoiseGate();
+    const gateOn = grant?.noise_gate !== false;      // the function can switch the gate off (secret LIVE_NOISE_GATE=0): the audio then goes to Gemini as it is; the gate still drives the page's own "reader is talking" cues
     const onChunk = (f32) => {
       if (muted || !ws || ws.readyState !== 1) return;
       const level = rms(f32);
       const voice = gate.process(level, (f32.length / ctx.sampleRate) * 1000);      // the reader, not the room
       o.onLevel(voice ? level : 0);
       if (voice) { touch(); if (!playing.size && state !== "speaking") { voiced = true; lastVoice = Date.now(); if (state === "thinking") set("listening"); } }   // not while the guide speaks: its own voice may leak into the microphone   // talking again: the thinking was early
-      ws.send(JSON.stringify({ realtimeInput: { audio: { data: int16ToBase64(floatTo16kPcm(voice ? f32 : new Float32Array(f32.length), ctx.sampleRate)), mimeType: `audio/pcm;rate=${IN_RATE}` } } }));
+      ws.send(JSON.stringify({ realtimeInput: { audio: { data: int16ToBase64(floatTo16kPcm(voice || !gateOn ? f32 : new Float32Array(f32.length), ctx.sampleRate)), mimeType: `audio/pcm;rate=${IN_RATE}` } } }));
     };
     try {
       const url = URL.createObjectURL(new Blob([WORKLET], { type: "application/javascript" }));
@@ -306,7 +315,7 @@ export function createTalk(opts) {
     // the reader stopped talking and the guide has not started: show it is working on the answer
     thinkTimer = setInterval(() => {
       const now = Date.now();
-      if (state === "listening" && voiced && !playing.size && now - lastVoice > THINK_AFTER_MS) { voiced = false; thinkSince = now; set("thinking"); }
+      if (state === "listening" && voiced && !playing.size && now - lastVoice > THINK_AFTER_MS) { voiced = false; thinkSince = now; askEnd = lastVoice; firstTool = 0; toolCount = 0; set("thinking"); }
       else if (state === "thinking") {
         touch();                                                   // waiting for the guide is not "nobody is speaking": the 45 s idle end must not fire while it works
         if (!slow && now - thinkSince > SLOW_AFTER_MS) { slow = true; o.onSlow?.(true); }
@@ -365,6 +374,7 @@ export function createTalk(opts) {
         audio: playPcm,
         interrupted: interrupt,
         turnComplete: () => { touch(); introWake?.(); if (state === "thinking" && !playing.size) set("listening"); },
+        tool: () => { if (askEnd && !firstTool) firstTool = Date.now(); toolCount++; },
         highlight: (id) => { touch(); o.onHighlight(id); },
         transcript: (lines) => { touch(); o.onTranscript(lines); },
         goAway: () => end("goaway"),

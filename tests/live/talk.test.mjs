@@ -162,7 +162,7 @@ test("speech over the noise opens it at once, and it closes shortly after the re
   feed(g, 0.02, 1000);
   assert.equal(g.process(0.15, 32), true);      // the first chunk of speech is let through
   assert.ok(feed(g, 0.15, 6000).every(Boolean), "a long sentence is never cut: the floor cannot climb into the speech");
-  feed(g, 0.02, 500);                           // past the hangover
+  feed(g, 0.02, 600);                           // past the hangover
   assert.equal(g.open, false);
   assert.ok(feed(g, 0.02, 2000).every((o) => !o), "noise after the reader stopped goes through as silence, so the turn can end");
 });
