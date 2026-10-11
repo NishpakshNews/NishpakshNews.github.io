@@ -47,5 +47,16 @@ const ok = (c, m) => console.log(c ? "PASS" : "FAIL", m);
   const hi = await page.evaluate(() => { const c = document.querySelector(".tkcard"); const r = c.getBoundingClientRect(); return { title: document.querySelector(".tkname").textContent, top: Math.round(r.top), bottom: Math.round(r.bottom), vh: innerHeight, scrolls: c.scrollHeight > c.clientHeight, labs: [...document.querySelectorAll(".tkopts .olab")].map(x => x.textContent) }; });
   ok(hi.title === "आवाज़ और रफ़्तार" && hi.top >= 0 && hi.bottom <= hi.vh, "Hindi panel fits a 360x640 screen " + JSON.stringify(hi));
   await page.screenshot({ path: `${SHOTS}/41-settings-hindi-small.png` });
+  // thinking is shown ON TOP of listening: the card stays "listening", says Listening, and adds dots and a hint
+  h = await open(); page = h.page;
+  await page.waitForTimeout(300); await page.tap(".acts .talkbtn"); await page.waitForTimeout(500);
+  await page.evaluate(() => window.__mock.set("listening"));
+  await page.evaluate(() => window.__mock.set("thinking")); await page.waitForTimeout(200);
+  const th = await page.evaluate(() => { const c = document.querySelector(".tkcard"); return { ph: c.dataset.ph, think: c.dataset.think, line: document.querySelector(".tkline").textContent, dots: document.querySelectorAll(".tkline .tkdots i").length, hint: document.querySelector(".tkhint").textContent }; });
+  ok(th.ph === "listening" && th.think === "1" && th.line === "Listening and thinking" && th.dots === 3 && /Working on your answer/.test(th.hint), "thinking = listening look + combined line + dots + hint " + JSON.stringify(th));
+  await page.screenshot({ path: `${SHOTS}/42-thinking-on-listening.png` });
+  await page.evaluate(() => window.__mock.set("listening")); await page.waitForTimeout(200);
+  const back = await page.evaluate(() => ({ think: document.querySelector(".tkcard").dataset.think, dots: document.querySelectorAll(".tkdots").length }));
+  ok(back.think === undefined && back.dots === 0, "the reader talks again: plain listening " + JSON.stringify(back));
   await h.close();
 })();

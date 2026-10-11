@@ -604,7 +604,7 @@
     background: linear-gradient(180deg, #edf4fe 0%, #fff 60%);
     box-shadow: 0 0 0 1.5px rgba(74,134,214,0.55), 0 0 46px rgba(74,134,214,0.36), 0 20px 56px rgba(22,26,56,0.3); }
   .tkcard[data-ph="speaking"] { animation: tkglow 2.2s ease-in-out infinite; }
-  .tkcard[data-ph="thinking"] { animation: tkglow 1.5s ease-in-out infinite; }
+  .tkcard[data-think] { animation: tkglow 1.5s ease-in-out infinite; }       /* thinking is shown ON TOP of listening (the microphone stays open) */
   @keyframes tkglow { 50% { box-shadow: 0 0 0 1.5px rgba(74,134,214,0.8), 0 0 64px rgba(74,134,214,0.5), 0 20px 56px rgba(22,26,56,0.3); } }
 
   .tkhead { display: grid; grid-template-columns: 36px 1fr 36px; align-items: center; gap: 8px; }
@@ -621,12 +621,16 @@
   .tkstage i { position: relative; width: 6px; height: 92px; border-radius: 3px; transform: scaleY(0.14); opacity: 0.5;
                background: linear-gradient(180deg, #a3c4f2 0%, #4a86d6 52%, #2f3a72 100%); transition: transform 110ms ease-out, opacity 300ms ease; }
   .tkcard[data-ph="connecting"] .tkstage i { opacity: 0.9; animation: tkwait 1.3s ease-in-out infinite; animation-delay: calc(var(--i) * -0.09s); }
-  /* thinking: the reader has finished, the guide has not started: a wave runs through the bars, back and forth */
-  .tkcard[data-ph="thinking"] .tkstage i { opacity: 1; animation: tkthink 1.2s ease-in-out infinite; animation-delay: calc(var(--i) * -0.1s); }
+  /* thinking (owner, Oct 11 2026): the card is still LISTENING (the microphone is open, the bars still follow the reader's voice, so
+     they stay on a little higher floor) and a shimmer runs through the bars and three dots pulse by the word: "I heard you, the answer is coming" */
+  .tkcard[data-ph][data-think] .tkstage i { transform: scaleY(calc(0.3 + var(--lv, 0) * var(--k, 1) * 0.7)); animation: tkshimmer 1.2s ease-in-out infinite; animation-delay: calc(var(--i) * -0.1s); }
+  .tkdots { display: inline-flex; gap: 4px; margin-inline-start: 8px; vertical-align: middle; }
+  .tkdots i { width: 5px; height: 5px; border-radius: 50%; background: #4a86d6; animation: tkdot 1.1s ease-in-out infinite; animation-delay: calc(var(--j) * 0.16s); }
+  @keyframes tkdot { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
   .tkcard[data-ph="speaking"] .tkstage i { opacity: 1; animation: tkdance var(--p, 0.9s) ease-in-out infinite; animation-delay: var(--d, 0s); }
   .tkcard[data-ph="listening"] .tkstage i { opacity: 1; transform: scaleY(calc(0.14 + var(--lv, 0) * var(--k, 1) * 0.86)); }
   @keyframes tkdance { 0%, 100% { transform: scaleY(0.16); } 50% { transform: scaleY(var(--k, 1)); } }
-  @keyframes tkthink { 0%, 100% { transform: scaleY(0.2); } 50% { transform: scaleY(0.7); } }
+  @keyframes tkshimmer { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
   @keyframes tkwait { 0%, 100% { transform: scaleY(0.14); } 50% { transform: scaleY(0.4); } }
 
   .tkline { margin: 6px 0 0; min-height: 30px; font-family: var(--head); font-size: 22px; font-weight: 600; line-height: 1.25; color: var(--ink); }
@@ -636,7 +640,7 @@
   .tkslot { min-height: 72px; display: flex; align-items: center; justify-content: center; margin-top: 4px; }
   .tkcap { margin: 0 6px; font-size: 14px; line-height: 1.5; color: var(--ink-soft); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .tkcard .tkgo { width: 100%; }
-  .tkcard[data-ph="ready"] .tkcap, .tkcard[data-ph="ended"] .tkcap, .tkcard[data-ph="connecting"] .tkcap, .tkcard[data-ph="thinking"] .tkcap { display: none; }
+  .tkcard[data-ph="ready"] .tkcap, .tkcard[data-ph="ended"] .tkcap, .tkcard[data-ph="connecting"] .tkcap, .tkcard[data-think] .tkcap { display: none; }          /* the guide's last words belong to the last answer */
   .tkcard[data-ph="speaking"] .tkgo, .tkcard[data-ph="listening"] .tkgo, .tkcard[data-ph="connecting"] .tkgo, .tkcard[data-ph="thinking"] .tkgo { display: none; }
   .tkpriv { margin: 8px 6px 2px; font-size: 12px; line-height: 1.45; color: var(--muted); }
 
@@ -693,7 +697,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .talkpeek .tpin, .talkpeek .tpin span, .tkcard, .tkcard.min, .tkveil, .tkfloat, .tkfloat.on { transition-duration: 1ms !important; transition-delay: 0ms !important; }
-    .tkcard[data-ph="speaking"], .tkcard[data-ph="connecting"] .tkstage i, .tkcard[data-ph="thinking"], .tkcard[data-ph="thinking"] .tkstage i, .tkfloat.connecting, .tkfloat.thinking, .tkfloat.speaking::after { animation: none !important; }
+    .tkcard[data-ph="speaking"], .tkcard[data-ph="connecting"] .tkstage i, .tkcard[data-think], .tkcard[data-think] .tkstage i, .tkdots i, .tkfloat.connecting, .tkfloat.thinking, .tkfloat.speaking::after { animation: none !important; }
     /* speaking still shows: the bars stand at different heights instead of dancing */
     .tkcard[data-ph="speaking"] .tkstage i { animation: none; transform: scaleY(calc(var(--k, 1) * 0.8)); }
     .tkfloat.speaking .wave i { animation: none; transform: scaleY(0.7); }
@@ -2583,7 +2587,7 @@ Object.assign(T.en, {
   talkName: "Understand by talking", talkBanner: "Understand by talking", talkOpen: "Open the conversation", talkMin: "Minimise",
   talkWhy: "Sign in to talk about this story.", talkStart: "Start talking", talkAgain: "Talk again",
   talkReady: "Ask anything about this story", talkReadyHint: "Tap start, then just speak. You can interrupt any time.",
-  talkThinking: "Thinking…", talkThinkingHint: "One moment.",
+  talkThinking: "Listening and thinking", talkThinkingHint: "Got it. Working on your answer. You can keep talking.",
   talkConnecting: "Connecting…", talkConnectingHint: "Allow the microphone if your browser asks.",
   talkSpeaking: "Speaking…", talkSpeakingHint: "Start talking any time to interrupt.",
   talkListening: "Go ahead, I'm listening", talkListeningHint: "Ask about anything in this story.",
@@ -2599,7 +2603,7 @@ Object.assign(T.hi, {
   talkName: "बात करके समझें", talkBanner: "बात करके समझें", talkOpen: "बातचीत खोलें", talkMin: "छोटा करें",
   talkWhy: "इस ख़बर पर बात करने के लिए साइन इन करें।", talkStart: "बात शुरू करें", talkAgain: "फिर बात करें",
   talkReady: "इस ख़बर के बारे में कुछ भी पूछिए", talkReadyHint: "शुरू दबाएँ, फिर बस बोलिए। आप कभी भी बीच में टोक सकते हैं।",
-  talkThinking: "सोच रहा हूँ…", talkThinkingHint: "एक पल।",
+  talkThinking: "सुन रहे हैं, सोच रहे हैं", talkThinkingHint: "जवाब तैयार हो रहा है। आप बोलते रह सकते हैं।",
   talkConnecting: "जुड़ रहे हैं…", talkConnectingHint: "ब्राउज़र माइक्रोफ़ोन की अनुमति माँगे तो दे दें।",
   talkSpeaking: "सुनिए…", talkSpeakingHint: "बीच में कभी भी बोलकर टोक सकते हैं।",
   talkListening: "बोलिए, हम सुन रहे हैं", talkListeningHint: "इस ख़बर में कुछ भी पूछिए।",
@@ -2653,7 +2657,7 @@ function talkInstance() {
     onState: s => { TK.st = s; if (TK.phase === "live") { tkPaint(); tkFlushNudges(); } },
     onHighlight: tkLight,
     onTranscript: lines => { const g = [...lines].reverse().find(l => l.role === "guide"); TK.cap = g ? g.text : ""; tkCaption(); },
-    onLevel: v => { if (TK.card && TK.st === "listening") TK.card.style.setProperty("--lv", Math.min(1, v * 7).toFixed(2)); },
+    onLevel: v => { if (TK.card && (TK.st === "listening" || TK.st === "thinking")) TK.card.style.setProperty("--lv", Math.min(1, v * 7).toFixed(2)); },
     onEnd: tkEnded,
     onError: e => console.warn("talk:", e.code, e.message),
   });
@@ -2757,7 +2761,9 @@ function tkCaption() { const c = TK.card && TK.card.querySelector(".tkcap"); if 
 function tkPaint() {
   if (!TK.card) return;
   const t = T[lang], c = TK.card, ph = tkPhase(), errs = ["mic", "login", "limit", "busy", "gone", "network", "unavailable", "refused", "error"];
-  c.dataset.ph = ph;
+  const think = ph === "thinking";            // shown as LISTENING with a thinking cue on top: the microphone is open the whole time
+  c.dataset.ph = think ? "listening" : ph;
+  if (think) c.dataset.think = "1"; else delete c.dataset.think;
   const set = TK.view === "set", lb = c.querySelector(".tkhead .bx");
   c.classList.toggle("set", set);
   c.querySelector(".tkname").textContent = set ? t.tkSet : t.talkName;
@@ -2768,7 +2774,9 @@ function tkPaint() {
   const isErr = errs.includes(TK.reason), msg = TK.reason === "limit" ? tkLimitText(t) : (t.talkMsg[TK.reason] || t.talkMsg.other);
   const words = {ready: [t.talkReady, t.talkReadyHint], connecting: [t.talkConnecting, t.talkConnectingHint], speaking: [t.talkSpeaking, t.talkSpeakingHint], thinking: [t.talkThinking, t.talkThinkingHint],
                  listening: [t.talkListening, t.talkListeningHint], ended: [isErr ? t.talkCant : t.talkEnded, msg]}[ph];
-  c.querySelector(".tkline").textContent = words[0];
+  const line = c.querySelector(".tkline");
+  line.textContent = words[0];
+  if (think) { const d = document.createElement("span"); d.className = "tkdots"; d.setAttribute("aria-hidden", "true"); d.innerHTML = '<i style="--j:0"></i><i style="--j:1"></i><i style="--j:2"></i>'; line.appendChild(d); }
   c.querySelector(".tkhint").textContent = words[1];
   const go = c.querySelector(".tkgo");
   go.textContent = ph === "ended" ? t.talkAgain : t.talkStart;
@@ -2776,7 +2784,7 @@ function tkPaint() {
   go.hidden = ph === "ended" && ["limit", "gone"].includes(TK.reason);    // starting again cannot help
   c.querySelector(".tkpriv").textContent = t.talkPriv;
   tkCaption();
-  if (ph !== "listening") c.style.removeProperty("--lv");
+  if (ph !== "listening" && !think) c.style.removeProperty("--lv");
   if (fl.el) {
     fl.el.setAttribute("aria-label", t.talkOpen);
     fl.el.classList.toggle("speaking", ph === "speaking");
