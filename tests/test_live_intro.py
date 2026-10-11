@@ -50,3 +50,18 @@ def test_the_voices_are_the_ones_the_reader_can_pick_and_the_file_names_are_what
     assert live_intro.VOICES[0] == "Kore"
     assert live_intro.clip_name("Kore", "en") == "intro-Kore-en.m4a"
     assert live_intro.clip_name("Sadachbia", "hi") == "intro-Sadachbia-hi.m4a"
+
+
+def test_the_intro_job_uses_its_own_key_when_there_is_one(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY_INTRO", raising=False)
+    assert live_intro.intro_keys(["a", "b"]) == ["a", "b"]          # not set: the pipeline's keys, as before
+    monkeypatch.setenv("GEMINI_API_KEY_INTRO", "  own  ")
+    assert live_intro.intro_keys(["a", "b"]) == ["own"]             # set: only that one, so the pipeline's quota is not touched
+    monkeypatch.setenv("GEMINI_API_KEY_INTRO", "   ")
+    assert live_intro.intro_keys(["a"]) == ["a"]                    # blank counts as not set
+
+
+def test_the_workflow_hands_the_job_the_intro_secret():
+    import pathlib
+    yml = (pathlib.Path(live_intro.__file__).resolve().parent.parent / ".github" / "workflows" / "live-intro.yml").read_text(encoding="utf-8")
+    assert "GEMINI_API_KEY_INTRO: ${{ secrets.GEMINI_API_KEY_INTRO }}" in yml

@@ -5,6 +5,7 @@ name: live-intro
 # exist yet, as many as the day's text-to-speech quota allows, commits them to main and publishes the site with them.
 # 2 speech calls a file, 40 files for all ten voices in both languages: run it again the next day until the log says
 # "nothing left to make". Leave the inputs empty for every voice.
+# Uses the secret GEMINI_API_KEY_INTRO (a key from a separate Google Cloud project) so the hourly run cannot take its quota.
 on:
   workflow_dispatch:
     inputs:
@@ -28,6 +29,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
+      # a key from its OWN Google Cloud project (secret GEMINI_API_KEY_INTRO): the hourly run and audio.yml spend the pipeline keys' text-to-speech
+      # quota, so this job must not share it. If the secret is missing it falls back to the pipeline keys below (and then competes for the quota).
+      GEMINI_API_KEY_INTRO: ${{ secrets.GEMINI_API_KEY_INTRO }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
       GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}

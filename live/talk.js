@@ -69,6 +69,31 @@ export function pcm16ToFloat32(int16) {
   return out;
 }
 
+/** 24 kHz guide audio -> the AudioContext's own rate, chunk after chunk WITHOUT seams (owner, Oct 11 2026: random loud beeps while talking).
+ *  Before, every chunk was handed to the browser as its own 24 kHz buffer on a 44.1/48 kHz context: each buffer was resampled alone and
+ *  its start rounded to a frame, which leaves a step (a click or a short beep) at the joint of two chunks. This keeps its place (the
+ *  fractional position and the last sample) between calls, so the chunks join as one continuous wave. */
+export class Resampler {
+  constructor(inRate, outRate) { this.step = inRate / outRate; this.same = inRate === outRate; this.reset(); }
+  reset() { this.pos = 0; this.last = 0; }
+  process(f) {
+    if (this.same || !f.length) return f;
+    const n = f.length;
+    const out = new Float32Array(Math.ceil((n - this.pos) / this.step) + 2);
+    let pos = this.pos, k = 0;
+    for (;;) {
+      const i = Math.floor(pos);
+      if (i + 1 >= n) break;                                 // the next input sample is in the next chunk: wait for it
+      const a = i < 0 ? this.last : f[i];
+      out[k++] = a + (f[i + 1] - a) * (pos - i);
+      pos += this.step;
+    }
+    this.pos = pos - n;                                      // where the next chunk starts, counted from ITS first sample
+    this.last = f[n - 1];
+    return out.subarray(0, k);
+  }
+}
+
 export function int16ToBase64(int16) {
   const bytes = new Uint8Array(int16.length * 2);
   const view = new DataView(bytes.buffer);
@@ -237,7 +262,7 @@ export class TalkError extends Error {
 
 export function createTalk(opts) {
   const o = { introBase: "./", onState() {}, onHighlight() {}, onTranscript() {}, onLevel() {}, onEnd() {}, onError() {}, ...opts };
-  let state = "idle", ctx = null, stream = null, ws = null, proto = null, grant = null;
+  let state = "idle", ctx = null, stream = null, ws = null, proto = null, grant = null, outRs = null;
   let tapNode = null, tapSource = null, silent = null, muted = false, micOn = false, ending = false;
   let thinkTimer = null, voiced = false, lastVoice = 0, thinkSince = 0, pingTimer = null, introDone = false, ready = false, introStop = null, introWake = null, readyWake = null;
   let wsOpenAt = 0;
@@ -265,13 +290,19 @@ export function createTalk(opts) {
       o.onMetric?.({ firstAudioMs: now - askEnd, firstToolMs: firstTool ? firstTool - askEnd : null, tools: toolCount });
       askEnd = 0; firstTool = 0; toolCount = 0;
     }
-    const f = pcm16ToFloat32(int16);
-    const buf = ctx.createBuffer(1, f.length, OUT_RATE);
+    if (!outRs) outRs = new Resampler(OUT_RATE, ctx.sampleRate);
+    const f = outRs.process(pcm16ToFloat32(int16));
+    if (!f.length) return;
+    const at = Math.max(ctx.currentTime + 0.02, nextAt);
+    if (at > nextAt + 1e-4) {                                // a new stretch of speech (not the next chunk of one): 3 ms fade-in, so it does not start with a click
+      const m = Math.min(f.length, Math.floor(ctx.sampleRate * 0.003));
+      for (let i = 0; i < m; i++) f[i] *= i / m;
+    }
+    const buf = ctx.createBuffer(1, f.length, ctx.sampleRate);
     buf.copyToChannel(f, 0);
     const src = ctx.createBufferSource();
     src.buffer = buf;
     src.connect(ctx.destination);
-    const at = Math.max(ctx.currentTime + 0.02, nextAt);
     src.start(at);
     nextAt = at + buf.duration;
     playing.add(src);
@@ -289,6 +320,7 @@ export function createTalk(opts) {
     for (const s of playing) { try { s.onended = null; s.stop(); } catch { /* already stopped */ } }
     playing.clear();
     nextAt = 0;
+    outRs?.reset();
     if (micOn && !ending) set("listening");
   }
 
@@ -502,6 +534,7 @@ export function createTalk(opts) {
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       ctx = new AC();
+      outRs = null;                        // made on the first chunk, for this context's rate
       await ctx.resume();                  // inside the reader's tap, so the browser lets it play
       if (stale()) return;
       const clip = startClip(lang, style?.voice);      // the recording starts now, not after the login and the socket

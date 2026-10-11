@@ -12,6 +12,9 @@ Made with Gemini TTS using the same voice names as the Live guide, by hand when 
     python -m nishpaksh.live_intro                    # every voice, both languages, into live/ (needs ffmpeg and a Gemini key)
     python -m nishpaksh.live_intro --voice Kore       # only one voice (repeat the flag for more)
 
+With GEMINI_API_KEY_INTRO set (a key from a separate Google Cloud project; GitHub secret of the same name) only that key is used, so the
+hourly pipeline and audio.yml cannot take the day's quota first (Oct 11 2026). Without it the pipeline's keys are used, as before.
+
 2 TTS calls a recording (the two sentences), 40 for all ten voices in both languages, out of the 10 a day each model has: the
 run SKIPS files that already exist and stops cleanly when the quota is gone, so run it again the next day until it says
 nothing is left. Commit the files in `live/`: the site workflow copies `live/intro-*.m4a` next to the page.
@@ -21,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import pathlib
 import time
 
@@ -31,6 +35,16 @@ LIVE_DIR = pathlib.Path(__file__).resolve().parent.parent / "live"
 INTRO_FILE = LIVE_DIR / "intro.json"
 # the voices the reader can pick: the same list as VOICES in supabase/functions/live-token/voice.ts (a test keeps them equal), the default first
 VOICES = ["Kore", "Orus", "Zephyr", "Autonoe", "Umbriel", "Erinome", "Laomedeia", "Schedar", "Achird", "Sadachbia"]
+
+
+INTRO_KEY_ENV = "GEMINI_API_KEY_INTRO"
+
+
+def intro_keys(fallback: list[str]) -> list[str]:
+    """The key(s) this job spends. GEMINI_API_KEY_INTRO (a key from its OWN Google Cloud project) when it is set, so the hourly run
+    and the audio job cannot use up the day's text-to-speech quota first; else the pipeline's keys, as before."""
+    own = os.environ.get(INTRO_KEY_ENV, "").strip()
+    return [own] if own else fallback
 
 
 def clip_name(voice: str, lang: str) -> str:
@@ -74,9 +88,10 @@ def main() -> None:
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     intro = load()
-    keys = gemini_api_keys()
+    keys = intro_keys(gemini_api_keys())
     if not keys:
-        raise SystemExit("no Gemini key (GEMINI_API_KEY)")
+        raise SystemExit(f"no Gemini key ({INTRO_KEY_ENV} or GEMINI_API_KEY)")
+    log.info("using %s", f"{INTRO_KEY_ENV} (its own quota)" if os.environ.get(INTRO_KEY_ENV, "").strip() else f"the pipeline's {len(keys)} key(s) (shared quota)")
     slots = []                                       # every TTS model on every key, in audio.py's order
     for k, key in enumerate(keys):
         cl = audio._client(key)
