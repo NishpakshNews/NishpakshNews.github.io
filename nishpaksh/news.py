@@ -170,35 +170,52 @@ def _pick(items: list[dict]) -> tuple[list[int], int | None]:
 
 # ------------------------------------------------------------------------------------------- headline
 
-HEADLINE_PROMPT = """Write THREE different headlines for this news story. Each: at most 12 words, plain
-English, sentence case (capital letters only for names).
+HEADLINE_PROMPT = """Write THREE different headlines for this news story, for a reader who has never heard of it.
+Each: at most 12 words, plain English, sentence case (capital letters only for names). A good headline tells
+the outcome and the one detail that makes it matter, so the reader wants the article. "Who did what" alone is
+not enough.
 
-What makes a good headline:
-1. It is the news: what happened, the outcome, not the process or the setting.
-2. One concrete detail: a number, a place, a person readers know.
-3. Who did what: a name readers know, otherwise a role ("IIT Bombay student", "Gujarat police"), then an
-   active verb in the present tense ("detain", "orders", "signs").
-4. Short words, no jargon, no abbreviation a reader may not know.
-5. Only what the statements say: no number, name, cause ("due to", "amid") or judging adjective that is
-   not in them. Never "reportedly", "reports say", "allegedly" at the end.
+The three lead with different things:
+A. THE OUTCOME: what changed, ended or was decided, and for whom.
+B. THE DETAIL: the one specific, surprising or human fact in the statements (an amount, a place, a contrast).
+C. THE STAKES: who is affected, or what is now at risk or unsettled, said as a plain statement.
+
+Rules:
+1. About TODAY: headline the newest development ({newest}), in the present tense with an active verb
+   ("orders", "detains", "rejects"). Never an old event as news: no "earlier", "previously", "last year", no "had".
+2. A name alone is not a headline. A reader who does not know the person must be told who they are: a role,
+   a trade or a town ("Delhi schoolteacher", "IIT Bombay student", "Gujarat police"), or open with the event and
+   put the name later. Only names every Indian knows (PM Modi, Rahul Gandhi, Virat Kohli) may open a headline.
+3. Say it, do not tease it: no questions, no "what we know", "here's why", "explained", "shocking", no
+   exclamation marks, no judging words.
+4. Only what the statements say: no number, name or cause ("due to", "amid", "because") that is not in them.
+   Never "reportedly", "reports say". Use a figure only when it carries the story (a toll, an amount, a deadline).
+5. Short words, no jargon, no abbreviation a reader may not know.
 {dispute}
-Bad -> good:
-- "Defence contract signed under Buy Indian IDDM category" (jargon, no buyer, no amount)
-  -> "Defence Ministry signs Rs 661.50 crore deal for BrahMos launchers"
+Weak -> strong:
 - "India Block leaders hold protest near Jantar Mantar" (the setting)
   -> "Police detain Rahul, Priyanka Gandhi at Jantar Mantar protest"
-- "Supreme Court hears Rajpal Yadav's plea" (the process) -> "Supreme Court orders Rajpal Yadav to pay Rs 5 crore"
-- "Prime Minister Narendra Modi urged strict global regulations against deepfakes" (long, past tense)
-  -> "PM Modi calls for strict global rules on deepfakes"
-- the police put a toll at 40 and the families at 50: "Building collapse kills 40" (takes a side)
-  -> "Police say 40 dead in Seemapuri collapse, families say 50"
+- "Ramesh Kumar produced before court" (a name nobody knows, no reason)
+  -> "Kotdwar gym trainer who defended shopkeeper is produced before court"
+- "Supreme Court hears Jahangirpuri petition" (the process)
+  -> "Supreme Court stops demolition of 200 Jahangirpuri homes"
+- "Sahil Wakode found dead" (a name nobody knows)
+  -> "IIT Bombay first-year student found dead in hostel room"
+- "RBI announces monetary policy decision" (says nothing)
+  -> "RBI hikes repo rate to 6.75%, raising home loan EMIs"
+- "Defence contract signed under Buy Indian IDDM category" (jargon, no buyer, no amount)
+  -> "Defence Ministry signs Rs 661.50 crore deal for BrahMos launchers"
+- police put a toll at 40 and families at 50: "Building collapse kills 40" (takes a side)
+  -> "Seemapuri collapse: police count 40 dead, families say 50"
 {thread}
 THE NEWS: {news}
-The article opens: {lead}
+{latest}The article opens: {lead}
 Other statements (for one detail, if needed):
 {others}
 
-Reply with JSON only: {{"headlines": ["...", "...", "..."]}}"""
+Reply with JSON only: {{"headlines": ["A...", "B...", "C..."]}}"""
+
+LATEST_NOTE = "LATEST (the newest development, headline THIS one): {latest}\n"
 
 DISPUTE_NOTE = """6. THE NEWS is disputed: {versions}. Do not state either version as fact: say whose it is ("police
    say ..."), or leave the disputed detail out."""
@@ -257,17 +274,87 @@ def _actor_problem(h: str, source: str) -> str | None:
     return None
 
 
-def headline_problem(h: str, source: str, banned: set[str], disputed: set[str] = frozenset()) -> str | None:
+WEAK = re.compile(r"(?i)\b(what we know|here(?:'s| is| are)|all you need|explained|explainer|you won'?t believe|"
+                  r"shocking|must[- ]see|breaking(?: news|:)|live updates?|everything (?:you|to)|key takeaways?|know about|"
+                  r"how to)\b|[?!]")
+
+
+def known_names() -> tuple[set[str], set[str]]:
+    """(full names, surnames that belong to ONE known name) from config/known_names.yaml, lower case. \"Yadav\" or
+    \"Gandhi\" alone does not make a name known: several known people share them."""
+    try:
+        from .config import load_yaml
+        full = {str(n).lower() for n in (load_yaml("known_names.yaml") or {}).get("names") or []}
+    except Exception:  # noqa: BLE001
+        return set(), set()
+    last = [n.split()[-1] for n in full if len(n.split()) > 1]
+    return full, {x for x in last if last.count(x) == 1}
+
+
+PERSON_VERBS = (r"(?:was|were|has been|have been|is|are)\s+(?:arrested|detained|found|booked|killed|injured|sentenced|"
+                r"charged|produced|rescued|suspended|sacked|appointed|elected|shot|attacked|named|summoned|granted|denied)")
+
+
+def _persons(facts: str) -> list[str]:
+    """People named in the statements: those style.people proves (a title before, a speech verb after) and those
+    the statements introduce the way a paper introduces a stranger: \"Sahil Wakode, 21,\" / \"Sahil Wakode, a
+    first-year student\" / \"Sahil Wakode was found dead\"."""
+    from . import style
+    out = list(style.people(facts))
+    for name in sorted(style._candidates(facts)):
+        e = re.escape(name)
+        if name not in out and (re.search(rf"\b{e}\s*,\s*(?:\d{{1,2}}\b|(?:a|an|the)\s)", facts)
+                                or re.search(rf"\b{e}\s+{PERSON_VERBS}\b", facts)):
+            out.append(name)
+    return out
+
+
+def _opening_name_problem(h: str, facts: str) -> str | None:
+    """A headline may not OPEN with the name of a person readers do not know (owner, Oct 12 2026: \"a lot of the
+    time the headline is just a person's name and what happened to them, and we do not know that person\").
+    Only a name the statements show to be a PERSON counts (a title or role before it, a speech verb after it:
+    style.people), and a role written before it in the headline is fine (\"Actor Rajpal Yadav ...\")."""
+    if not facts:
+        return None
+    from . import style
+    words = [re.sub(r"(?:'s|\u2019s)$", "", w) for w in re.findall(r"[A-Za-z][\w'\u2019.-]*", h)]
+    full_known, surnames = known_names()
+    for full in _persons(facts):
+        parts = full.split()
+        by_surname = bool(words) and words[0] == parts[-1]
+        if words[:len(parts)] != parts and not by_surname:
+            continue
+        if full.lower() in full_known or (by_surname and parts[-1].lower() in surnames):
+            continue
+        role = ""
+        m = re.search(rf"\b([A-Za-z]+)\s+{re.escape(full)}\b", facts)
+        if m and m.group(1).lower() in style.ROLES_LOWER:
+            role = f" ({m.group(1).lower()})"
+        return (f"it opens with '{full}', a name most readers do not know: say who they are first{role}, "
+                f"or open with what happened")
+    return None
+
+
+def headline_problem(h: str, source: str, banned: set[str], disputed: set[str] = frozenset(),
+                     facts: str = "") -> str | None:
     """What is wrong with a headline, or None. `source` is every statement it may draw on (lower case);
-    `disputed` the answers (numbers, names) the sources disagree on."""
+    `disputed` the answers (numbers, names) the sources disagree on; `facts` the same statements in their own
+    case (to tell a person's name from a place)."""
     low = h.lower()
     if not h or len(h.split()) > 12:
         return "it must be at most 12 words"
+    if WEAK.search(h):
+        return "say the news plainly: no question, exclamation, 'what we know', 'explained' or 'shocking'"
+    if PAST.search(h):
+        return "it points to the past ('earlier', 'previously', 'had ...'): headline what is new today"
     if HEDGE.search(h):
         return "no 'reportedly' or 'reports say': state the news, or say whose claim it is"
     m = re.match(r"([A-Z][a-z]+)\s+(was|is|has|had|gets|got|were)\b", h)
     if m and m.group(1).lower() not in ("police", "court", "government", "centre", "parliament", "army"):
         return f"it starts with a bare name ('{m.group(1)}'); introduce the person by who they are"
+    unknown = _opening_name_problem(h, facts)
+    if unknown:
+        return unknown
     if any(re.search(rf"(?<!\w){re.escape(w)}(?!\w)", low) for w in banned):
         return "it uses a loaded word"
     bad = [l for l in LINKS if re.search(rf"\b{l}\b", low) and l not in source]
@@ -288,8 +375,9 @@ def headline_problem(h: str, source: str, banned: set[str], disputed: set[str] =
     return _actor_problem(h, source)
 
 
-def headline_score(h: str, news: str) -> float:
-    """How good a correct headline is, on what makes one good (owner, Oct 8 2026)."""
+def headline_score(h: str, news: str, latest: str = "") -> float:
+    """How good a correct headline is, on what makes one good (owner, Oct 8 2026). `latest`: the newest
+    development when the lead carries one besides the news (a headline about it is today's, owner Oct 12 2026)."""
     score = 0.0
     n = len(h.split())
     score += 1 if 7 <= n <= 12 else 0
@@ -302,6 +390,10 @@ def headline_score(h: str, news: str) -> float:
     score += 1 if nw and len(hw & nw) >= 0.5 * len(nw) else 0      # it is about the news
     facts = len(DECISIVE.findall(h)) + len(re.findall(r"\d+|\b(?:two|three|four|five|six|seven|eight|nine|ten)\b", h))
     score += min(1.0, 0.5 * max(0, facts - 1))                      # more of the news in the same words
+    if latest:                                                      # about the newest development
+        lw = {_stem(w) for w in re.findall(r"[a-z]{4,}", latest.lower())}
+        score += 1.5 if len(hw & lw) >= 2 else 0
+    score += 0.5 if re.search(r"(?i):\s|\b(?:but|while|without|yet)\b", h) else 0   # a contrast makes the reader ask
     jargon = [t for t in re.findall(r"\b[A-Z]{3,}\b", h) if t not in KNOWN_ABBR]
     score -= len(jargon)                                            # no unexplained abbreviations
     return score
@@ -329,18 +421,25 @@ def _disputed_answers(news: dict, items: dict[int, dict]) -> tuple[set[str], str
 
 
 def write_headline(router: Router | None, news: dict, items: dict[int, dict], lead: str, banned: set[str],
-                   thread: str = "") -> str | None:
-    """The best correct headline of three, or None (the article waits as a kept draft)."""
+                   thread: str = "", latest: dict | None = None) -> str | None:
+    """The best correct headline of three, or None (the article waits as a kept draft). `latest`: the fact of the
+    day when the lead carries a second one (`lead_news`); the headline is then about it."""
     if router is None or not news:
         return None
+    if latest is not None and latest.get("id") == news.get("id"):
+        latest = None
     others = [i for i in items.values() if i["id"] != news["id"] and (i.get("role") or "core") == "core"]
     others.sort(key=lambda i: -(i.get("n_sources") or 0))
     others = others[:6]
-    source = " ".join([news["text"], lead] + [i["text"] for i in others]).lower()
+    texts = [news["text"], lead] + ([latest["text"]] if latest else []) + [i["text"] for i in others]
+    facts = " ".join(texts)
+    source = facts.lower()
+    latest_text = latest["text"] if latest else ""
     disputed, versions = _disputed_answers(news, items)
     ctx = f"\nThis is a new development in an ongoing story ({thread}): headline the NEW development.\n" if thread else ""
     prompt = HEADLINE_PROMPT.format(
         dispute=DISPUTE_NOTE.format(versions=versions) if versions else "", thread=ctx, news=news["text"],
+        newest="the one marked LATEST" if latest else "THE NEWS", latest=LATEST_NOTE.format(latest=latest_text) if latest else "",
         lead=lead or news["text"], others="\n".join(f"- {i['text']}" for i in others) or "- (none)")
     tried: list[str] = []
     for attempt in range(2):          # a second call only when all three fail
@@ -355,13 +454,13 @@ def write_headline(router: Router | None, news: dict, items: dict[int, dict], le
         good, why = [], []
         for c in cands or []:
             h = house_style(str(c or "").strip().strip('"'))
-            problem = headline_problem(h, source, banned, disputed)
+            problem = headline_problem(h, source, banned, disputed, facts)
             if problem:
                 why.append(f'"{h}": {problem}')
             else:
                 good.append(h)
         if good:
-            return max(good, key=lambda h: headline_score(h, news["text"]))   # ties: the model's first
+            return max(good, key=lambda h: headline_score(h, news["text"], latest_text))   # ties: the model's first
         tried += why
         prompt += "\n\nThese were rejected:\n" + "\n".join(f"- {w}" for w in why[:3]) + "\nWrite three new ones."
     log.info("no headline passed: %s", "; ".join(tried)[:400])

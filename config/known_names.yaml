@@ -1,0 +1,47 @@
+# Names every Indian reader knows (owner can add more). A headline may OPEN with one of these without saying who
+# the person is (news.py, Oct 12 2026); any other person's name may not lead a headline unless their role comes
+# first ("Actor Rajpal Yadav ...", "Kotdwar gym trainer ...") or the headline opens with what happened.
+# Full names; a surname alone is matched against the surnames of these names.
+names:
+  - Narendra Modi
+  - Amit Shah
+  - Rahul Gandhi
+  - Priyanka Gandhi
+  - Sonia Gandhi
+  - Rajnath Singh
+  - Nirmala Sitharaman
+  - S Jaishankar
+  - Droupadi Murmu
+  - Mallikarjun Kharge
+  - Arvind Kejriwal
+  - Mamata Banerjee
+  - Yogi Adityanath
+  - Nitish Kumar
+  - Chandrababu Naidu
+  - MK Stalin
+  - Uddhav Thackeray
+  - Akhilesh Yadav
+  - Lalu Prasad Yadav
+  - Tejashwi Yadav
+  - Virat Kohli
+  - Rohit Sharma
+  - MS Dhoni
+  - Sachin Tendulkar
+  - Jasprit Bumrah
+  - Shubman Gill
+  - Neeraj Chopra
+  - Shah Rukh Khan
+  - Salman Khan
+  - Aamir Khan
+  - Amitabh Bachchan
+  - Mukesh Ambani
+  - Gautam Adani
+  - Ratan Tata
+  - Donald Trump
+  - Joe Biden
+  - Vladimir Putin
+  - Xi Jinping
+  - Elon Musk
+  - Benjamin Netanyahu
+  - Volodymyr Zelensky
+  - Shehbaz Sharif

@@ -4,8 +4,12 @@ Fetched once, when the article is new (the desk, after publishing), so the site'
 costs nothing per click.
 
 Design:
-  * Two searches per article (Hindi headline, English headline), each fetching 50 results (100 units each) to
-    maximize pool depth without burning extra quota.
+  * What is searched and what counts as relevant lives in `videoquery.py` (owner, Oct 12 2026): figures are taken
+    out of every query, the English search is made from the story's NAMES and main act, the Hindi search from the
+    Hindi headline's own words, and a video must share two root words with the story's keywords (names and both
+    headlines), not with the headline alone. A second, shorter search runs only when the first left fewer than
+    MIN_USABLE videos. A story that found nothing is tried once more, about 3 h later.
+  * Each search fetches 50 results (100 units each) to maximize pool depth without burning extra quota.
   * Curated credible lists for Hindi and English (analytical outlets, UPSC/IAS desks, established national newsrooms).
   * Exact language tagging: channels in the Hindi list are tagged 'hi', channels in the English list are tagged 'en'.
     Channels absent from both lists leave 'lang' as None so the frontend displays no language badge.
@@ -22,9 +26,10 @@ import logging
 import os
 import re
 
-from sqlalchemy import func
+from sqlalchemy import func, update
 
-from .db import Store, articles, insert, published, quota_usage, select, utcnow, videos
+from . import videoquery
+from .db import Store, articles, claims, insert, published, quota_usage, select, utcnow, videos
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +39,9 @@ KEEP = 10
 PER_CHANNEL = 2
 DAY_UNITS = 9000
 NEW_HOURS = 36
+MIN_USABLE = 2                          # fewer videos than this after the first searches: a shorter search is made
+RETRY_AFTER = dt.timedelta(hours=3)     # a story that found nothing is tried once more after this
+FIRST_WINDOW = dt.timedelta(hours=2)    # ...but only if the first try was made this soon after publishing
 
 # Exhaustive curated credible & analytical channels for Hindi
 CREDIBLE_HI = {
@@ -124,27 +132,14 @@ def is_credible(channel_title: str) -> bool:
     return match_channel(channel_title, CREDIBLE_HI) or match_channel(channel_title, CREDIBLE_EN)
 
 
-STOP = set("""the a an and or of to in on at for with from by as is are was were be been has have had will would after before
-over under into about than this that these those its his her their new says said news live video latest update updates
-today full what why how who when where watch big breaking report reports की के का में से पर और है हैं को ने भी एक यह
-वह लिए साथ बाद तक कर किया गया गई गए हुआ हुई रहा रही रहे ख़बर खबर""".split())
-
-
-def _roots(text: str) -> set[str]:
-    """Root words of a title: lower case, Latin words trimmed to 5 chars, Devanagari preserved."""
-    out = set()
-    for w in re.findall(r"[A-Za-z]+|[\u0900-\u097f]+", text or ""):
-        w = w.lower()
-        if w in STOP or (w.isascii() and len(w) < 3):
-            continue
-        out.add(w[:5] if w.isascii() else w)
-    return out
-
-
-def relevant(title: str, headlines: list[str]) -> bool:
-    """Ensure video shares at least two root terms with one of the article headlines."""
-    t = _roots(title)
-    return any(len(t & _roots(h)) >= 2 for h in headlines if h)
+def relevant(title: str, headlines: list[str], names: list[str] | None = None) -> bool:
+    """A video's title shares at least two root words with the story's headlines (and names, when given)."""
+    kw = set()
+    for h in headlines:
+        kw |= videoquery.roots(h)
+    for n in names or []:
+        kw |= videoquery.roots(n)
+    return videoquery.relevant(title, kw)
 
 
 def pick(lists: list[list[dict]], keep: int = KEEP, per_channel: int = PER_CHANNEL) -> list[dict]:
@@ -222,66 +217,76 @@ def _units_today(store: Store) -> int:
     return (r or {}).get("requests") or 0
 
 
-def fetch_new(store: Store, limit: int = 6, key: str | None = None, get=None) -> list[int]:
+def _due(updated_at: dt.datetime | None, have: dict | None, now: dt.datetime) -> bool:
+    """A story has no videos row yet, or its only row is empty from a first try made soon after publishing and
+    is now old enough for the one second try (owner, Oct 12 2026: \"they fail to fetch\", and an empty row was final)."""
+    if have is None:
+        return True
+    if have.get("items"):
+        return False
+    fetched = have.get("fetched_at")
+    if not fetched or not updated_at:
+        return False
+    return now - fetched >= RETRY_AFTER and fetched - updated_at <= FIRST_WINDOW
+
+
+def _run(store: Store, key: str, qs: list[tuple[str, str]], after: dt.datetime, kw: set[str], get=None) -> list | None:
+    """Search each (query, language), keep the relevant videos. None when a search failed (try again next run)."""
     from .router import quota_day
-    from .db import claims # Make sure to import claims
-    
+    lists: list[list[dict]] = []
+    for q, lang in qs:
+        try:
+            results = _search(key, q, after, lang, get)
+        except Exception as e:  # noqa: BLE001
+            log.info("youtube search failed for %r: %s", q, e)
+            return None
+        store.quota_add("youtube-search", quota_day(), 100, 0)
+        lists.append([v for v in results if videoquery.relevant(v["title"], kw)])
+    return lists
+
+
+def fetch_new(store: Store, limit: int = 6, key: str | None = None, get=None) -> list[int]:
     key = key if key is not None else os.environ.get("YOUTUBE_API_KEY", "").strip()
     if not key:
         return []
-        
-    since = utcnow() - dt.timedelta(hours=NEW_HOURS)
-    done_ids = {r["story_id"] for r in store.rows(select(videos.c.story_id))}
-    rows = [r for r in store.rows(select(published.c.story_id, published.c.headline_en, published.c.headline_hi)
+
+    now = utcnow()
+    since = now - dt.timedelta(hours=NEW_HOURS)
+    have = {r["story_id"]: r for r in store.rows(select(videos.c.story_id, videos.c.fetched_at, videos.c.items))}
+    rows = [r for r in store.rows(select(published.c.story_id, published.c.headline_en, published.c.headline_hi,
+                                         published.c.updated_at)
                                   .where(published.c.updated_at >= since).order_by(published.c.updated_at.desc()))
-            if r["story_id"] not in done_ids]
-            
+            if _due(r.get("updated_at"), have.get(r["story_id"]), now)]
+
     done: list[int] = []
     for r in rows[:limit]:
         if _units_today(store) + 200 > DAY_UNITS:
             break
-            
-        # 1. Fetch the extracted frames for this story to build a smart query
-        event_claims = store.rows(
-            select(claims.c.rel).where(claims.c.story_id == r["story_id"], claims.c.kind == "event")
-        )
-        
-        entities = []
-        for cr in event_claims:
-            frame = (cr.get("rel") or {}).get("frame") or {}
-            for field in ("who", "what", "where"):
-                val = frame.get(field)
-                # Keep meaningful entities and avoid duplicates
-                if val and len(val) > 2 and val.lower() not in [e.lower() for e in entities]:
-                    entities.append(val)
-            if len(entities) >= 3:
-                break
-                
-        # Fallback to the English headline if extraction failed or frame is empty
-        smart_query = " ".join(entities[:4]) if entities else r["headline_en"]
-        clean_query = re.sub(r"\s+", " ", smart_query)
-        
-        first = store.one(select(func.min(articles.c.published_at).label("t")).where(articles.c.story_id == r["story_id"]))
+
+        frames = [(cr.get("rel") or {}).get("frame") or {} for cr in store.rows(
+            select(claims.c.rel).where(claims.c.story_id == r["story_id"], claims.c.kind == "event"))]
+        kw = videoquery.keywords(frames, r["headline_en"], r["headline_hi"])
+        first = store.one(select(func.min(articles.c.published_at).label("t"))
+                          .where(articles.c.story_id == r["story_id"]))
         after = ((first or {}).get("t") or since) - dt.timedelta(hours=1)
-        lists = []
-        heads = [r["headline_en"], r["headline_hi"]]
 
-        # 2. Run the deep search using our new entity-dense query
-        for q, lang in ((clean_query, "hi"), (clean_query, "en")):
-            if not q:
-                continue
-            try:
-                results = _search(key, q, after, lang, get)
-                lists.append([v for v in results if relevant(v["title"], heads)])
-            except Exception as e:
-                log.info("youtube search failed for %s: %s", r["story_id"], e)
-                lists.append(None)
-            store.quota_add("youtube-search", quota_day(), 100, 0)
-
-        if any(x is None for x in lists):
+        qs = videoquery.queries(frames, r["headline_en"], r["headline_hi"])
+        lists = _run(store, key, qs, after, kw, get) if qs else []
+        if lists is None:
             continue
+        # too few usable videos: a shorter search (the names alone, the first words of the Hindi headline)
+        if len(pick(lists)) < MIN_USABLE and _units_today(store) + 100 * 2 <= DAY_UNITS:
+            again = [q for q in videoquery.queries(frames, r["headline_en"], r["headline_hi"], short=True)
+                     if q not in qs]
+            more = _run(store, key, again, after, kw, get) if again else []
+            lists += more or []          # a failed second try keeps what the first found
+        items = pick(lists)
+        log.info("videos for story %s: %s -> %d kept", r["story_id"], [q for q, _ in qs], len(items))
 
-        store.exec(insert(videos).values(story_id=r["story_id"], fetched_at=utcnow(), items=pick(lists)))
+        if r["story_id"] in have:        # the one second try replaces the empty row
+            store.exec(update(videos).where(videos.c.story_id == r["story_id"]).values(fetched_at=utcnow(), items=items))
+        else:
+            store.exec(insert(videos).values(story_id=r["story_id"], fetched_at=utcnow(), items=items))
         done.append(r["story_id"])
-        
+
     return done

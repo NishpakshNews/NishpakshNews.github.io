@@ -697,7 +697,10 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         lead = " ".join(x["text"] for x in (nar.get("paragraphs") or [[]])[0])
         items_ = {i["id"]: i for i in ordered_items(payload)}
         news = items_.get((payload.get("news") or [None])[0])
-        payload["headline"] = write_headline(router, news, items_, lead, banned, payload.get("_thread_ctx") or "")
+        lead_ids = payload.get("lead") or []                     # the news, and the fact of the day if another
+        latest = items_.get(lead_ids[1]) if len(lead_ids) > 1 else None
+        payload["headline"] = write_headline(router, news, items_, lead, banned, payload.get("_thread_ctx") or "",
+                                             latest=latest)
     headline_missing = essay_good and not payload.get("headline")
     if not essay_good or headline_missing:
         # which check failed, with the numbers (owner, Oct 11 2026, story 16981): kept with the failure and in the log

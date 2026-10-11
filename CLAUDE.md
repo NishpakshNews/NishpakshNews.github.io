@@ -526,6 +526,17 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   headline before writing, the ESTABLISHED/REPORTED labels and "must hedge" rule, the "reportedly"
   fallback, and the per-story importance call (front-page rank = `priority` score + coverage; filler is
   filtered by `priority`). Headline calls per try: 2-7 before, 1-2 now.
+  **Headlines made to be read (owner, Oct 12 2026: \"weak, old-sounding, just a name and what happened\").** The prompt now
+  asks for three headlines that lead differently (the outcome / the one specific or surprising detail / the stakes),
+  about the NEWEST development: `write_headline(..., latest=)` gets the lead's second fact (`lead_news`, the fact of
+  the day) and the scorer prefers a headline that shares its words (`headline_score(h, news, latest)`). New code
+  rejections (`headline_problem`, same order as before, all by code): a question, \"!\", \"what we know\", \"explained\",
+  \"shocking\" (`WEAK`); anything pointing to the past (`PAST`: earlier, previously, \"had ...\"); and a headline that
+  OPENS with the name of a person readers do not know (`_opening_name_problem`: persons are proved by a title or
+  speech verb (`style.people`) or introduced as a stranger (\"Name, 21,\" / \"Name, a student\" / \"Name was found
+  ...\"); a role written first (\"Actor Rajpal Yadav\") or the event first is fine). Names every Indian knows may open
+  one: `config/known_names.yaml` (owner can extend; a surname alone counts only when it belongs to one known name).
+  Still 12 words at most (card width). Published headlines never change, so this shows from the next new article.
 - **Threads:** a later development links to its earlier story (parent → daughter, many-to-many).
   Daughter opens with the new development + ≤2 background sentences + "Earlier in this story"; the
   parent gains no link (it is closed). Archived parents are found through the branch index.
@@ -746,7 +757,14 @@ every outlet that covered it, and colours every sentence by how well it is suppo
     `audio` branch (force-pushed, live articles and 7 days of recaps), published under /audio/ by audio.yml and site.yml.
   - **Videos** (`videos.py`, desk): once per new article, two YouTube searches (English and Hindi headline), YouTube's own
     order (owner), max 2 per channel, uploaded after the story's first report, "Primary footage" badge, "not checked"
-    note. A video is kept only if its title shares two root words with the English or Hindi headline (`videos.relevant`;
+    note. **Search words (owner, Oct 12 2026: videos often not found; `videoquery.py`, no database, `tests/test_videos.py`):**
+    figures are taken out of every query; the English search is the story's NAMES (people, bodies, places ranked by how
+    many statements carry them; `Defence Ministry`/`Ministry of Defence` folded; India, Delhi, police too general) plus
+    the main act; the Hindi search is the Hindi headline's own words (it used to be the same English words); a second,
+    shorter search only when fewer than `MIN_USABLE` (2) videos were kept; a story that found nothing is tried once more
+    about 3 h later (`videos._due`, only if the first try came within 2 h of publishing). A video is kept only if its
+    title shares two root words with the story's keywords (names + English headline + Hindi headline, `videoquery.relevant`;
+    not the headline alone: headlines are now written to be read, so they share fewer words with a video's title;
     Oct 10 2026, first run: YouTube filled empty searches with audiobooks, Chinese dramas and Medicare ads). A video's
     language is read from its TITLE (`videos.title_lang`, site `vlang`: Devanagari or two romanised Hindi words = Hindi),
     not from the search that found it. The audio and video cards open complete: their data is fetched when the
