@@ -22,6 +22,12 @@ qualifiers: [Union, Deputy, Chief, Vice, Senior, Additional, Joint, Assistant, A
              Law, Information, Broadcasting, Agriculture, Commerce, Industry, Rural, Urban, Social, Justice,
              District, Station, House, Sub, Lieutenant, Air, Wing, Squadron, Group, Flight]
 
+# words that, in front of a title, say WHICH office it is ("Delhi Chief Minister", "Union Home Minister"): a title
+# written with one of them, or with a place or body name before it, identifies its holder on its own; a bare
+# "the chief minister" or "the minister" does not (gloss.py puts the missing context in brackets, Oct 11 2026).
+scope_words: [Home, Finance, Defence, External, Foreign, Railway, Railways, Health, Education, Law, Agriculture, Commerce,
+              Industry, Petroleum, Aviation, Textiles, Jal, Shakti]
+
 roles:
   - {id: prime_minister, forms: [Prime Minister, PM], ref: the prime minister}
   - {id: chief_minister, forms: [Chief Minister, CM], ref: the chief minister}

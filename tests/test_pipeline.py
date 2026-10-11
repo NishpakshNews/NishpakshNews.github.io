@@ -4103,3 +4103,70 @@ def test_carry_over_can_be_switched_off(store, monkeypatch):
     carry.Bank(store, _utc(5)).spend("search_stories", 3)
     assert store.quota_load("2026-10-11") == {}               # nothing booked either
     assert desk.seats(store, _utc(5)) == (2, 1)               # the hour's own seats, as before
+
+
+def test_titles_say_whether_they_carry_their_own_scope():
+    """Owner, Oct 11 2026: \"CM of Delhi\" gives the context, a bare \"the chief minister\" does not."""
+    from nishpaksh import titles
+    assert titles.is_scoped("Delhi CM") and titles.is_scoped("Delhi Chief Minister")
+    assert titles.is_scoped("Chief Minister of Delhi") and titles.is_scoped("Union Home Minister")
+    assert titles.is_scoped("Delhi Police spokesperson")
+    assert not titles.is_scoped("the chief minister") and not titles.is_scoped("Minister")
+    assert not titles.is_scoped("Supreme Court judge") and not titles.is_scoped("Former Chief Minister")
+
+
+def test_someone_who_comes_before_the_reader_knows_who_gets_context_in_brackets():
+    """Owner, Oct 11 2026: \"Dipke urged the mother not to cry\" came before anything said whose mother. The first
+    mention that does not say whose gets the descriptor the outlets gave, in brackets; later mentions stay bare."""
+    from nishpaksh.style import polish
+    items = [{"id": 1, "speaker": "Abhijeet Dipke", "text": "Dipke urged the mother not to cry."},
+             {"id": 2, "speaker": "Abhijeet Dipke's mother", "text": "Dipke's mother said the action is wrong."}]
+    P = [[{"text": "Dipke urged the mother not to cry.", "ids": [1]},
+          {"text": "Dipke's mother said the action is wrong.", "ids": [2]},
+          {"text": "The mother said Dipke had been warned.", "ids": [2]}]]
+    polish({"narrative": {"paragraphs": P}, "contested": items})
+    assert [s["text"] for s in P[0]] == ["Dipke urged the mother (Abhijeet Dipke's mother) not to cry.",
+                                         "Dipke's mother said the action is wrong.",
+                                         "The mother said Dipke had been warned."]
+    # whose mother is said in the sentence itself: nothing to add, then or later
+    Q = [[{"text": "Dipke's mother said the action is wrong.", "ids": [2]}, {"text": "The mother wept.", "ids": [2]}]]
+    polish({"narrative": {"paragraphs": Q}, "contested": items})
+    assert [s["text"] for s in Q[0]] == ["Dipke's mother said the action is wrong.", "The mother wept."]
+    # "mother of X" and "his mother" with the name in the sentence carry their own context
+    R = [[{"text": "The mother of Dipke wept.", "ids": []}, {"text": "Dipke said his mother was calm.", "ids": []}]]
+    polish({"narrative": {"paragraphs": R}, "contested": items})
+    assert "(" not in " ".join(s["text"] for s in R[0])
+
+
+def test_no_context_is_added_without_evidence_or_when_two_people_fit():
+    from nishpaksh.gloss import gloss
+    P = [[{"text": "The mother wept.", "ids": [1]}]]
+    assert gloss(P, lambda s: [], [], {}) == 0 and P[0][0]["text"] == "The mother wept."          # no outlet says whose
+    two = ["Dipke's mother said it.", "Rao's mother said it too."]                                 # two different people
+    P = [[{"text": "The mother wept.", "ids": []}]]
+    assert gloss(P, lambda s: [], two, {}) == 0 and P[0][0]["text"] == "The mother wept."
+    # quoted words are never touched
+    P = [[{"text": 'He said, "the mother is fine", and left.', "ids": []}]]
+    assert gloss(P, lambda s: [], ["Dipke's mother said it."], {}) == 0
+
+
+def test_an_office_without_its_scope_gets_it_in_brackets_once():
+    """The speaker is given only by an office with its scope; the sentence writes the office without it."""
+    from nishpaksh.gloss import gloss
+    sp = lambda s: ["Delhi Chief Minister"]                                                       # noqa: E731
+    P = [[{"text": "The chief minister said the roads will be fixed.", "ids": [1]},
+          {"text": "The chief minister added that funds are ready.", "ids": [1]}]]
+    assert gloss(P, sp, [], {}) == 1
+    assert [s["text"] for s in P[0]] == ["The chief minister (Delhi Chief Minister) said the roads will be fixed.",
+                                         "The chief minister added that funds are ready."]
+    # the office written with its scope, or as a titled name, needs nothing
+    for text in ("Delhi CM said the roads will be fixed.", "The Chief Minister of Delhi said it.",
+                 "Chief Minister Rekha Gupta said it."):
+        P = [[{"text": text, "ids": [1]}]]
+        assert gloss(P, sp, [], {}) == 0 and P[0][0]["text"] == text
+    # an office with no scope of its own has nothing to add; sentences in coloured parts are handled part by part
+    P = [[{"text": "The minister said it.", "ids": [1]}]]
+    assert gloss(P, lambda s: ["minister"], [], {}) == 0
+    P = [[{"text": "x", "ids": [1], "parts": [{"text": "The police spokesperson said"}, {"text": "the road is shut."}]}]]
+    assert gloss(P, lambda s: ["Delhi Police spokesperson"], [], {}) == 1
+    assert P[0][0]["text"] == "The police spokesperson (Delhi Police spokesperson) said the road is shut."

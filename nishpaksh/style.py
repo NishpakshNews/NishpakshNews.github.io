@@ -324,4 +324,8 @@ def polish(payload: dict) -> None:
     refs = Refs(names, pronouns(items), roles(text, names))
     shorten_names(paras, speakers, [i.get("text") or "" for i in items])
     by_id = {i["id"]: i for i in items if "id" in i}
-    vary_attribution(paras, refs, lambda sent: [(by_id.get(i) or {}).get("speaker") for i in sent.get("ids") or []])
+    speakers_of = lambda sent: [(by_id.get(i) or {}).get("speaker") for i in sent.get("ids") or []]   # noqa: E731
+    vary_attribution(paras, refs, speakers_of)
+    # last: whoever the reader has not been told about gets the context in brackets (owner, Oct 11 2026)
+    from .gloss import gloss
+    gloss(paras, speakers_of, [i.get("text") or "" for i in items], names)

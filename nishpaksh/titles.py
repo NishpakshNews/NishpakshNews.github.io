@@ -53,7 +53,7 @@ def _data() -> dict:
         for f in r.get("forms") or []:
             forms.setdefault(f.lower(), []).append(rid)
     return {"honorifics": list(d.get("honorifics") or []), "qualifiers": list(d.get("qualifiers") or []),
-            "roles": roles, "forms": forms}
+            "scope_words": list(d.get("scope_words") or []), "roles": roles, "forms": forms}
 
 
 def honorifics() -> set[str]:
@@ -155,6 +155,32 @@ def relation(a: str, b: str, context: str = "") -> str | None:
     if ra in _ancestors(rb):
         return "b_is_a"
     return None
+
+
+def forms_of(role_id: str | None) -> list[str]:
+    """Every way outlets write a role (its `forms`), longest first."""
+    r = _data()["roles"].get(role_id or "") or {}
+    return sorted(r.get("forms") or [], key=len, reverse=True)
+
+
+def is_scoped(phrase: str) -> bool:
+    """Does a written title say WHICH office it is on its own? (owner, Oct 11 2026: \"CM of Delhi\" gives the context, a bare
+    \"the chief minister\" does not.) True when the phrase has a portfolio word (\"Home\" in \"Union Home Minister\"), a
+    place or body name (\"Delhi Chief Minister\", \"Delhi Police spokesperson\") or an \"of ...\" (\"Chief Minister of Delhi\").
+    Only capitalised words count, so \"the\" and \"a\" never do; a title word, an honorific or a qualifier is no scope."""
+    words = [w.strip(".,;:()") for w in (phrase or "").split()]
+    scope = set(_data()["scope_words"])
+    tw = title_words()
+    for k, w in enumerate(words):
+        if not w:
+            continue
+        if w in scope:
+            return True
+        if w.lower() == "of" and any(x[:1].isupper() for x in words[k + 1:]):
+            return True
+        if w[:1].isupper() and w not in tw and w.lower() not in _OPENERS:
+            return True
+    return False
 
 
 def ref_for(role_id: str | None) -> str | None:
