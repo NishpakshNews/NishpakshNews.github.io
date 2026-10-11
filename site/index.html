@@ -180,31 +180,37 @@
   .hbox.morph .hpic { opacity: 1; }
   /* the image is laid out at its whole cover size (fitPic) and moved by its own transform, so on the way into and out
      of the card it is at exactly the card's zoom and crop: no zoom-in then snap (owner, Oct 10 2026) */
-  /* Oct 11 2026: the picture is made like the card's (a blurred copy under a sharp one, a white wash over both), and
-     closed it IS the card's: before, the article had one sharp image fading into the indigo, so on the way back the
-     bottom went blue -> white and then snapped to the card's blur. Open, the blurred copy and the wash are gone and the
-     sharp one dissolves into the indigo; the mask's two stops are registered properties so they glide between the two. */
-  @property --m1 { syntax: "<percentage>"; inherits: false; initial-value: 52%; }
-  @property --m2 { syntax: "<percentage>"; inherits: false; initial-value: 82%; }
-  .hbox .hpic .hsharp { position: absolute; inset: 0; --m1: 52%; --m2: 82%;
-                        -webkit-mask-image: linear-gradient(to bottom, #000 var(--m1), transparent var(--m2)); mask-image: linear-gradient(to bottom, #000 var(--m1), transparent var(--m2)); }
-  #sheet.open .hbox .hpic .hsharp { --m1: 45%; --m2: 100%; }
-  #sheet.anim .hbox .hpic .hsharp { transition: --m1 340ms ease, --m2 340ms ease; }
+  /* Oct 11 2026 (second pass): the picture is made like the card's, in three layers that only ever change by OPACITY
+     (compositor-only, so no per-frame repaint = no jitter): .hsoft (the blurred copy and the white wash, its own bottom
+     feathered out so no hard edge shows), .s1 (the sharp copy with the card's mask) and .s2 (the sharp copy with the
+     article's longer mask, dissolving into the indigo). Nothing is blurred or masked by an animated value any more
+     (before: animated mask stops and a moving blurred copy made a band of blur travel through the picture). The sharp
+     copies overlap, so the picture's top never dips while one goes in and the other out. */
+  .hbox .hpic .hsoft { position: absolute; inset: 0; opacity: 1;
+                       -webkit-mask-image: linear-gradient(to bottom, #000 68%, transparent 100%); mask-image: linear-gradient(to bottom, #000 68%, transparent 100%); }
+  .hbox .hpic .hsharp { position: absolute; inset: 0; }
+  .hbox .hpic .hsharp.s1 { opacity: 1; -webkit-mask-image: linear-gradient(to bottom, #000 52%, transparent 82%); mask-image: linear-gradient(to bottom, #000 52%, transparent 82%); }
+  .hbox .hpic .hsharp.s2 { opacity: 0; -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); }
+  #sheet.open .hbox .hpic .hsoft { opacity: 0; }
+  #sheet.open .hbox .hpic .hsharp.s1 { opacity: 0; }
+  #sheet.open .hbox .hpic .hsharp.s2 { opacity: 1; }
+  #sheet.anim .hbox .hpic .hsoft { transition: opacity 340ms ease 140ms; }
+  #sheet.anim .hbox .hpic .hsharp.s1 { transition: opacity 240ms ease 240ms; }
+  #sheet.anim .hbox .hpic .hsharp.s2 { transition: opacity 300ms ease; }
+  #sheet.anim:not(.open) .hbox .hpic .hsoft { transition: opacity 300ms ease 100ms; }
+  #sheet.anim:not(.open) .hbox .hpic .hsharp.s1 { transition: opacity 240ms ease; }
+  #sheet.anim:not(.open) .hbox .hpic .hsharp.s2 { transition: opacity 260ms ease 200ms; }
   .hbox .hpic img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; display: block;
                     transform-origin: 50% 50%; transform: var(--it, none); }
   .hbox .hpic img.soft { filter: blur(var(--bl, 16px)) saturate(1.1); transform: var(--it2, translate(0px, 0px) scale(1) scale(1.15)); }
-  #sheet.open .hbox .hpic img.soft { opacity: 0; transform: translate(0px, 0px) scale(1) scale(1.15); }
-  #sheet.anim .hbox .hpic img.soft { transition: transform 460ms var(--ease), opacity 340ms ease; }
-  #sheet.anim .hbox .hpic img { transition: transform 460ms var(--ease); will-change: transform; }
-  #sheet.open .hbox .hpic img { transform: none; }
-  .hbox .hpic .hwash { position: absolute; inset: 0; pointer-events: none; opacity: 1;
+  #sheet.anim .hbox .hpic img.sharp { transition: transform 460ms var(--ease); will-change: transform; }
+  #sheet.open .hbox .hpic img.sharp { transform: none; }
+  .hbox .hpic .hwash { position: absolute; inset: 0; pointer-events: none;
                        background: linear-gradient(to bottom, rgba(255,255,255,0) 50%, rgba(255,255,255,0.55) 78%, #fff 100%); }
   .hbox .hpic .pic-credit { opacity: 0; }
   #sheet.anim .hbox .hpic { transition: opacity 340ms ease 100ms, transform 460ms var(--ease); will-change: transform; }
-  #sheet.anim .hbox .hpic .hwash { transition: opacity 360ms ease; }
   #sheet.anim .hbox .hpic .pic-credit { transition: opacity 220ms ease 300ms; }
   #sheet.open .hbox .hpic { opacity: 1; transform: none; }
-  #sheet.open .hbox .hpic .hwash { opacity: 0; }
   #sheet.open .hbox .hpic .pic-credit { opacity: 1; }
   .pic-credit { position: absolute; top: 10px; right: 12px; font-size: 11px; font-weight: 500; color: #fff; background: rgba(10,12,30,0.42);
                 padding: 3px 8px; border-radius: 999px; text-decoration: none; }
@@ -229,7 +235,6 @@
   #sheet.anim:not(.open) .rise { transition: opacity 110ms ease, transform 200ms ease, visibility 0s linear 110ms; visibility: hidden; }
   #sheet.anim:not(.open) .hbox .meta, #sheet.anim:not(.open) .chrome { transition: opacity 110ms ease; }
   #sheet.anim:not(.open) .hbox .layer { transition: opacity 280ms ease; }
-  #sheet.anim:not(.open) .hbox .hpic .hwash { transition: opacity 300ms ease 80ms; }
   #sheet.anim:not(.open) .hbox .hpic .pic-credit { transition: opacity 110ms ease; }
 
   /* sections as cards with numbered headings; the lead alone; figures as tiles; what they say by speaker */
@@ -369,7 +374,7 @@
   .greeting.swap { opacity: 0; }
   @media (prefers-reduced-motion: reduce) {
     nav.sections, .sb, .track { transition-duration: 1ms !important; transition-delay: 0ms !important; }
-    #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer, #sheet.anim .hbox .hpic, #sheet.anim .hbox .hpic img, #sheet.anim .hbox .hpic .hsharp, #sheet.anim .hbox .hpic .hwash, #sheet.anim .hbox .meta, #sheet.anim .hbox h1, #sheet.anim .hbox .hpic .pic-credit { transition-duration: 1ms !important; transition-delay: 0ms !important; }
+    #sheet.anim, #sheet.anim .hbox, #sheet.anim .rise, #sheet.anim .chrome, #sheet.anim .hbox .layer, #sheet.anim .hbox .hpic, #sheet.anim .hbox .hpic img, #sheet.anim .hbox .hpic .hsharp, #sheet.anim .hbox .hpic .hsoft, #sheet.anim .hbox .meta, #sheet.anim .hbox h1, #sheet.anim .hbox .hpic .pic-credit { transition-duration: 1ms !important; transition-delay: 0ms !important; }
   }
 
   /* trial_version_2.1 (owner, Oct 9 2026): the menu at the left of the wordmark; the menu, the language switch and the
@@ -1072,7 +1077,7 @@ function setSheetPicture(id) {
   const pic = c && c.img && safeUrl(c.img.src) ? c.img : null;
   const box = $("hpic");
   hbox.classList.toggle("has-pic", !!pic);
-  box.innerHTML = pic ? `<img class="soft" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"><div class="hsharp"><img class="sharp" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"></div><div class="hwash"></div>` +
+  box.innerHTML = pic ? `<div class="hsoft"><img class="soft" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"><div class="hwash"></div></div><div class="hsharp s1"><img class="sharp" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"></div><div class="hsharp s2"><img class="sharp" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"></div>` +
     (safeUrl(pic.href) ? `<a class="pic-credit" href="${esc(pic.href)}" target="_blank" rel="noopener noreferrer">${esc(T[lang].photo)}: ${esc(pic.by || "")}</a>`
                        : `<span class="pic-credit">${esc(T[lang].photo)}: ${esc(pic.by || "")}</span>`) : "";
   const img = box.querySelector("img.sharp");
