@@ -1,0 +1,125 @@
+<!doctype html>
+<!-- "Talk to the article": a plain test page (owner, Oct 11 2026). NOT part of the site and not designed: it only lets you
+     try the feature end to end. Serve this folder and open it on localhost (a microphone needs https or localhost):
+         cd live && python -m http.server 8000      ->  http://localhost:8000/test.html
+     Log in with a reader account, press "Latest article", then "Talk". Sentences light up in their own colour as the
+     guide talks about them; the grounding text the model was given is under "what the guide was told". -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Talk to the article: test</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 760px; margin: 24px auto; padding: 0 16px; }
+  fieldset { margin: 0 0 14px; } label { margin-right: 10px; } input, select, button { font: inherit; padding: 4px 8px; }
+  #state { font-weight: 700; } #err { color: #b2251c; }
+  #article p { margin: 0 0 12px; } .s { padding: 1px 2px; border-radius: 3px; } .hl { outline: 3px solid #f5b800; background: #fff6d6; }
+  .established { color: #1d6a45; } .developing { color: #13857a; } .unverified { color: #8a5a3c; } .single { color: #6a3d9a; }
+  .partial { color: #2b62ad; } .disputed { color: #8a6100; } .false { color: #b2251c; }
+  #lines div { margin: 4px 0; } .you { color: #555; } .guide { font-weight: 600; }
+  pre { white-space: pre-wrap; font-size: 12px; background: #f4f4f4; padding: 8px; max-height: 260px; overflow: auto; }
+  #meter { height: 6px; background: #1d6a45; width: 0; transition: width .08s; }
+</style>
+</head>
+<body>
+<h1>Talk to the article <small>(test page)</small></h1>
+
+<fieldset><legend>1. Reader</legend>
+  <label>Email <input id="email" type="email" autocomplete="username"></label>
+  <label>Password <input id="pw" type="password" autocomplete="current-password"></label>
+  <button id="login">Log in</button> <span id="who"></span>
+</fieldset>
+
+<fieldset><legend>2. Article</legend>
+  <label>Story id <input id="sid" size="8"></label>
+  <label>Language <select id="lang"><option value="en">English</option><option value="hi">हिन्दी</option></select></label>
+  <button id="latest">Latest article</button> <button id="load">Load</button>
+</fieldset>
+
+<fieldset><legend>3. Conversation</legend>
+  <button id="talk" disabled>Talk</button> <button id="skip" disabled>Skip intro</button>
+  <button id="mute" disabled>Mute</button> <button id="stop" disabled>Stop</button>
+  &nbsp; state: <span id="state">idle</span> <span id="err"></span>
+  <div id="meter"></div>
+</fieldset>
+
+<h2 id="headline"></h2>
+<div id="article"></div>
+<h3>Conversation</h3><div id="lines"></div>
+<details><summary>what the guide was told</summary><pre id="brief"></pre></details>
+
+<script type="module">
+import { createTalk } from "./talk.js";
+
+const SUPABASE_URL = "https://mmjojuccdgmmiwyzypvh.supabase.co";
+const SUPABASE_KEY = "sb_publishable_0Gex7dG16My6MPvW2M1Jsg_raI1lqfS";           // public, as on the site
+const FEED_URL = "https://raw.githubusercontent.com/NishpakshNews/NishpakshNews.github.io/feed";
+const $ = (id) => document.getElementById(id);
+let session = null, loaded = null, talk = null;
+
+const MESSAGES = {
+  login: "Log in first.", limit: "You have used today's conversations.", busy: "Everyone is talking right now; try in a minute.",
+  gone: "That article is not live.", mic: "The microphone is blocked.", network: "Could not reach Nishpaksh.",
+  unavailable: "The guide is not available right now.", refused: "Gemini refused the connection (see the console).",
+};
+
+$("login").onclick = async () => {
+  $("who").textContent = "…";
+  const r = await fetch(`${SUPABASE_URL}/functions/v1/account`, { method: "POST", headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY },
+    body: JSON.stringify({ action: "login", email: $("email").value.trim(), password: $("pw").value }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { $("who").textContent = "wrong email or password"; return; }
+  session = d.session;
+  $("who").textContent = `logged in as ${d.name}`;
+  update();
+};
+
+$("latest").onclick = async () => {
+  const j = await (await fetch(`${FEED_URL}/${$("lang").value}.json`)).json();
+  $("sid").value = (j.stories && j.stories[0] && j.stories[0].id) || "";
+  $("load").click();
+};
+
+$("load").onclick = async () => {
+  $("err").textContent = "";
+  const r = await fetch(`${FEED_URL}/story/${encodeURIComponent($("sid").value.trim())}.json`);
+  if (!r.ok) { $("err").textContent = "no such live article"; return; }
+  loaded = await r.json();
+  const hi = $("lang").value === "hi" && loaded.payload_hi && loaded.payload_hi.narrative && loaded.payload_hi.narrative.paragraphs.length;
+  const payload = hi ? loaded.payload_hi : loaded.payload_en;
+  $("headline").textContent = (hi ? loaded.headline_hi : loaded.headline_en) || "";
+  // the same ids as the brief: p<paragraph>s<sentence>, p<paragraph>s<sentence>.<part>
+  $("article").innerHTML = payload.narrative.paragraphs.map((para, pi) => "<p>" + para.map((s, si) => {
+    const span = (id, text, cls) => `<span class="s ${cls || "unverified"}" id="${id}">${esc(text)}</span>`;
+    return s.parts && s.parts.length > 1 ? s.parts.map((p, k) => span(`p${pi}s${si}.${k}`, p.text, p.class)).join(" ") : span(`p${pi}s${si}`, s.text, s.class);
+  }).join(" ") + "</p>").join("");
+  update();
+};
+const esc = (t) => String(t || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function update() { $("talk").disabled = !(session && loaded) || (talk && !["idle", "ended"].includes(talk.state)); }
+
+talk = createTalk({
+  tokenUrl: `${SUPABASE_URL}/functions/v1/live-token`,
+  getHeaders: async () => ({ apikey: SUPABASE_KEY, Authorization: `Bearer ${session.access_token}` }),
+  introBase: "./",
+  onState: (s) => { $("state").textContent = s; for (const b of ["skip", "mute", "stop"]) $(b).disabled = s === "idle" || s === "ended"; update(); },
+  onHighlight: (id) => {
+    document.querySelectorAll(".hl").forEach((e) => e.classList.remove("hl"));
+    const el = $(id); if (el) { el.classList.add("hl"); el.scrollIntoView({ block: "center", behavior: "smooth" }); }
+  },
+  onTranscript: (lines) => { $("lines").innerHTML = lines.map((l) => `<div class="${l.role}">${l.role === "you" ? "You" : "Guide"}: ${esc(l.text)}</div>`).join(""); },
+  onLevel: (v) => { $("meter").style.width = Math.min(100, v * 400) + "%"; },
+  onGrant: (g) => { $("brief").textContent = g.instruction; },
+  onEnd: ({ reason, detail }) => { $("meter").style.width = "0"; console.log("ended:", reason, detail || ""); },
+  onError: ({ code, message }) => { $("err").textContent = MESSAGES[code] || message; console.warn("talk error:", code, message); },
+});
+
+$("talk").onclick = () => { $("err").textContent = ""; $("lines").innerHTML = ""; talk.start({ storyId: Number($("sid").value), lang: $("lang").value }); };
+$("stop").onclick = () => talk.stop();
+$("skip").onclick = () => talk.skipIntro();
+let muted = false;
+$("mute").onclick = () => { muted = !muted; talk.setMuted(muted); $("mute").textContent = muted ? "Unmute" : "Mute"; };
+</script>
+</body>
+</html>

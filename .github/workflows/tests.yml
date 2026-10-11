@@ -11,3 +11,7 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - run: python -m pytest -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test "tests/live/*.test.mjs"     # Talk to the article: brief, protocol, controller (no browser, no Gemini)

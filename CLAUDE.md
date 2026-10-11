@@ -975,3 +975,85 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   (`router.quota_day`). Hard limits (per minute, per day, Tavily's credits) are unchanged: carrying only moves our own
   pacing. `desk_per_hour` is therefore an average now, not a ceiling for one clock hour; set `carry_over=False` for
   the old rule. `prep_queue` is a width (how many stories are prepared), not an hourly quota, and is unchanged.
+
+## Talk to the article: live voice conversation (owner, Oct 11 2026; built and designed, NOT yet deployed)
+A reader talks to Gemini's **Live API** about ONE article and can interrupt it at any time. **Built first, designed second (owner):
+the design is now in `site/index.html` (below); `live/test.html` stays a plain test page.** Name: "Understand by talking" /
+"बात करके समझें".
+- **Flow:** tap -> microphone permission -> `live-token` Edge Function (login, limits, the article's brief, a ONE-USE Gemini
+  token) -> a fixed intro recording plays ("this is a live conversation, interrupt any time" ... pause ... "what would you
+  like to know?") while the WebSocket opens -> the microphone opens -> the reader just talks. **No suggestion chips (owner):
+  talking is the point.** The browser talks to Gemini directly (no proxy) and never holds a Gemini key.
+- **Models:** `gemini-3.8-live` (LIVE_MODEL secret; Live models are capped in TOKENS a minute, 65K, not in requests; the
+  dashboard shows no concurrent-session cap, so `CONCURRENT` in the function is a guess to be tuned). `3.8 Live Extended
+  Thinking` is for harder questions later; `3.5 Transcribe Live` for voice search; `3.5 Live Translate`: not used yet.
+- **Grounding is code's job (`supabase/functions/live-token/brief.ts`, pure, tested):** the model is given only the article's
+  own sentences, each as `[p2s0] (STATUS; sources 1, 3) text`, the status = the site colour in words (`STATUS`), the sources
+  list, and short rules with the traps as worked examples (never more certain than the status; ONE OUTLET ONLY is not
+  confirmed; no outside knowledge; "the article does not say"; a suicide story adds the Tele-MANAS 14416 rules). A sentence in
+  two colours is one line per colour (`p2s0.1`). Ids are the (p, s) numbers of `audio.py`'s timing files. The model cannot
+  make a sentence look more certain: it **calls `highlight(id)`, and the browser lights the sentence up in its OWN colour from
+  the page data**; an id that is not in the brief is ignored (`LiveProtocol.validId`). What the model SAYS about status is
+  still the model's; that is why the brief repeats the status of every sentence and the rules include the traps.
+- **Limits are in the database, not the browser (`migrations/20261011000100_live_talk.sql`):** `live_talk_begin` = 3 a reader
+  per IST day (`DAILY`), 4 at the same moment site-wide (`CONCURRENT`), a row's age says whether it can still be running
+  (`MAX_SECONDS` 480; the token itself expires then, so Google enforces the cap), `live_talk_cancel` when the token could not
+  be made. Only `service_role` can call them. Conversations are spread over the keys by the day's count; a refusing key hands
+  over to the next. Rows older than 14 days are deleted by the next call.
+- **Token:** `POST v1beta/auth_tokens` `{uses: 1, newSessionExpireTime +60 s, expireTime +60 s + MAX_SECONDS,
+  liveConnectConstraints: {model, config: {responseModalities, systemInstruction}}}`; the browser connects to
+  `...BidiGenerateContentConstrained?access_token=<name>` and repeats the same instruction in its setup message.
+- **Browser (`live/talk.js`, one dependency-free ES module):** `createTalk({tokenUrl, getHeaders, introBase, onState,
+  onHighlight, onTranscript, onLevel, onGrant, onEnd, onError})`, `start({storyId, lang})`, `stop`, `skipIntro`, `setMuted`.
+  Audio in: 16 kHz PCM from an AudioWorklet (ScriptProcessor fallback); out: 24 kHz chunks queued back to back; on the
+  server's `interrupted` all queued playback stops at once. Ends by itself: 45 s of silence, `MAX_SECONDS` (the guide is
+  asked to say goodbye 20 s before), the server's `goAway`. Error codes: login, limit, busy, gone, mic, network,
+  unavailable, refused (the socket closed before `setupComplete`).
+- **Intro recordings:** words in `live/intro.json` (en, hi); `python -m nishpaksh.live_intro --dir live-out` makes
+  `intro-en.m4a`, `intro-hi.m4a` with the audio.py TTS models and voice (4 TTS calls). Until they exist the browser reads
+  the same words in its own voice. Where they are served from (the `audio` branch, or next to the page) is for the design phase.
+- **Tests (no browser, no Gemini):** `node --test "tests/live/*.test.mjs"` (brief, audio conversion, protocol, and the
+  controller against a fake AudioContext / WebSocket / microphone; CI runs it) and `tests/test_live_intro.py`.
+- **NOT verified (needs the real thing; first run, in this order):** (1) apply the migration (Supabase MCP
+  `apply_migration`, as every migration); (2) deploy `live-token` with **verify_jwt off** (like `account`) and set the secrets
+  `GEMINI_API_KEY`, `_2`, `_3` on Supabase (they are GitHub secrets today); (3) `cd live && python -m http.server 8000`, open
+  `http://localhost:8000/test.html`, log in, "Latest article", "Talk". If Gemini closes the socket straight after setup
+  (`refused`, close code and reason in the console), the setup layout is the first suspect: `setupMessage({nested: true})`
+  puts `responseModalities` and `speechConfig` under `generationConfig`. Then check: Hindi speech and answers, whether a
+  question the article cannot answer gets "the article does not say" (try 10 per language, incl. leading ones: "so the minister
+  resigned, right?"), the `SILENT` tool response (the guide must not talk about the highlight), echo on a phone speaker, and
+  how many conversations at once the 65K tokens a minute really carry.
+- **Privacy, decide before it ships:** the free tier lets Google use API content to improve its products, and this sends a
+  reader's VOICE. The button needs a consent line (design phase); readers' audio is never stored by us.
+- **Not done / later:** the design and name; voice search with `3.5 Transcribe Live`; session resumption (a conversation is
+  capped at 8 minutes, Live audio sessions at 15, so it is not needed yet); analytics of how long people talk.
+
+### Talk to the article: the design (owner, Oct 11 2026; in `site/index.html`, block "Understand by talking")
+- **Button:** a third circle in the article's audio/video row (same 52 px white circle, shadow and indigo icon), pushed to the
+  far end; a speech bubble with voice bars. Hidden unless `live/talk.js` loaded (`html.talk-on`), so a missing module
+  never shows a dead button. The module is loaded in the background 0.7 s after the page starts, so the first tap can start sound
+  at once (browsers only let sound and microphone start inside a tap).
+- **Banner:** 1.15 s after an article has opened, a pill grows out of the button to the video button (clip-path, the
+  text fades in after), stays 4.8 s, folds back in. Once per opening; not while a conversation exists. Tapping it = tapping the button.
+- **Card:** centred (340 px), article blurred behind (`.tkveil`), light blue glow while talking. Collapse top-left, close
+  top-right. Eleven bars: dance while the guide speaks, follow the reader's voice (`onLevel`) while listening, wave while connecting.
+  The guide's last words show as a caption. A privacy line is always on the card (see Privacy above). Not signed in: the
+  sign-in card opens (with its own reason line), then the card opens in "ready" with a Start button: a fresh tap, as iOS needs.
+- **Collapse:** the card shrinks into a translucent floating button. At the top of the article it glides onto the article's
+  own button (takes its white look, so the swap is invisible); when that scrolls under the header it glides to the bottom right
+  (above the audio player when that is showing). Following is exact while near (< 32 px), a chase with ease when far.
+  It shows a voice and a pulse ring while the guide speaks. Tapping it opens the card again.
+- **Ends the conversation:** close (X), leaving the article, opening another one, switching language (the guide was briefed in
+  the other one), playing the read-aloud, the conversation ending by itself (45 s quiet, 8 min, server goAway; the reason is
+  said on the card, or as a toast when collapsed). Starting pauses the read-aloud. Phone back / Escape collapses the card first.
+- **The model's highlight** lights `.sent.lit` (the read-aloud's own style) and scrolls to it. The card blurs the article, so
+  the reader sees it when collapsed (or faintly through the blur).
+- **Served from:** `live/talk.js` and `live/intro.json` are copied to `/live/` by `site.yml` (and `live/intro-*.m4a` when
+  they exist). Locally: `cp -r live site/live` (git-ignored) and serve `site/`.
+- **Fixed in `live/talk.js`:** closing while connecting (permission box up, token being fetched) used to carry on: it opened the
+  microphone and the socket after the stop. Each `start()` is now a run that checks it is still wanted after every wait
+  (3 tests in `controller.test.mjs`).
+- **Browser tests:** `tests/talk_ui/` (Playwright, mock module; README there). 20 checks, run by hand, not in CI.
+- **Not verified:** a real phone (iOS Safari especially: sound start, the card's blur, `scale`/`inset` clip-path support),
+  the glide at 60 fps on a mid-range Android, real Hindi wording by a native reader, the banner against the real Hind font
+  (tested with a fallback face, wider than Hind).
