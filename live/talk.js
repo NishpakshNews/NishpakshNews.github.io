@@ -4,7 +4,7 @@
 //   const talk = createTalk({
 //     tokenUrl: `${SUPABASE_URL}/functions/v1/live-token`,
 //     getHeaders: async () => ({ apikey: SUPABASE_KEY, Authorization: `Bearer ${await token()}` }),
-//     introBase: "/live/",                      // intro.json, intro-en.m4a, intro-hi.m4a (nishpaksh/live_intro.py)
+//     introBase: "/live/",                      // intro.json: the words the guide says first (it says them itself, in its own voice)
 //     onState: (s) => ..., onHighlight: (id) => ..., onTranscript: (lines) => ..., onLevel: (rms) => ...,
 //     onGrant: ({instruction, sentenceIds, maxSeconds, daily}) => ...,   // what the guide was given (for testing)
 //     onEnd: ({reason}) => ..., onError: ({code, message}) => ...,
@@ -25,6 +25,8 @@
 export const WS_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained";
 export const IN_RATE = 16000;
 export const OUT_RATE = 24000;
+const INTRO_WAIT_MS = 15000;            // how long the intro waits for the server to be ready
+const INTRO_MAX_MS = 30000;             // and for the guide to finish saying it
 export const IDLE_SECONDS = 45;          // nobody speaking (either side) this long: the conversation ends
 export const WRAP_UP_SECONDS = 20;       // before the longest conversation ends, the guide is asked to close
 
@@ -191,7 +193,7 @@ export function createTalk(opts) {
   const o = { introBase: "./", onState() {}, onHighlight() {}, onTranscript() {}, onLevel() {}, onEnd() {}, onError() {}, ...opts };
   let state = "idle", ctx = null, stream = null, ws = null, proto = null, grant = null;
   let tapNode = null, tapSource = null, silent = null, muted = false, micOn = false, ending = false;
-  let introDone = false, ready = false, introStop = null;
+  let introDone = false, ready = false, introStop = null, introWake = null, readyWake = null;
   let nextAt = 0, quietTimer = null, idleTimer = null, maxTimer = null, wrapTimer = null, lastActive = 0;
   const playing = new Set();
   let runId = 0;                 // each start() is a run; stop() during connecting must stop THAT run from carrying on
@@ -273,37 +275,29 @@ export function createTalk(opts) {
     throw new TalkError(code, j.error || `HTTP ${r.status}`);
   }
 
-  // the fixed intro: a recording when there is one, the browser's own voice when not (so it works before the clips exist)
+  // The intro is spoken by the guide itself (owner, Oct 11 2026: the voice must match everywhere, whichever voice the
+  // reader picked): once the server is ready, it is asked to say the fixed words (live/intro.json) and nothing else.
+  // The microphone opens only after it has finished, so it never hears itself.
+  const sleep = (ms, stopper) => new Promise((resolve) => {
+    const t = setTimeout(resolve, ms);
+    stopper(() => { clearTimeout(t); resolve(); });
+  });
   async function playIntro(lang) {
-    let text = null, buffer = null;
+    let text = null;
     try { text = await (await fetch(`${o.introBase}intro.json`)).json(); } catch { /* none */ }
-    try {
-      const r = await fetch(`${o.introBase}intro-${lang}.m4a`);
-      if (r.ok) buffer = await ctx.decodeAudioData(await r.arrayBuffer());
-    } catch { /* no clip */ }
-    if (ending) return;
+    const words = text?.[lang];
+    if (ending || !Array.isArray(words) || words.length < 2) return;     // no words: the guide just waits for the reader
     set("intro");
-    if (buffer) {
-      await new Promise((resolve) => {
-        const src = ctx.createBufferSource();
-        src.buffer = buffer;
-        src.connect(ctx.destination);
-        introStop = () => { try { src.onended = null; src.stop(); } catch { /* done */ } resolve(); };
-        src.onended = resolve;
-        src.start();
-      });
-    } else if (text?.[lang] && typeof speechSynthesis !== "undefined") {
-      for (let i = 0; i < text[lang].length && !ending; i++) {
-        if (i) await new Promise((r) => setTimeout(r, (text.pause_seconds || 0.9) * 1000));
-        await new Promise((resolve) => {
-          const u = new SpeechSynthesisUtterance(text[lang][i]);
-          u.lang = lang === "hi" ? "hi-IN" : "en-IN";
-          u.onend = resolve; u.onerror = resolve;
-          introStop = () => { speechSynthesis.cancel(); resolve(); };
-          speechSynthesis.speak(u);
-        });
-      }
-    }
+    if (!ready) await sleep(INTRO_WAIT_MS, (stop) => { readyWake = stop; });
+    readyWake = null;
+    if (ending || !ready) return;
+    const hindi = lang === "hi";
+    proto.send({ realtimeInput: { text: `${hindi ? "In Hindi, say" : "Say"} these two sentences aloud now, exactly as written, with a short pause between them, and nothing else. Do not call any function. First: "${words[0]}" Then: "${words[1]}"` } });
+    await sleep(INTRO_MAX_MS, (stop) => { introWake = stop; introStop = stop; });    // the end of the guide's turn
+    introWake = null; introStop = null;
+    if (ending) return;
+    const left = (nextAt - ctx.currentTime) * 1000;                        // what is still queued to play
+    if (left > 0) await sleep(left + 150, (stop) => { introStop = stop; });
     introStop = null;
   }
 
@@ -313,10 +307,10 @@ export function createTalk(opts) {
       sentenceIds: grant.sentence_ids,
       send: (m) => ws && ws.readyState === 1 && ws.send(JSON.stringify(m)),
       on: {
-        ready: () => { ready = true; maybeOpenMic(); },
+        ready: () => { ready = true; readyWake?.(); maybeOpenMic(); },
         audio: playPcm,
         interrupted: interrupt,
-        turnComplete: touch,
+        turnComplete: () => { touch(); introWake?.(); },
         highlight: (id) => { touch(); o.onHighlight(id); },
         transcript: (lines) => { touch(); o.onTranscript(lines); },
         goAway: () => end("goaway"),
@@ -388,7 +382,7 @@ export function createTalk(opts) {
     stop: () => end("stopped"),
     // ask the guide, in words, to sound different from now on (pace, tone, accent); best effort, nothing happens when not talking
     nudge: (text) => { if (ws && ws.readyState === 1 && ready && !ending && text) ws.send(JSON.stringify({ realtimeInput: { text: String(text).slice(0, 300) } })); },
-    skipIntro: () => { try { introStop?.(); } catch { /* done */ } },
+    skipIntro: () => { try { introWake?.(); introStop?.(); interrupt(); } catch { /* done */ } },
     setMuted: (m) => {
       muted = !!m;
       if (muted && ws && ws.readyState === 1) ws.send(JSON.stringify({ realtimeInput: { audioStreamEnd: true } }));   // flush what was heard
