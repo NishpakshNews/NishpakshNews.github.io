@@ -649,7 +649,17 @@
   .tkhint { margin: 2px 4px 0; min-height: 44px; font-size: 14.5px; line-height: 1.5; color: var(--muted); }
   /* one slot under the voice: the guide's words while talking, the button when not (so the card never changes height) */
   .tkslot { min-height: 72px; display: flex; align-items: center; justify-content: center; margin-top: 4px; }
-  .tkcap { margin: 0 6px; font-size: 14px; line-height: 1.5; color: var(--ink-soft); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  /* a live transcript (owner, Oct 12 2026): three lines high, no scrollbar, follows the guide by itself. New words fade in as they
+     arrive; the older lines fade out at the top as they move up (and softly at the bottom edge). It used to be clamped to the first
+     3 lines, so a long answer showed only its beginning while the guide kept talking. */
+  .tkcap { margin: 0 6px; font-size: 14px; line-height: 1.5; color: var(--ink-soft); max-height: calc(4.5em + .6em); padding-bottom: .6em; overflow: hidden;
+           scrollbar-width: none; scroll-behavior: smooth;
+           -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - .6em), transparent 100%); mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - .6em), transparent 100%); }
+  .tkcap::-webkit-scrollbar { display: none; }
+  .tkcap.more { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 1.4em, #000 calc(100% - .6em), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 1.4em, #000 calc(100% - .6em), transparent 100%); }
+  .tkcap .tkw { animation: tkwin .5s ease-out both; }
+  @keyframes tkwin { from { opacity: 0; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .tkcap { scroll-behavior: auto; } .tkcap .tkw { animation: none; } }
   .tkcard .tkgo { width: 100%; }
   .tkcard[data-ph="ready"] .tkcap, .tkcard[data-ph="ended"] .tkcap, .tkcard[data-ph="connecting"] .tkcap, .tkcard[data-think] .tkcap { display: none; }          /* the guide's last words belong to the last answer */
   .tkcard[data-ph="speaking"] .tkgo, .tkcard[data-ph="listening"] .tkgo, .tkcard[data-ph="connecting"] .tkgo, .tkcard[data-ph="thinking"] .tkgo { display: none; }
@@ -2789,7 +2799,20 @@ function tkPhase() {
   if (TK.phase !== "live") return TK.phase;
   return TK.st === "speaking" || TK.st === "intro" ? "speaking" : TK.st === "listening" ? "listening" : TK.st === "thinking" ? "thinking" : "connecting";
 }
-function tkCaption() { const c = TK.card && TK.card.querySelector(".tkcap"); if (c) c.textContent = TK.cap; }
+function tkCaption() {
+  const c = TK.card && TK.card.querySelector(".tkcap"); if (!c) return;
+  const now = TK.cap || "", had = c._shown || "";
+  if (now !== had) {
+    if (had && now.startsWith(had)) {                   // the guide is still talking: only the new words are added, and they fade in
+      const w = document.createElement("span"); w.className = "tkw"; w.textContent = now.slice(had.length); c.appendChild(w);
+    } else c.textContent = now;                          // a new answer
+    c._shown = now;
+  }
+  // follow the end of what the guide says (3 lines high, no scrollbar); the top line fades once there is more above it
+  const over = c.scrollHeight > c.clientHeight + 1;
+  c.classList.toggle("more", over);
+  if (over) c.scrollTop = c.scrollHeight;
+}
 function tkPaint() {
   if (!TK.card) return;
   const t = T[lang], c = TK.card, ph = tkPhase(), errs = ["mic", "login", "limit", "busy", "gone", "network", "unavailable", "refused", "error"];
