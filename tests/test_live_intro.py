@@ -115,3 +115,34 @@ def test_one_failure_does_not_end_the_run_and_a_success_resets_the_count():
         return b"\x01\x01"
     assert pool.speak(call) == b"\x01\x01"
     assert seen == ["m1", "m2"]
+
+
+def _speech_then_glitch(speech_s=2.0, quiet_s=0.2, burst_s=0.13):
+    """What Gemini TTS sometimes returns: the words, a short silence, then a burst of hard-clipped noise (Oct 12 2026)."""
+    import numpy as np
+    R = live_intro.RATE
+    speech = (np.sin(2 * np.pi * 200 * np.arange(int(R * speech_s)) / R) * 6000).astype("<i2")
+    burst = np.random.RandomState(0).choice([-32768, 32767], int(R * burst_s)).astype("<i2")
+    quiet = np.zeros(int(R * quiet_s), dtype="<i2")
+    return speech.tobytes() + quiet.tobytes() + burst.tobytes()
+
+
+def test_clean_part_cuts_the_noise_burst_and_keeps_the_words():
+    raw = _speech_then_glitch()
+    assert live_intro.has_burst(raw)
+    out = live_intro.clean_part(raw)
+    assert not live_intro.has_burst(out)
+    secs = len(out) / 2 / live_intro.RATE
+    assert 2.0 <= secs <= 2.2                       # the words plus ~100 ms of silence, nothing else
+
+
+def test_clean_part_leaves_clean_speech_alone_apart_from_the_trim_and_fades():
+    raw = _speech_then_glitch(burst_s=0)            # no glitch this time
+    out = live_intro.clean_part(raw)
+    assert not live_intro.has_burst(out)
+    assert abs(len(out) - len(raw)) / 2 / live_intro.RATE < 0.2
+
+
+def test_build_pcm_never_joins_a_burst_into_the_intro():
+    pcm = live_intro.build_pcm(["one two", "three four"], 0.9, lambda t: _speech_then_glitch())
+    assert not live_intro.has_burst(pcm)

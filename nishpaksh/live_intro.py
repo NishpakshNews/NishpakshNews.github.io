@@ -28,6 +28,8 @@ import os
 import pathlib
 import time
 
+import numpy as np
+
 log = logging.getLogger(__name__)
 
 RATE = 24000                          # Gemini TTS: 16-bit mono PCM at 24 kHz (audio.RATE)
@@ -103,6 +105,67 @@ def load(path: pathlib.Path = INTRO_FILE) -> dict:
     return d
 
 
+# The model glitch (Oct 12 2026): after the last word, and about 0.2 s of near-silence, Gemini TTS ends many clips with ~130 ms of
+# full-scale clipped noise, a loud "scratch" (measured in all 20 recordings made so far). It sits at the very end of the PCM the
+# model returns, so every part is cleaned BEFORE the parts are joined: `clean_part`.
+FRAME = RATE // 100                    # 10 ms
+QUIET_RMS = 400                        # below this a frame is silence (the model's own noise floor is under 100)
+CLIP_PEAK = 32000                      # the burst is hard-clipped; speech from these voices peaks near 22000
+TAIL_KEEP = 0.10                       # seconds of silence kept after the last word
+FADE_IN, FADE_OUT = 0.008, 0.02        # seconds
+
+
+def _frames(x: np.ndarray):
+    n = len(x) // FRAME
+    f = x[:n * FRAME].reshape(n, FRAME)
+    return f, np.sqrt((f ** 2).mean(1)), np.abs(f).max(1)
+
+
+def has_burst(pcm: bytes) -> bool:
+    """True while any 40 ms stretch is loud AND hard-clipped (what the glitch looks like, and nothing a voice does)."""
+    x = np.frombuffer(pcm, dtype="<i2").astype(np.float64)
+    if len(x) < FRAME * 4:
+        return False
+    _, rms, pk = _frames(x)
+    bad = (rms > 8000) & (pk >= CLIP_PEAK)
+    return bool(len(bad) >= 4 and (np.convolve(bad.astype(int), np.ones(4, dtype=int), "valid") >= 3).any())
+
+
+def clean_part(pcm: bytes) -> bytes:
+    """One spoken part without the glitch: cut the noise burst off the end (a loud, clipped tail that follows >= 80 ms of silence and
+    lasts under 400 ms), keep only 100 ms of silence after the last word, fade the first 8 ms in and the last 20 ms out so that joining
+    parts can never click."""
+    x = np.frombuffer(pcm, dtype="<i2").astype(np.float64)
+    f, rms, pk = _frames(x)
+    n = len(rms)
+    if n < 8:
+        return pcm
+    quiet = rms < QUIET_RMS
+    m = n                                            # the part ends here once trailing silence/zero padding is skipped
+    while m > 0 and quiet[m - 1]:
+        m -= 1
+    end = n                                          # first frame that is NOT kept
+    i = m
+    while i > 0 and not quiet[i - 1]:                # walk back over the loud tail
+        i -= 1
+    if 0 < i < m and m - i <= 40:                    # a short loud tail ...
+        j = i
+        while j > 0 and quiet[j - 1]:
+            j -= 1
+        tail_clipped = pk[i:m].max() >= CLIP_PEAK and rms[i:m].mean() > 8000
+        if i - j >= 8 and tail_clipped:              # ... that follows >= 80 ms of silence and is clipped noise: the glitch
+            end = i
+    voiced = np.nonzero(rms[:end] >= 150)[0]         # trim the silence after the last word
+    if len(voiced):
+        end = min(end, int(voiced[-1]) + 1 + int(TAIL_KEEP * 100))
+    y = x[:end * FRAME].copy()
+    a, b = int(FADE_IN * RATE), int(FADE_OUT * RATE)
+    if len(y) > a + b:
+        y[:a] *= np.linspace(0, 1, a)
+        y[-b:] *= np.linspace(1, 0, b)
+    return np.clip(y, -32768, 32767).astype("<i2").tobytes()
+
+
 def build_pcm(parts: list[str], pause_seconds: float, speak) -> bytes:
     """The spoken parts one after another with a pause between them. `speak(text) -> pcm bytes` (None = failed).
     A part that comes out far longer than its words need (the model said something else too) is asked for once more, then refused."""
@@ -114,12 +177,13 @@ def build_pcm(parts: list[str], pause_seconds: float, speak) -> bytes:
             pcm = speak(text)
             if not pcm:
                 raise RuntimeError(f"no speech for: {text[:40]}")
+            pcm = clean_part(pcm)
             secs = len(pcm) / 2 / RATE
-            if secs <= limit:
+            if secs <= limit and not has_burst(pcm):
                 break
-            log.info("too long (%.1f s for %d words, limit %.1f s), attempt %d: %s", secs, len(text.split()), limit, attempt, text[:40])
+            log.info("rejected (%.1f s for %d words, limit %.1f s, noise burst left: %s), attempt %d: %s", secs, len(text.split()), limit, has_burst(pcm), attempt, text[:40])
         else:
-            raise ValueError(f"the model keeps saying more than the words: {text[:40]}")
+            raise ValueError(f"the model keeps saying more than the words, or ending in noise: {text[:40]}")
         out.append(pcm)
     return gap.join(out)
 
