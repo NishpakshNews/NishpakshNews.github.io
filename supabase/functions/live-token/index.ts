@@ -42,6 +42,7 @@ const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Max-Age": "7200",     // the browser remembers the permission check for two hours: no extra round trip before every call (the first call took 2 s of it, Oct 11 2026)
 };
 const reply = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
@@ -87,6 +88,21 @@ async function mint(key: string, instruction: string, voice: string): Promise<st
   return String(j.name);
 }
 
+// Articles read a moment ago are kept for a minute, so a second reader of the same story (or the same reader again) does not wait for GitHub.
+// Only what this instance has already fetched; a story that changed is at most a minute old here.
+const KEEP_MS = 60_000;
+const kept = new Map<string, { at: number; story: Story }>();
+async function getStory(id: number, timeoutMs = 0): Promise<{ ok: boolean; story: Story | null }> {
+  const hit = kept.get(String(id));
+  if (hit && Date.now() - hit.at < KEEP_MS) return { ok: true, story: hit.story };
+  const r = await fetch(`${FEED_URL}/story/${id}.json`, timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : undefined);
+  if (!r.ok) return { ok: false, story: null };
+  const story = (await r.json()) as Story;
+  if (kept.size >= 60) kept.delete(kept.keys().next().value as string);
+  kept.set(String(id), { at: Date.now(), story });
+  return { ok: true, story };
+}
+
 // The earlier articles of THIS story: the entries of the page's own `parents` list (what the site shows under "Earlier in this
 // story"), at most three, fetched together with a short timeout. Nothing else is fetched: not the feed, not other stories.
 // A parent that cannot be read is simply left out; it never holds the conversation up for more than the timeout.
@@ -97,10 +113,7 @@ async function earlier(page: Story & { payload_en?: { parents?: unknown } | null
     .filter((n): n is number => Number.isInteger(n) && (n as number) > 0)
     .slice(0, 3);
   const got = await Promise.all(ids.map(async (id) => {
-    try {
-      const r = await fetch(`${FEED_URL}/story/${id}.json`, { signal: AbortSignal.timeout(2500) });
-      return r.ok ? ((await r.json()) as Story) : null;
-    } catch { return null; }
+    try { return (await getStory(id, 2500)).story; } catch { return null; }
   }));
   return got.filter((x): x is Story => !!x);
 }
@@ -111,6 +124,9 @@ Deno.serve(async (req) => {
   let b: Record<string, unknown> = {};
   try { b = await req.json(); } catch { return reply({ error: "bad request" }, 400); }
   const lang = b.lang === "hi" ? "hi" : "en";
+
+  // the page says "a reader may tap soon" (an article was opened): nothing to do but be started, so the real call does not pay for the start
+  if (b.warm !== undefined) return reply({ ok: true });
 
   // the browser says it is still there (every 15 s): a conversation that goes quiet for 45 s frees its place
   if (b.ping !== undefined) {
@@ -137,20 +153,25 @@ Deno.serve(async (req) => {
   if (!KEYS.length) return reply({ error: "not configured" }, 500);
 
   try {
+    // where the time goes, in ms since the call began: returned to the page, which prints it in the browser console (talk timing)
+    const t0 = Date.now(); const tm: Record<string, number> = {};
+    const mark = <T>(k: string, p: Promise<T>) => p.then((v) => { tm[k] = Date.now() - t0; return v; });
+
     // the login check and the article are asked at the same time (they used to wait for each other)
-    const [user, page] = await Promise.all([me(req), fetch(`${FEED_URL}/story/${story}.json`)]);
+    const [user, page] = await Promise.all([mark("login", me(req)), mark("article", getStory(story))]);
     if (!user) return reply({ error: "login" }, 401);
 
     // the article first: nothing is counted against the reader when there is nothing to talk about
-    if (!page.ok) return reply({ error: "gone" }, 404);
+    if (!page.ok || !page.story) return reply({ error: "gone" }, 404);
     const style = cleanStyle(b.style);                  // the reader's voice, pace, tone and accent: checked against fixed lists
-    const main = (await page.json()) as Story;
-    const brief = buildBrief(main, lang, style, await earlier(main));
+    const main = page.story;
+    const brief = buildBrief(main, lang, style, await mark("earlier", earlier(main)));
     if (!brief) return reply({ error: "gone" }, 404);
 
     const { data, error } = await admin.rpc("live_talk_begin", {
       p_reader: user.id, p_story: story, p_lang: brief.lang, p_hourly: HOURLY, p_daily: DAILY, p_concurrent: CONCURRENT, p_seconds: MAX_SECONDS,
     });
+    tm.begin = Date.now() - t0;
     if (error) return reply({ error: error.message }, 500);
     const st = String(data?.status || "");
     if (st === "limit") return reply({ error: "limit", hourly: HOURLY, scope: data.scope, resets_at: data.resets_at, retry_minutes: data.retry_minutes }, 429);
@@ -164,6 +185,7 @@ Deno.serve(async (req) => {
       try { token = await mint(KEYS[(Number(data.n) + k) % KEYS.length], brief.instruction, style.voice); }
       catch (e) { last = String((e as Error).message || e); console.error("live-token mint failed:", last); }
     }
+    tm.mint = Date.now() - t0;
     if (!token) {
       await admin.rpc("live_talk_cancel", { p_id: data.id });      // not the reader's fault: not used up
       return reply({ error: "unavailable", detail: last }, 503);
@@ -171,7 +193,7 @@ Deno.serve(async (req) => {
     return reply({
       token, model: MODEL, lang: brief.lang, headline: brief.headline, instruction: brief.instruction,
       voice: style.voice, tools: toolsFor(NON_BLOCKING), thinking: THINKING, noise_gate: NOISE_GATE, silence_ms: SILENCE_MS, language_code: SEND_LANGUAGE_CODE ? languageCode(brief.lang, style.accent) : null,
-      sentence_ids: brief.sentenceIds, max_seconds: MAX_SECONDS, hourly: HOURLY, session: data.id,
+      sentence_ids: brief.sentenceIds, max_seconds: MAX_SECONDS, hourly: HOURLY, session: data.id, timing: tm,
     });
   } catch (e) {
     return reply({ error: String((e as Error).message || e) }, 500);

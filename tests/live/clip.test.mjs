@@ -123,3 +123,27 @@ test("a stopped conversation takes the recording with it", async () => {
   await started;
   assert.ok(w.sources.every((s) => s.stopped || s.at === undefined));
 });
+
+test("warm() only wakes the token function (a body of {warm: 1}); the grant and the socket report how long they took", async () => {
+  const w = browser({ clip: true, grantBody: { token: "auth_tokens/abc", model: "m", lang: "en", instruction: "R", sentence_ids: ["p0s0"], max_seconds: 480, timing: { login: 300, article: 250, earlier: 800, begin: 900, mint: 1500 } } });
+  const bodies = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url, init) => { if (String(url).endsWith("live-token")) bodies.push(JSON.parse(init.body)); return real(url, init); };
+  const metrics = [];
+  const { talk } = make({ onMetric: (m) => metrics.push(m) });
+  talk.warm();
+  await tick(20);
+  assert.deepEqual(bodies, [{ warm: 1 }]);
+  const started = talk.start({ storyId: 7, lang: "en" });
+  await tick(30);
+  const grantMetric = metrics.find((m) => "grantMs" in m);
+  assert.ok(grantMetric && grantMetric.grantMs >= 0);
+  assert.deepEqual(grantMetric.server, { login: 300, article: 250, earlier: 800, begin: 900, mint: 1500 });
+  const ws = w.sockets[0];
+  ws.onopen();
+  await msg(ws, { setupComplete: {} });
+  assert.ok(metrics.some((m) => "socketReadyMs" in m));
+  talk.stop();
+  await started;
+  globalThis.fetch = real;
+});

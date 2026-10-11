@@ -1371,6 +1371,7 @@ async function openStory(id, fromCard, opts = {}) {
   if (TK.ui !== "closed" && id !== TK.storyId) tkLeave();      // a conversation is about one article
   const card = cards.find(c => String(c.id) === id);
   openId = id;
+  tkWarm();
   sheetScroll.scrollTop = 0;
   const pending = loadStory(id);
   const quick = await Promise.race([pending, new Promise(r => setTimeout(() => r(undefined), 120))]);
@@ -2644,9 +2645,15 @@ const htmlEl = document.documentElement;
 
 function loadTalk() {
   if (TK.mod) return Promise.resolve(TK.mod);
-  if (!TK.modP) TK.modP = import("./live/talk.js").then(m => { TK.mod = m; htmlEl.classList.add("talk-on"); tkPaint(); tkPreloadIntro(); return m; })
+  if (!TK.modP) TK.modP = import("./live/talk.js").then(m => { TK.mod = m; htmlEl.classList.add("talk-on"); tkPaint(); tkPreloadIntro(); tkWarm(); return m; })
     .catch(err => { TK.modP = null; console.warn("Understand by talking is off: live/talk.js did not load (copy live/ next to index.html).", err); return null; });
   return TK.modP;
+}
+let tkWarmAt = 0;
+function tkWarm() {                           // wake the token function when an article is opened: the first tap then does not wait for it to start
+  if (!TK.mod || Date.now() - tkWarmAt < 60000) return;
+  tkWarmAt = Date.now();
+  try { talkInstance().warm(); } catch (e) { /* the tap itself will do it */ }
 }
 function tkPreloadIntro() {                  // the intro recording of the chosen voice is fetched before the tap, so the tap only has to play it
   try { talkInstance().preload({lang: TK.lang || lang, voice: tkStyle().voice}); } catch (e) { /* the guide then says the intro itself */ }

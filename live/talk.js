@@ -240,6 +240,7 @@ export function createTalk(opts) {
   let state = "idle", ctx = null, stream = null, ws = null, proto = null, grant = null;
   let tapNode = null, tapSource = null, silent = null, muted = false, micOn = false, ending = false;
   let thinkTimer = null, voiced = false, lastVoice = 0, thinkSince = 0, pingTimer = null, introDone = false, ready = false, introStop = null, introWake = null, readyWake = null;
+  let wsOpenAt = 0;
   let toolReplyAt = 0, silentAt = 0, nudged = false;   // the watchdog: when a function call was last answered, when the guide last ended a turn without a sound, and whether this question was already pushed once
   let askEnd = 0, firstTool = 0, toolCount = 0;      // timing of one answer: when the reader stopped, when the guide first called a function, when its voice began
   let nextAt = 0, quietTimer = null, idleTimer = null, maxTimer = null, wrapTimer = null, lastActive = 0, slow = false;
@@ -353,12 +354,13 @@ export function createTalk(opts) {
 
   async function grantFor(storyId, lang, style) {
     let r;
+    const t0 = Date.now();
     try {
       r = await fetch(o.tokenUrl, { method: "POST", headers: { "Content-Type": "application/json", ...(await o.getHeaders()) }, body: JSON.stringify({ story_id: storyId, lang, style }) });
     } catch { throw new TalkError("network", "could not reach Nishpaksh"); }
     let j = {};
     try { j = await r.json(); } catch { /* no body */ }
-    if (r.ok && j.token) return j;
+    if (r.ok && j.token) { o.onMetric?.({ grantMs: Date.now() - t0, server: j.timing || null }); return j; }
     const code = r.status === 401 ? "login" : r.status === 429 ? "limit" : r.status === 503 && j.error === "busy" ? "busy" : r.status === 404 ? "gone" : "unavailable";
     throw new TalkError(code, j.error || `HTTP ${r.status}`, code === "limit" ? { resetsAt: j.resets_at || null, scope: j.scope || "hour" } : {});
   }
@@ -372,6 +374,10 @@ export function createTalk(opts) {
       try { const r = await fetch(`${o.introBase}${name}`); return r.ok ? await r.arrayBuffer() : null; } catch { return null; }
     })());
     return clipBytes.get(name);
+  }
+  /** Wake the token function before the reader taps (its first call after a quiet spell took 5 s: 2 s to start, 3.6 s of work). Best effort. */
+  function warm() {
+    Promise.resolve(o.getHeaders()).then((h) => fetch(o.tokenUrl, { method: "POST", headers: { "Content-Type": "application/json", ...h }, body: JSON.stringify({ warm: 1 }) })).catch(() => {});
   }
   /** Start fetching the recording early (the page calls this before the reader taps), so the tap only has to play it. */
   function preload({ lang = "en", voice } = {}) { fetchClip(`intro-${safeVoice(voice)}-${lang === "hi" ? "hi" : "en"}.m4a`); }
@@ -426,13 +432,14 @@ export function createTalk(opts) {
   }
 
   function openSocket() {
+    wsOpenAt = Date.now();
     ws = new WebSocket(`${WS_URL}?access_token=${encodeURIComponent(grant.token)}`);
     proto = new LiveProtocol({
       sentenceIds: grant.sentence_ids,
       send: (m) => ws && ws.readyState === 1 && ws.send(JSON.stringify(m)),
       nonBlocking: (grant.tools || []).some((t) => (t.functionDeclarations || []).some((d) => d.behavior === "NON_BLOCKING")),
       on: {
-        ready: () => { ready = true; readyWake?.(); maybeOpenMic(); },
+        ready: () => { ready = true; o.onMetric?.({ socketReadyMs: Date.now() - wsOpenAt }); readyWake?.(); maybeOpenMic(); },
         audio: playPcm,
         interrupted: interrupt,
         toolReplied: () => { toolReplyAt = Date.now(); },
@@ -534,6 +541,7 @@ export function createTalk(opts) {
   return {
     start,
     preload,
+    warm,
     stop: () => end("stopped"),
     // ask the guide, in words, to sound different from now on (pace, tone, accent); best effort, nothing happens when not talking
     nudge: (text) => { if (ws && ws.readyState === 1 && ready && !ending && text) ws.send(JSON.stringify({ realtimeInput: { text: String(text).slice(0, 300) } })); },
