@@ -1,7 +1,7 @@
 // node --test tests/live
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildBrief, STATUS } from "../../supabase/functions/live-token/brief.ts";
+import { buildBrief, toolsFor, TOOLS, STATUS } from "../../supabase/functions/live-token/brief.ts";
 
 const story = () => ({
   story_id: 42,
@@ -113,4 +113,46 @@ test("a runaway page is cut, not sent whole", () => {
   const s = story();
   s.payload_en.narrative.paragraphs = [Array.from({ length: 400 }, (_, i) => ({ text: `Line ${i}.`, class: "established" }))];
   assert.equal(buildBrief(s, "en").sentenceIds.length, 160);
+});
+
+// -- the guide sees this article and the earlier articles of its story, nothing else (owner, Oct 11 2026: speed) -----
+
+const parent = (id, head, text, extra = {}) => ({
+  story_id: id, headline_en: head,
+  payload_en: { narrative: { paragraphs: [[{ text, class: "established", sources: [1] }]], sources: [{ n: 1, outlet: "The Hindu", read: true }] }, ...extra },
+});
+
+test("earlier articles of the story are in the instruction from the start, with status and outlets, and no ids", () => {
+  const ins = buildBrief(story(), "en", undefined, [parent(7, "Bridge cracks seen", "Cracks were reported in March.")]).instruction;
+  assert.match(ins, /EARLIER ARTICLES IN THIS STORY/);
+  assert.match(ins, /EARLIER ARTICLE \(story 7\): Bridge cracks seen/);
+  assert.match(ins, /\(ESTABLISHED; outlets: The Hindu\) Cracks were reported in March\./);
+  assert.ok(!/\[p0s0\] \(ESTABLISHED; sources 1\) Cracks/.test(ins), "an earlier article must have no highlightable id");
+});
+
+test("no earlier article: no earlier section, and no list of other articles or way to fetch one", () => {
+  const ins = buildBrief(story(), "en").instruction;
+  assert.ok(!/EARLIER ARTICLES IN THIS STORY/.test(ins));
+  assert.ok(!/OTHER NISHPAKSH ARTICLES|read_article/.test(ins));
+});
+
+test("at most three earlier articles, never the article itself, and an unreadable one is skipped", () => {
+  const list = [parent(42, "Itself", "Same story."), parent(1, "One", "First."), { story_id: 2, headline_en: "Empty", payload_en: {} },
+    parent(3, "Three", "Third."), parent(4, "Four", "Fourth."), parent(5, "Five", "Fifth.")];
+  const ins = buildBrief(story(), "en", undefined, list).instruction;
+  assert.ok(!ins.includes("EARLIER ARTICLE (story 42)"));
+  assert.ok(ins.includes("(story 1)") && ins.includes("(story 3)") && ins.includes("(story 4)"));
+  assert.ok(!ins.includes("(story 2)") && !ins.includes("(story 5)"));
+});
+
+test("an earlier article about suicide brings the helpline rules too", () => {
+  const ins = buildBrief(story(), "en", undefined, [parent(7, "Earlier", "Text.", { suicide: true })]).instruction;
+  assert.match(ins, /Tele-MANAS/);
+});
+
+test("the only function is highlight (nothing is fetched while the reader waits); non-blocking only when asked", () => {
+  const names = (t) => t[0].functionDeclarations.map((d) => d.name);
+  assert.deepEqual(names(TOOLS), ["highlight"]);
+  assert.equal(TOOLS[0].functionDeclarations[0].behavior, undefined);
+  assert.equal(toolsFor(true)[0].functionDeclarations[0].behavior, "NON_BLOCKING");
 });

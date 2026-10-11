@@ -54,7 +54,7 @@ test("each choice changes its own line, and only that line", () => {
 test("the voice block sits in the instruction before the article, and the grounding rules are still there", () => {
   const t = buildBrief(story, "en", DEFAULT_STYLE).instruction;
   assert.ok(t.indexOf("HOW YOUR VOICE SOUNDS") > t.indexOf("WHAT YOU MAY USE"));
-  assert.ok(t.indexOf("HOW YOUR VOICE SOUNDS") < t.indexOf("ARTICLE ("));
+  assert.ok(t.indexOf("HOW YOUR VOICE SOUNDS") < t.indexOf("THE ARTICLE THE READER IS ON NOW ("));
   assert.match(t, /Only the sentences of the article below/);
   assert.equal(buildBrief(story, "en").instruction, t);          // no style given = the default
 });

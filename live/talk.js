@@ -27,7 +27,7 @@ export const IN_RATE = 16000;
 export const OUT_RATE = 24000;
 const INTRO_WAIT_MS = 15000;            // how long the intro waits for the server to be ready
 const INTRO_MAX_MS = 30000;             // and for the guide to finish saying it
-const THINK_AFTER_MS = 700;            // the reader's voice has been quiet this long: their turn is over, the guide is working on its answer
+const THINK_AFTER_MS = 500;            // the reader's voice has been quiet this long: their turn is over, the guide is working on its answer
 const THINK_MAX_MS = 20000;            // "thinking" never lasts longer than this (the guide may simply have had nothing to say)
 const PING_SECONDS = 15;               // how often the page tells the function the conversation is still going
 export const IDLE_SECONDS = 45;          // nobody speaking (either side) this long: the conversation ends
@@ -89,16 +89,11 @@ const HIGHLIGHT = {
   description: "Light up the sentence of the article the reader is on that you are about to talk about, so the reader sees it. Call it before you speak about a sentence, with its id (the text in square brackets, for example p2s0). Never say the id aloud.",
   parameters: { type: "OBJECT", properties: { sentence_id: { type: "STRING", description: "The sentence id, for example p2s0" } }, required: ["sentence_id"] },
 };
-const READ_ARTICLE = {
-  name: "read_article",
-  description: "Read another Nishpaksh article from the list of other articles, with the status of each sentence and its outlets. Use the story id from the list. Then say it comes from another article.",
-  parameters: { type: "OBJECT", properties: { story_id: { type: "INTEGER", description: "The story id from the list of other articles" } }, required: ["story_id"] },
-};
 
 /** The first message on the socket. `instruction` comes from the live-token function (the same text its token is locked
  *  to). `nested`: put responseModalities and speechConfig under generationConfig (the older layout) if the server
  *  rejects the flat one. */
-export function setupMessage({ model, instruction, voice = "Kore", languageCode = null, nested = false }) {
+export function setupMessage({ model, instruction, voice = "Kore", languageCode = null, nested = false, tools = null, silenceMs = 500 }) {
   const speech = { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } };
   if (languageCode) speech.languageCode = languageCode;     // only when the function sends one (off by default: native-audio models pick the language themselves)
   const setup = {
@@ -106,9 +101,10 @@ export function setupMessage({ model, instruction, voice = "Kore", languageCode 
     systemInstruction: { parts: [{ text: instruction }] },
     inputAudioTranscription: {},
     outputAudioTranscription: {},
-    tools: [{ functionDeclarations: [HIGHLIGHT, READ_ARTICLE] }],
-    // 500-800 ms of silence ends the reader's turn (Google's guidance: shorter splits a sentence at a breath)
-    realtimeInputConfig: { automaticActivityDetection: { silenceDurationMs: 700, prefixPaddingMs: 100 } },
+    // the function declarations come from the server (the token is locked to exactly them); this is only the fallback
+    tools: tools || [{ functionDeclarations: [HIGHLIGHT] }],
+    // 500-800 ms of silence ends the reader's turn (Google's guidance: shorter splits a sentence at a breath); every answer waits this long first
+    realtimeInputConfig: { automaticActivityDetection: { silenceDurationMs: silenceMs, prefixPaddingMs: 100 } },
   };
   if (nested) setup.generationConfig = { responseModalities: ["AUDIO"], speechConfig: speech };
   else { setup.responseModalities = ["AUDIO"]; setup.speechConfig = speech; }
@@ -161,18 +157,7 @@ export class LiveProtocol {
 
   _tools(calls) {
     const responses = [];
-    const reading = [];
     for (const fc of calls) {
-      if (fc.name === "read_article") {
-        // another article: fetched by the page, so the answer comes later; the model waits for it (no SILENT)
-        const id = Number(fc.args?.story_id);
-        reading.push((async () => {
-          let result = "that article could not be read";
-          try { if (Number.isInteger(id) && this.on.readArticle) result = (await this.on.readArticle(id)) || result; } catch { /* the model is told it could not be read */ }
-          return { id: fc.id, name: fc.name, response: { result } };
-        })());
-        continue;
-      }
       let result = "unknown function";
       if (fc.name === "highlight") {
         const id = this.validId(fc.args?.sentence_id);
@@ -182,7 +167,6 @@ export class LiveProtocol {
       responses.push({ id: fc.id, name: fc.name, response: { result }, scheduling: "SILENT" });
     }
     if (responses.length) this.send({ toolResponse: { functionResponses: responses } });
-    if (reading.length) Promise.all(reading).then((r) => this.send({ toolResponse: { functionResponses: r } }));
   }
 }
 
@@ -290,14 +274,6 @@ export function createTalk(opts) {
 
   function maybeOpenMic() { if (introDone && ready && !ending) startMic(); }
 
-  // another article for the guide (its read_article call): the same function gives the sentences with their statuses
-  async function readOther(id) {
-    const r = await fetch(o.tokenUrl, { method: "POST", headers: { "Content-Type": "application/json", ...(await o.getHeaders()) }, body: JSON.stringify({ read: id, lang: grant?.lang || "en" }) });
-    if (!r.ok) return null;
-    const j = await r.json();
-    return typeof j?.text === "string" ? j.text : null;
-  }
-
   async function grantFor(storyId, lang, style) {
     let r;
     try {
@@ -347,12 +323,11 @@ export function createTalk(opts) {
         interrupted: interrupt,
         turnComplete: () => { touch(); introWake?.(); if (state === "thinking" && !playing.size) set("listening"); },
         highlight: (id) => { touch(); o.onHighlight(id); },
-        readArticle: async (id) => { touch(); return o.readArticle ? o.readArticle(id) : readOther(id); },
         transcript: (lines) => { touch(); o.onTranscript(lines); },
         goAway: () => end("goaway"),
       },
     });
-    ws.onopen = () => ws.send(JSON.stringify(setupMessage({ model: grant.model, instruction: grant.instruction, voice: grant.voice || undefined, languageCode: grant.language_code || null, nested: true })));
+    ws.onopen = () => ws.send(JSON.stringify(setupMessage({ model: grant.model, instruction: grant.instruction, voice: grant.voice || undefined, languageCode: grant.language_code || null, nested: true, tools: grant.tools || null, silenceMs: Number(grant.silence_ms) || 500 })));
     ws.onmessage = async (e) => {
       try { proto.handle(JSON.parse(typeof e.data === "string" ? e.data : await e.data.text())); }
       catch { /* one bad frame does not end the conversation */ }

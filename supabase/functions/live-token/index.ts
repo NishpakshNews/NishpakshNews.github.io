@@ -3,7 +3,7 @@
 // The browser talks to Gemini's Live API directly (one WebSocket, no proxy), but never holds a Gemini key. It asks
 // here first. This function: (1) checks the reader is logged in, (2) asks the database whether they may start one
 // (live_talk_begin: a few a day each, and a cap on how many run at the same moment across the site), (3) reads the
-// article from the feed branch and builds what the model may use (brief.ts), (4) asks Gemini for a ONE-USE token that
+// article from the feed branch, plus the earlier articles of the same story (its parents), and builds what the model may use (brief.ts), (4) asks Gemini for a ONE-USE token that
 // is locked to the Live model and to that instruction, and expires when the longest allowed conversation does, and
 // (5) hands the browser the token, the instruction (so it can repeat it in its setup message), and the ids of the
 // sentences the model may light up.
@@ -13,7 +13,7 @@
 // each from its own project, so conversations are spread over them). Optional: LIVE_MODEL, FEED_URL, LIVE_LANGUAGE_CODE=1
 // (also send a language code to Gemini; off by default). The request may carry `style` {voice, pace, tone, accent}.
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
-import { articleDigest, buildBrief, TOOLS, type Other, type Story } from "./brief.ts";
+import { buildBrief, toolsFor, type Story } from "./brief.ts";
 import { cleanStyle, languageCode } from "./voice.ts";
 
 const URL_ = Deno.env.get("SUPABASE_URL")!;
@@ -22,6 +22,7 @@ const admin = createClient(URL_, SERVICE, { auth: { persistSession: false, autoR
 
 const MODEL = Deno.env.get("LIVE_MODEL") || "gemini-3.8-live";
 const SEND_LANGUAGE_CODE = Deno.env.get("LIVE_LANGUAGE_CODE") === "1";   // see voice.ts: off until the model is known to accept it
+const NON_BLOCKING = Deno.env.get("LIVE_NONBLOCKING") === "1";           // see brief.ts toolsFor: highlight need not stop the guide; off until the model is known to accept it
 const FEED_URL = Deno.env.get("FEED_URL") || "https://raw.githubusercontent.com/NishpakshNews/NishpakshNews.github.io/feed";
 const KEYS = [...new Set(["GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3", "GEMINI_API_KEY_4", "GEMINI_API_KEY_5"]
   .map((k) => (Deno.env.get(k) || "").trim()).filter(Boolean))];
@@ -29,6 +30,9 @@ const KEYS = [...new Set(["GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_
 const HOURLY = Number(Deno.env.get("LIVE_HOURLY")) || 3;   // conversations per reader in any rolling hour (secret LIVE_HOURLY changes it)
 const DAILY = 20;              // a high backstop per reader per IST day: a bug or a script cannot burn the site's Gemini quota
 const CONCURRENT = Number(Deno.env.get("LIVE_CONCURRENT")) || 3;   // at the same moment, whole site; a guess to be tuned (Gemini 3.8 Live: 65K tokens a minute per project). Set the secret LIVE_CONCURRENT to change it
+// How long the reader must be quiet before the guide starts answering: every answer waits this long first. Google's guidance is
+// 500-800 ms (shorter splits a sentence at a breath); it was 700. The same number is in live/talk.js (the token is locked to this setup).
+const SILENCE_MS = 500;
 const MAX_SECONDS = 480;       // the longest conversation: the token itself expires then
 const GEMINI = "https://generativelanguage.googleapis.com/v1beta/auth_tokens";
 
@@ -67,10 +71,10 @@ async function mint(key: string, instruction: string, voice: string): Promise<st
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
         },
         systemInstruction: { parts: [{ text: instruction }] },
-        tools: TOOLS,
+        tools: toolsFor(NON_BLOCKING),
         inputAudioTranscription: {},
         outputAudioTranscription: {},
-        realtimeInputConfig: { automaticActivityDetection: { silenceDurationMs: 700, prefixPaddingMs: 100 } },
+        realtimeInputConfig: { automaticActivityDetection: { silenceDurationMs: SILENCE_MS, prefixPaddingMs: 100 } },
       },
     }),
   });
@@ -80,16 +84,22 @@ async function mint(key: string, instruction: string, voice: string): Promise<st
   return String(j.name);
 }
 
-// the other live articles (headline and id), for the guide's list; nothing is counted against anyone when this fails
-async function others(lang: string): Promise<Other[]> {
-  try {
-    const r = await fetch(`${FEED_URL}/${lang}.json`, { signal: AbortSignal.timeout(4000) });
-    if (!r.ok) return [];
-    const j = await r.json();
-    return (Array.isArray(j?.stories) ? j.stories : [])
-      .filter((c: { id?: unknown; h?: unknown }) => Number.isInteger(c?.id) && typeof c?.h === "string" && c.h.trim())
-      .map((c: { id: number; h: string }) => ({ id: c.id, headline: c.h }));
-  } catch { return []; }
+// The earlier articles of THIS story: the entries of the page's own `parents` list (what the site shows under "Earlier in this
+// story"), at most three, fetched together with a short timeout. Nothing else is fetched: not the feed, not other stories.
+// A parent that cannot be read is simply left out; it never holds the conversation up for more than the timeout.
+async function earlier(page: Story & { payload_en?: { parents?: unknown } | null }): Promise<Story[]> {
+  const raw = page?.payload_en?.parents;
+  const ids = (Array.isArray(raw) ? raw : [])
+    .map((x: { story_id?: unknown }) => x?.story_id)
+    .filter((n): n is number => Number.isInteger(n) && (n as number) > 0)
+    .slice(0, 3);
+  const got = await Promise.all(ids.map(async (id) => {
+    try {
+      const r = await fetch(`${FEED_URL}/story/${id}.json`, { signal: AbortSignal.timeout(2500) });
+      return r.ok ? ((await r.json()) as Story) : null;
+    } catch { return null; }
+  }));
+  return got.filter((x): x is Story => !!x);
 }
 
 Deno.serve(async (req) => {
@@ -119,32 +129,20 @@ Deno.serve(async (req) => {
     return reply({ ok: true });
   }
 
-  // the guide asked to read another article (the function read_article): no limit is used, the reader must be logged in
-  if (b.read !== undefined) {
-    const id = Number(b.read);
-    if (!Number.isInteger(id) || id < 1) return reply({ error: "bad request" }, 400);
-    try {
-      if (!(await me(req))) return reply({ error: "login" }, 401);
-      const page = await fetch(`${FEED_URL}/story/${id}.json`);
-      if (!page.ok) return reply({ error: "gone" }, 404);
-      const d = articleDigest((await page.json()) as Story, lang);
-      return d ? reply(d) : reply({ error: "gone" }, 404);
-    } catch (e) { return reply({ error: String((e as Error).message || e) }, 500); }
-  }
-
   const story = Number(b.story_id);
   if (!Number.isInteger(story) || story < 1) return reply({ error: "bad request" }, 400);
   if (!KEYS.length) return reply({ error: "not configured" }, 500);
 
   try {
-    const user = await me(req);
+    // the login check and the article are asked at the same time (they used to wait for each other)
+    const [user, page] = await Promise.all([me(req), fetch(`${FEED_URL}/story/${story}.json`)]);
     if (!user) return reply({ error: "login" }, 401);
 
     // the article first: nothing is counted against the reader when there is nothing to talk about
-    const page = await fetch(`${FEED_URL}/story/${story}.json`);
     if (!page.ok) return reply({ error: "gone" }, 404);
     const style = cleanStyle(b.style);                  // the reader's voice, pace, tone and accent: checked against fixed lists
-    const brief = buildBrief((await page.json()) as Story, lang, style, await others(lang));
+    const main = (await page.json()) as Story;
+    const brief = buildBrief(main, lang, style, await earlier(main));
     if (!brief) return reply({ error: "gone" }, 404);
 
     const { data, error } = await admin.rpc("live_talk_begin", {
@@ -169,7 +167,7 @@ Deno.serve(async (req) => {
     }
     return reply({
       token, model: MODEL, lang: brief.lang, headline: brief.headline, instruction: brief.instruction,
-      voice: style.voice, language_code: SEND_LANGUAGE_CODE ? languageCode(brief.lang, style.accent) : null,
+      voice: style.voice, tools: toolsFor(NON_BLOCKING), silence_ms: SILENCE_MS, language_code: SEND_LANGUAGE_CODE ? languageCode(brief.lang, style.accent) : null,
       sentence_ids: brief.sentenceIds, max_seconds: MAX_SECONDS, hourly: HOURLY, session: data.id,
     });
   } catch (e) {
