@@ -7,5 +7,13 @@
   "hi": [
     "यह एक लाइव बातचीत है, इसलिए आप मुझे कभी भी बीच में टोक सकते हैं। बस बोलना शुरू कीजिए।",
     "आप इस ख़बर के बारे में क्या जानना चाहेंगे?"
+  ],
+  "recap_en": [
+    "This is a live conversation, so you can interrupt me at any time. Just start talking.",
+    "What would you like to know about today's news?"
+  ],
+  "recap_hi": [
+    "यह एक लाइव बातचीत है, इसलिए आप मुझे कभी भी बीच में टोक सकते हैं। बस बोलना शुरू कीजिए।",
+    "आप आज की ख़बरों के बारे में क्या जानना चाहेंगे?"
   ]
 }

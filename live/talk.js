@@ -11,7 +11,7 @@
 //     onGrant: ({instruction, sentenceIds, maxSeconds, daily}) => ...,   // what the guide was given (for testing)
 //     onEnd: ({reason}) => ..., onError: ({code, message}) => ...,
 //   });
-//   await talk.start({ storyId, lang, style });  // style: {voice, pace, tone, accent}, all optional (the function checks them)
+//   await talk.start({ storyId, lang, style });  // (a conversation about the DAY'S RECAP: start({ recap: "2026-10-12", lang, style }), owner Oct 12 2026)  // style: {voice, pace, tone, accent}, all optional (the function checks them)
 //   talk.nudge("From now on, speak slowly.");  // asks the guide to sound different mid-conversation        // from a tap: the browser asks for the microphone then
 //   talk.skipIntro(); talk.setMuted(true); talk.stop();
 //
@@ -387,11 +387,11 @@ export function createTalk(opts) {
 
   function maybeOpenMic() { if (introDone && ready && !ending) startMic(); }
 
-  async function grantFor(storyId, lang, style) {
+  async function grantFor(storyId, lang, style, recap) {
     let r;
     const t0 = Date.now();
     try {
-      r = await fetch(o.tokenUrl, { method: "POST", headers: { "Content-Type": "application/json", ...(await o.getHeaders()) }, body: JSON.stringify({ story_id: storyId, lang, style }) });
+      r = await fetch(o.tokenUrl, { method: "POST", headers: { "Content-Type": "application/json", ...(await o.getHeaders()) }, body: JSON.stringify(recap ? { recap, lang, style } : { story_id: storyId, lang, style }) });
     } catch { throw new TalkError("network", "could not reach Nishpaksh"); }
     let j = {};
     try { j = await r.json(); } catch { /* no body */ }
@@ -421,6 +421,9 @@ export function createTalk(opts) {
   // The intro recording (owner, Oct 11 2026: "the card is instant but the voice comes after a long time"). It is one file per voice and language,
   // so it sounds like the guide the reader picked; it is fetched before the tap when the page asks (preload) and starts the moment the tap's
   // audio context is running, while everything else (microphone, login, token, socket) is still going on behind it.
+  // The recap's guide has its own words ("what would you like to know about today's news?"), so its recordings are named intro-recap-<voice>-<lang>.m4a
+  // (a voice without one is simply said by the guide itself, as for any missing recording).
+  const clipName = (voice, lang, kind) => `intro-${kind === "recap" ? "recap-" : ""}${safeVoice(voice)}-${lang === "hi" ? "hi" : "en"}.m4a`;
   const safeVoice = (v) => (typeof v === "string" && /^[A-Za-z]{2,20}$/.test(v) ? v : "Kore");
   function fetchClip(name) {
     if (!clipBytes.has(name)) clipBytes.set(name, (async () => {
@@ -433,12 +436,12 @@ export function createTalk(opts) {
     Promise.resolve(o.getHeaders()).then((h) => fetch(o.tokenUrl, { method: "POST", headers: { "Content-Type": "application/json", ...h }, body: JSON.stringify({ warm: 1 }) })).catch(() => {});
   }
   /** Start fetching the recording early (the page calls this before the reader taps), so the tap only has to play it. */
-  function preload({ lang = "en", voice } = {}) { fetchClip(`intro-${safeVoice(voice)}-${lang === "hi" ? "hi" : "en"}.m4a`); }
+  function preload({ lang = "en", voice, kind } = {}) { fetchClip(clipName(voice, lang, kind)); }
   /** Begins the recording as soon as it is decoded. `started` resolves true (playing, `seconds` long) or false (none, or it could not be played). */
-  function startClip(lang, voice, after = Promise.resolve()) {
+  function startClip(lang, voice, after = Promise.resolve(), kind = "article") {
     const run = { cancelled: false, seconds: 0 };
     run.started = (async () => {
-      const bytes = await fetchClip(`intro-${safeVoice(voice)}-${lang === "hi" ? "hi" : "en"}.m4a`);
+      const bytes = await fetchClip(clipName(voice, lang, kind));
       if (!bytes || run.cancelled || ending || !ctx) return false;
       try {
         const buf = await ctx.decodeAudioData(bytes.slice(0));     // decoded NOW, while the microphone is being asked for
@@ -468,10 +471,10 @@ export function createTalk(opts) {
     const t = setTimeout(resolve, ms);
     stopper(() => { clearTimeout(t); resolve(); });
   });
-  async function playIntro(lang) {
+  async function playIntro(lang, kind = "article") {
     let text = null;
     try { text = await (await fetch(`${o.introBase}intro.json`)).json(); } catch { /* none */ }
-    const words = text?.[lang];
+    const words = (kind === "recap" && text?.[`recap_${lang}`]) || text?.[lang];
     if (ending || !Array.isArray(words) || words.length < 2) return;     // no words: the guide just waits for the reader
     set("intro");
     if (!ready) await sleep(INTRO_WAIT_MS, (stop) => { readyWake = stop; });
@@ -550,7 +553,8 @@ export function createTalk(opts) {
     o.onEnd({ reason, detail, ...extra });
   }
 
-  async function start({ storyId, lang, style }) {
+  async function start({ storyId, recap, lang, style }) {
+    const kind = recap ? "recap" : "article";
     if (state !== "idle" && state !== "ended") return;
     ending = false; muted = false; micOn = false; voiced = false; introDone = false; ready = false; nextAt = 0; stopKeepAlive();
     const run = ++runId;
@@ -564,7 +568,7 @@ export function createTalk(opts) {
       if (stale()) return;
       startKeepAlive();                    // the speaker is woken now and stays awake through the microphone permission / re-routing
       let micOpened; const micAsked = new Promise((r) => { micOpened = r; });
-      const clip = startClip(lang, style?.voice, micAsked);   // the recording is made ready now and plays the moment the microphone is open, before the login and the socket
+      const clip = startClip(lang, style?.voice, micAsked, kind);   // the recording is made ready now and plays the moment the microphone is open, before the login and the socket
       let mic;
       try {
         mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
@@ -572,7 +576,7 @@ export function createTalk(opts) {
       micOpened();
       if (stale()) { try { mic.getTracks().forEach((t) => t.stop()); } catch { /* done */ } return; }   // never leave a microphone open
       stream = mic;
-      grant = await grantFor(storyId, lang, style);
+      grant = await grantFor(storyId, lang, style, recap);
       if (stale()) return;
       lang = grant.lang || lang;
       if (o.onGrant) o.onGrant({ lang, headline: grant.headline, instruction: grant.instruction, sentenceIds: grant.sentence_ids, maxSeconds: grant.max_seconds, hourly: grant.hourly });
@@ -585,7 +589,7 @@ export function createTalk(opts) {
         const left = Math.max(0, (nextAt - ctx.currentTime) * 1000);          // what is still to play of the recording
         if (left > 0) await sleep(left + 150, (stop) => { introStop = stop; });
         introStop = null;
-      } else await playIntro(lang);
+      } else await playIntro(lang, kind);
       if (stale()) return;
       introDone = true;
       stopKeepAlive();

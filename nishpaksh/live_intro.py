@@ -87,9 +87,17 @@ class SlotPool:
             self.fails[key] = self.fails.get(key, 0) + 1
 
 
-def clip_name(voice: str, lang: str) -> str:
-    """The file the browser asks for (live/talk.js: intro-<voice>-<lang>.m4a)."""
-    return f"intro-{voice}-{lang}.m4a"
+KINDS = ("article", "recap")           # the recap's guide (owner, Oct 12 2026) has its own words: "...about today's news?"
+
+
+def clip_name(voice: str, lang: str, kind: str = "article") -> str:
+    """The file the browser asks for (live/talk.js clipName: intro-<voice>-<lang>.m4a, intro-recap-<voice>-<lang>.m4a for the recap)."""
+    return f"intro-{'recap-' if kind == 'recap' else ''}{voice}-{lang}.m4a"
+
+
+def words(intro: dict, lang: str, kind: str = "article") -> list[str]:
+    """The two sentences spoken for this kind and language (the recap's, else the article's)."""
+    return intro.get(f"recap_{lang}") if kind == "recap" and intro.get(f"recap_{lang}") else intro[lang]
 # NO style instruction in the prompt (Oct 11 2026): the Gemini TTS model speaks EVERYTHING it is given, so the old "Say this warmly and
 # calmly ... exactly as written:" line was read aloud in front of each sentence (a 7 s intro came out 16-26 s long). Only the words go in.
 MAX_WORDS_PER_SEC = 1.5                # a sentence is rejected when it is spoken slower than this (it means extra words were spoken)
@@ -100,6 +108,10 @@ def load(path: pathlib.Path = INTRO_FILE) -> dict:
     for lang in ("en", "hi"):
         if not (isinstance(d.get(lang), list) and len(d[lang]) == 2 and all(isinstance(x, str) and x.strip() for x in d[lang])):
             raise ValueError(f"intro.json: {lang} needs two non-empty sentences (the welcome, then the question)")
+    for lang in ("en", "hi"):                         # the recap's words are optional, but when there, valid
+        r = d.get(f"recap_{lang}")
+        if r is not None and not (isinstance(r, list) and len(r) == 2 and all(isinstance(x, str) and x.strip() for x in r)):
+            raise ValueError(f"intro.json: recap_{lang} needs two non-empty sentences (the welcome, then the question)")
     if not 0.2 <= float(d.get("pause_seconds", 0)) <= 3:
         raise ValueError("intro.json: pause_seconds must be between 0.2 and 3")
     return d
@@ -196,6 +208,7 @@ def main() -> None:
     ap.add_argument("--dir", default=str(LIVE_DIR), help="default: live/ (what the site workflow publishes)")
     ap.add_argument("--lang", choices=["en", "hi"], action="append", help="default: both")
     ap.add_argument("--voice", choices=VOICES, action="append", help="default: all ten")
+    ap.add_argument("--kind", choices=KINDS, action="append", help="default: both (the article guide's intro, and the recap guide's)")
     ap.add_argument("--force", action="store_true", help="make the file again even when it exists")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -215,26 +228,31 @@ def main() -> None:
     out = pathlib.Path(args.dir)
     out.mkdir(parents=True, exist_ok=True)
     made = 0
-    for voice in args.voice or VOICES:
-        for lang in args.lang or ["en", "hi"]:
-            path = out / clip_name(voice, lang)
-            if path.exists() and not args.force:
-                continue
+    kinds = [k for k in KINDS if k in (args.kind or KINDS) and (k == "article" or intro.get("recap_en"))]
+    for kind in kinds:
+        for voice in args.voice or VOICES:
+            for lang in args.lang or ["en", "hi"]:
+                path = out / clip_name(voice, lang, kind)
+                if path.exists() and not args.force:
+                    continue
 
-            def speak(text: str, lang=lang, voice=voice):
-                return pool.speak(lambda slot: slot[0].tts(slot[1], text, voice))
-            try:
-                pcm = build_pcm(intro[lang], float(intro["pause_seconds"]), speak)
-            except RuntimeError as e:                # the quota is gone (or the model is down): stop here, the next run carries on from this file
-                log.info("stopped at %s: %s", path.name, e)
-                break
-            audio.encode(pcm, path)
-            made += 1
-            log.info("%s %s: %.1f s -> %s", voice, lang, len(pcm) / 2 / RATE, path)
+                def speak(text: str, lang=lang, voice=voice):
+                    return pool.speak(lambda slot: slot[0].tts(slot[1], text, voice))
+                try:
+                    pcm = build_pcm(words(intro, lang, kind), float(intro["pause_seconds"]), speak)
+                except RuntimeError as e:                # the quota is gone (or the model is down): stop here, the next run carries on from this file
+                    log.info("stopped at %s: %s", path.name, e)
+                    break
+                audio.encode(pcm, path)
+                made += 1
+                log.info("%s %s %s: %.1f s -> %s", kind, voice, lang, len(pcm) / 2 / RATE, path)
+            else:
+                continue
+            break                                    # (the inner loop stopped: do not try the other voices either)
         else:
             continue
-        break                                        # (the inner loop stopped: do not try the other voices either)
-    todo = [clip_name(v, l) for v in (args.voice or VOICES) for l in (args.lang or ["en", "hi"]) if not (out / clip_name(v, l)).exists()]
+        break                                        # ... nor the other kind
+    todo = [clip_name(v, l, k) for k in kinds for v in (args.voice or VOICES) for l in (args.lang or ["en", "hi"]) if not (out / clip_name(v, l, k)).exists()]
     log.info("made %d; %s", made, f"{len(todo)} still to make (run again later): {', '.join(todo[:6])}{' ...' if len(todo) > 6 else ''}" if todo else "nothing left to make")
 
 

@@ -259,6 +259,10 @@ def test_the_brief_is_checked_by_code_and_keeps_the_leads_colours(tmp_path):
     assert a["t"].startswith("The Reserve Bank") and a["c"] == "single"     # uses the second sentence: weakest colour
     assert b == {"t": "Police arrested two men in Pune, officials said.", "c": "developing", "id": 401}   # the lead
     assert hi["sections"][0]["sents"][0]["t"] == "हिंदी वाक्य।"
+    # what the recap's talk guide reads (live-token/recapbrief.ts): outlets and the lead's own sentences and colours
+    st = {x["id"]: x for x in en["stories"]}
+    assert st[400]["n"] == 4 and st[400]["h"] == "H400" and "sx" not in st[400]
+    assert [x["c"] for x in st[400]["lead"]] == ["established", "single"] and st[400]["lead"][0]["t"].startswith("The Reserve Bank")
 
 
 def test_brief_problems():

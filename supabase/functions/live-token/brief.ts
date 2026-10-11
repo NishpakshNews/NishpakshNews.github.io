@@ -33,12 +33,15 @@ export type Brief = { instruction: string; sentenceIds: string[]; headline: stri
 // round trip to Google before the first word and again before every further sentence it points at. `behavior:
 // NON_BLOCKING` lets it keep talking (our replies already say SILENT). Whether the Live model accepts the field is
 // not verified, so it is off until the function's secret LIVE_NONBLOCKING is "1" (like LIVE_LANGUAGE_CODE).
-export function toolsFor(nonBlocking = false) {
+export function toolsFor(nonBlocking = false, kind: "article" | "recap" = "article") {
+  const what = kind === "recap"
+    ? "Light up the story of today's recap that you are about to talk about, so the reader sees its line. Call it before you speak about a story, with its id (the text in square brackets, for example s1234). Never say the id aloud."
+    : "Light up the sentence of the article the reader is on that you are about to talk about, so the reader sees it. Call it before you speak about a sentence, with its id (the text in square brackets, for example p2s0). Never say the id aloud.";
   return [{ functionDeclarations: [
     { name: "highlight",
-      description: "Light up the sentence of the article the reader is on that you are about to talk about, so the reader sees it. Call it before you speak about a sentence, with its id (the text in square brackets, for example p2s0). Never say the id aloud.",
+      description: what,
       ...(nonBlocking ? { behavior: "NON_BLOCKING" } : {}),
-      parameters: { type: "OBJECT", properties: { sentence_id: { type: "STRING", description: "The sentence id, for example p2s0" } }, required: ["sentence_id"] } },
+      parameters: { type: "OBJECT", properties: { sentence_id: { type: "STRING", description: kind === "recap" ? "The story id, for example s1234" : "The sentence id, for example p2s0" } }, required: ["sentence_id"] } },
   ] }];
 }
 export const TOOLS = toolsFor(false);
@@ -69,8 +72,8 @@ export const STATUS: Record<string, { label: string; means: string }> = {
 };
 const UNKNOWN = "unverified";          // the site's own default for a sentence without a class
 
-const status = (c: string | undefined) => STATUS[c || ""] ? (c as string) : UNKNOWN;
-const clean = (t: string | undefined) => String(t || "").replace(/\s+/g, " ").trim();
+export const status = (c: string | undefined) => STATUS[c || ""] ? (c as string) : UNKNOWN;
+export const clean = (t: string | undefined) => String(t || "").replace(/\s+/g, " ").trim();
 
 const RULES = `You are the voice guide of Nishpaksh, an Indian news site. You are talking with a reader out loud. The reader is on ONE article right now (its numbered sentences are below). If the story has earlier chapters, the earlier Nishpaksh articles of the same story are given after it.
 

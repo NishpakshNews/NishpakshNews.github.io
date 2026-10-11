@@ -12,8 +12,14 @@
 // access token is checked here. Secrets: GEMINI_API_KEY, GEMINI_API_KEY_2, ... (the same keys the pipeline uses;
 // each from its own project, so conversations are spread over them). Optional: LIVE_MODEL, FEED_URL, LIVE_LANGUAGE_CODE=1
 // (also send a language code to Gemini; off by default), LIVE_NONBLOCKING=1, LIVE_THINKING_CONFIG (JSON, e.g. {"thinkingBudget":0}). The request may carry `style` {voice, pace, tone, accent}.
+//
+// Two kinds of conversation (owner, Oct 12 2026): about ONE article (`story_id`, above) and about the DAY'S RECAP (`recap: "YYYY-MM-DD"`).
+// The recap guide is a separate, small one (recapbrief.ts): it is given only the recap's own lines (headline, brief sentence, opening
+// sentences and colour of each story), read from ONE row of the `recaps` table, so a day of 20-60 stories costs the model a few
+// thousand words instead of the stories' full articles, and nothing is fetched from GitHub. It uses the same limits, keys and token.
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { buildBrief, toolsFor, type Story } from "./brief.ts";
+import { buildRecapBrief, type RecapRow } from "./recapbrief.ts";
 import { cleanStyle, languageCode, thinkingConfig } from "./voice.ts";
 
 const URL_ = Deno.env.get("SUPABASE_URL")!;
@@ -54,7 +60,7 @@ async function me(req: Request) {
   return data?.user || null;
 }
 
-async function mint(key: string, instruction: string, voice: string): Promise<string> {
+async function mint(key: string, instruction: string, voice: string, kind: "article" | "recap"): Promise<string> {
   const now = Date.now();
   const r = await fetch(GEMINI, {
     method: "POST",
@@ -75,7 +81,7 @@ async function mint(key: string, instruction: string, voice: string): Promise<st
           ...(THINKING ? { thinkingConfig: THINKING } : {}),
         },
         systemInstruction: { parts: [{ text: instruction }] },
-        tools: toolsFor(NON_BLOCKING),
+        tools: toolsFor(NON_BLOCKING, kind),
         inputAudioTranscription: {},
         outputAudioTranscription: {},
         realtimeInputConfig: { automaticActivityDetection: { silenceDurationMs: SILENCE_MS, prefixPaddingMs: 100 } },
@@ -118,6 +124,21 @@ async function earlier(page: Story & { payload_en?: { parents?: unknown } | null
   return got.filter((x): x is Story => !!x);
 }
 
+// The day's recap, one row. A recap is written once (11 pm IST) and not changed, so it is kept for ten minutes: the second reader of the
+// day waits for nothing. The database is the same project this function runs in, so the read is quick (no GitHub, no per-article fetch).
+const RECAP_KEEP_MS = 10 * 60_000;
+const keptRecap = new Map<string, { at: number; row: RecapRow }>();
+async function getRecap(day: string): Promise<RecapRow | null> {
+  const hit = keptRecap.get(day);
+  if (hit && Date.now() - hit.at < RECAP_KEEP_MS) return hit.row;
+  const { data, error } = await admin.from("recaps").select("day,payload_en,payload_hi").eq("day", day).maybeSingle();
+  if (error || !data) return null;
+  if (keptRecap.size >= 8) keptRecap.delete(keptRecap.keys().next().value as string);
+  keptRecap.set(day, { at: Date.now(), row: data as RecapRow });
+  return data as RecapRow;
+}
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return reply({ error: "POST only" }, 405);
@@ -148,8 +169,12 @@ Deno.serve(async (req) => {
     return reply({ ok: true });
   }
 
-  const story = Number(b.story_id);
-  if (!Number.isInteger(story) || story < 1) return reply({ error: "bad request" }, 400);
+  // the recap guide has no story id: story 0 in the database means "the day's recap"
+  const recapDay = typeof b.recap === "string" ? b.recap : "";
+  const isRecap = b.recap !== undefined;
+  if (isRecap && !DAY.test(recapDay)) return reply({ error: "bad request" }, 400);
+  const story = isRecap ? 0 : Number(b.story_id);
+  if (!isRecap && (!Number.isInteger(story) || story < 1)) return reply({ error: "bad request" }, 400);
   if (!KEYS.length) return reply({ error: "not configured" }, 500);
 
   try {
@@ -157,45 +182,58 @@ Deno.serve(async (req) => {
     const t0 = Date.now(); const tm: Record<string, number> = {};
     const mark = <T>(k: string, p: Promise<T>) => p.then((v) => { tm[k] = Date.now() - t0; return v; });
 
-    // the login check and the article are asked at the same time (they used to wait for each other)
+    // the login check and the article (or the recap) are asked at the same time (they used to wait for each other)
+    const style = cleanStyle(b.style);                  // the reader's voice, pace, tone and accent: checked against fixed lists
+    let brief;
+    if (isRecap) {
+      const [user, row] = await Promise.all([mark("login", me(req)), mark("recap", getRecap(recapDay))]);
+      if (!user) return reply({ error: "login" }, 401);
+      brief = row ? buildRecapBrief(row, lang, style) : null;
+      if (!brief) return reply({ error: "gone" }, 404);
+      return await begin(user.id, 0, brief, style, t0, tm, "recap");
+    }
     const [user, page] = await Promise.all([mark("login", me(req)), mark("article", getStory(story))]);
     if (!user) return reply({ error: "login" }, 401);
 
     // the article first: nothing is counted against the reader when there is nothing to talk about
     if (!page.ok || !page.story) return reply({ error: "gone" }, 404);
-    const style = cleanStyle(b.style);                  // the reader's voice, pace, tone and accent: checked against fixed lists
     const main = page.story;
-    const brief = buildBrief(main, lang, style, await mark("earlier", earlier(main)));
+    brief = buildBrief(main, lang, style, await mark("earlier", earlier(main)));
     if (!brief) return reply({ error: "gone" }, 404);
-
-    const { data, error } = await admin.rpc("live_talk_begin", {
-      p_reader: user.id, p_story: story, p_lang: brief.lang, p_hourly: HOURLY, p_daily: DAILY, p_concurrent: CONCURRENT, p_seconds: MAX_SECONDS,
-    });
-    tm.begin = Date.now() - t0;
-    if (error) return reply({ error: error.message }, 500);
-    const st = String(data?.status || "");
-    if (st === "limit") return reply({ error: "limit", hourly: HOURLY, scope: data.scope, resets_at: data.resets_at, retry_minutes: data.retry_minutes }, 429);
-    if (st === "busy") return reply({ error: "busy" }, 503);
-    if (st === "gone") return reply({ error: "gone" }, 404);
-    if (st !== "ok") return reply({ error: st || "bad request" }, st === "login" ? 401 : 400);
-
-    // spread over the keys by how many conversations the day has had; a key that refuses hands over to the next
-    let token = "", last = "";
-    for (let k = 0; k < KEYS.length && !token; k++) {
-      try { token = await mint(KEYS[(Number(data.n) + k) % KEYS.length], brief.instruction, style.voice); }
-      catch (e) { last = String((e as Error).message || e); console.error("live-token mint failed:", last); }
-    }
-    tm.mint = Date.now() - t0;
-    if (!token) {
-      await admin.rpc("live_talk_cancel", { p_id: data.id });      // not the reader's fault: not used up
-      return reply({ error: "unavailable", detail: last }, 503);
-    }
-    return reply({
-      token, model: MODEL, lang: brief.lang, headline: brief.headline, instruction: brief.instruction,
-      voice: style.voice, tools: toolsFor(NON_BLOCKING), thinking: THINKING, noise_gate: NOISE_GATE, silence_ms: SILENCE_MS, language_code: SEND_LANGUAGE_CODE ? languageCode(brief.lang, style.accent) : null,
-      sentence_ids: brief.sentenceIds, max_seconds: MAX_SECONDS, hourly: HOURLY, session: data.id, timing: tm,
-    });
+    return await begin(user.id, story, brief, style, t0, tm, "article");
   } catch (e) {
     return reply({ error: String((e as Error).message || e) }, 500);
   }
 });
+
+// Counts the conversation against the reader (limits live in the database), mints the one-use token, and hands the browser what it needs.
+async function begin(reader: string, story: number, brief: { instruction: string; sentenceIds: string[]; headline: string; lang: "en" | "hi" },
+                     style: ReturnType<typeof cleanStyle>, t0: number, tm: Record<string, number>, kind: "article" | "recap") {
+  const { data, error } = await admin.rpc("live_talk_begin", {
+    p_reader: reader, p_story: story, p_lang: brief.lang, p_hourly: HOURLY, p_daily: DAILY, p_concurrent: CONCURRENT, p_seconds: MAX_SECONDS,
+  });
+  tm.begin = Date.now() - t0;
+  if (error) return reply({ error: error.message }, 500);
+  const st = String(data?.status || "");
+  if (st === "limit") return reply({ error: "limit", hourly: HOURLY, scope: data.scope, resets_at: data.resets_at, retry_minutes: data.retry_minutes }, 429);
+  if (st === "busy") return reply({ error: "busy" }, 503);
+  if (st === "gone") return reply({ error: "gone" }, 404);
+  if (st !== "ok") return reply({ error: st || "bad request" }, st === "login" ? 401 : 400);
+
+  // spread over the keys by how many conversations the day has had; a key that refuses hands over to the next
+  let token = "", last = "";
+  for (let k = 0; k < KEYS.length && !token; k++) {
+    try { token = await mint(KEYS[(Number(data.n) + k) % KEYS.length], brief.instruction, style.voice, kind); }
+    catch (e) { last = String((e as Error).message || e); console.error("live-token mint failed:", last); }
+  }
+  tm.mint = Date.now() - t0;
+  if (!token) {
+    await admin.rpc("live_talk_cancel", { p_id: data.id });      // not the reader's fault: not used up
+    return reply({ error: "unavailable", detail: last }, 503);
+  }
+  return reply({
+    token, model: MODEL, lang: brief.lang, headline: brief.headline, instruction: brief.instruction, kind,
+    voice: style.voice, tools: toolsFor(NON_BLOCKING, kind), thinking: THINKING, noise_gate: NOISE_GATE, silence_ms: SILENCE_MS, language_code: SEND_LANGUAGE_CODE ? languageCode(brief.lang, style.accent) : null,
+    sentence_ids: brief.sentenceIds, max_seconds: MAX_SECONDS, hourly: HOURLY, session: data.id, timing: tm,
+  });
+}

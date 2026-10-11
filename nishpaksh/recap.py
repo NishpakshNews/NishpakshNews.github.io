@@ -148,6 +148,7 @@ def group(rows: list[dict]) -> dict[str, list[dict]]:
         sec = prim[0] if prim and prim[0] in PRIMARY_LABELS else "more"
         out.setdefault(sec, []).append({"id": r["story_id"], "lead": lead, "lead_hi": _lead(r["payload_hi"] or {}),
                                         "n": (pe.get("counts") or {}).get("independent_sources") or 0,
+                                        "sx": bool(pe.get("suicide")),
                                         "h": r["headline_en"], "h_hi": r["headline_hi"] or r["headline_en"]})
     for items in out.values():
         items.sort(key=lambda i: -i["n"])
@@ -208,6 +209,19 @@ def _uses(text: str, second: str, first: str) -> bool:
     return bool(only & _nums(text)) or any(w in text for w in names)
 
 
+def _story(item: dict, headline: str, lead: list[dict]) -> dict:
+    """One story of the payload's `stories` list. Besides the headline it carries what the recap's talk guide
+    (supabase/functions/live-token/recapbrief.ts) may use, so that guide reads ONE small row (the recap) and never
+    fetches an article: `n` = independent outlets, `lead` = the article's opening sentences (text and colour only; a
+    sentence in several colours takes the weakest, which is the cautious one), `sx` = a suicide story (the guide
+    then gets the Tele-MANAS rules). Older recaps have only `id` and `h`."""
+    out = {"id": item["id"], "h": headline, "n": item["n"],
+           "lead": [{"t": x["t"], "c": _weakest([p["c"] for p in (x.get("p") or [x])])} for x in lead]}
+    if item.get("sx"):
+        out["sx"] = 1
+    return out
+
+
 def build(store, router: Router | None, rows: list[dict], day: str) -> tuple[dict, dict, dict]:
     """(payload_en, payload_hi, stats) of the day's brief."""
     from .compose import translate_strings
@@ -237,7 +251,7 @@ def build(store, router: Router | None, rows: list[dict], day: str) -> tuple[dic
                 x = (item["lead_hi"] or item["lead"])[0]
                 hs.append({"t": x["t"], "c": x["c"], "id": item["id"]})
         hi.append({"key": key, "label": k_hi, "sents": hs})
-    stories = [{"id": i["id"], "h": i["h"]} for _, items, _ in secs for i in items]
-    stories_hi = [{"id": i["id"], "h": i["h_hi"]} for _, items, _ in secs for i in items]
+    stories = [_story(i, i["h"], i["lead"]) for _, items, _ in secs for i in items]
+    stories_hi = [_story(i, i["h_hi"], i["lead_hi"] or i["lead"]) for _, items, _ in secs for i in items]
     return ({"day": day, "kind": "brief", "sections": en, "stories": stories},
             {"day": day, "kind": "brief", "sections": hi, "stories": stories_hi}, stats)

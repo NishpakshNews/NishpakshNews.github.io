@@ -12,6 +12,10 @@ def test_the_shipped_intro_words_are_valid_and_say_what_they_must():
     assert "interrupt" in d["en"][0].lower()          # tells them they can interrupt at any time
     assert d["en"][1].rstrip().endswith("?")          # then asks what they would like to know
     assert d["hi"][1].rstrip().endswith("?")
+    assert "interrupt" in d["recap_en"][0].lower() and "news" in d["recap_en"][1].lower()      # the recap guide's own words (owner, Oct 12 2026)
+    assert d["recap_en"][1].rstrip().endswith("?") and d["recap_hi"][1].rstrip().endswith("?")
+    assert live_intro.words(d, "en", "recap") == d["recap_en"] and live_intro.words(d, "hi") == d["hi"]
+    assert live_intro.words({"en": ["a", "b"], "hi": ["c", "d"]}, "en", "recap") == ["a", "b"]  # no recap words: the article's
 
 
 def test_a_pause_sits_between_the_two_parts_and_only_there():
@@ -50,6 +54,7 @@ def test_the_voices_are_the_ones_the_reader_can_pick_and_the_file_names_are_what
     assert live_intro.VOICES[0] == "Kore"
     assert live_intro.clip_name("Kore", "en") == "intro-Kore-en.m4a"
     assert live_intro.clip_name("Sadachbia", "hi") == "intro-Sadachbia-hi.m4a"
+    assert live_intro.clip_name("Kore", "en", "recap") == "intro-recap-Kore-en.m4a"      # live/talk.js clipName
 
 
 def test_the_intro_job_uses_its_own_key_when_there_is_one(monkeypatch):

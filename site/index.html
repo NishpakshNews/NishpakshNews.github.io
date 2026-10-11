@@ -553,9 +553,20 @@
   .tog i { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.25); transition: transform 180ms ease; }
   .tog[aria-checked="true"] { background: #2f8a5b; } .tog[aria-checked="true"] i { transform: translateX(18px); }
   .acts button.waiting { opacity: .6; transition: opacity .2s; }
-  .rbrief { margin: 6px 2px 0; font-size: 16px; line-height: 1.6; }
-  .rbrief .rs { cursor: pointer; }
-  .rbrief .rs:active { opacity: .6; }
+  /* the day's brief as pointers (owner, Oct 12 2026): one bullet per story, so the news reads as separate items, not one paragraph */
+  .rbrief { margin: 4px 0 0; padding: 0; list-style: none; font-size: 16px; line-height: 1.5; }
+  .rbrief li.rs { position: relative; padding: 8px 2px 8px 20px; cursor: pointer; }
+  .rbrief li.rs::before { content: ""; position: absolute; inset-inline-start: 5px; top: 18px; width: 6px; height: 6px; border-radius: 50%; background: #9a9db0; }
+  .rbrief li.rs + li.rs { border-top: 1px solid #f0f0f4; }
+  .rbrief li.rs:active { opacity: .6; }
+  .rbrief li.rs.lit .s { background: color-mix(in srgb, currentColor 14%, transparent); border-radius: 3px; }     /* the story the recap's guide is talking about */
+  .rhead { display: flex; align-items: center; gap: 12px; margin: 4px 0 6px; }
+  .rtalk { display: none; align-items: center; gap: 8px; margin-inline-start: auto; flex: none; padding: 8px 14px 8px 10px; border-radius: 999px; cursor: pointer;
+           border: 1px solid var(--talk-edge); background: linear-gradient(135deg, #fff 0%, var(--talk-soft) 100%); color: #2f3a72; font: inherit; font-size: 14px; font-weight: 600; }
+  .rtalk svg { width: 20px; height: 20px; flex: none; }
+  html.talk-on .rtalk { display: inline-flex; }
+  /* the talk card opens over the Daily recap card (the bottom sheets sit at z-index 50-51) */
+  html.talk-recap .tkveil { z-index: 53; } html.talk-recap .tkwrap { z-index: 54; } html.talk-recap .tkfloat { z-index: 55; }
   .ritem { display: block; width: 100%; padding: 14px 0; border: 0; border-top: 1px solid #eeeef1; background: none; text-align: start; color: var(--ink); cursor: pointer; }
   .ritem .h { font-family: var(--head); font-size: 19px; font-weight: 600; line-height: 1.25; }
   .ritem p { margin: 6px 0 0; font-size: 15px; line-height: 1.55; }
@@ -2088,6 +2099,7 @@ function openSheet(kind) {
   overlayOpen();
 }
 function hideSheet() { if (whyOverride) { whyOverride = null; afterSignin = null; }   // a sign-in asked for by the talk button is dropped when its card goes
+  try { if (TK.recap && TK.ui !== "closed") tkLeave(); } catch (e) { /* the talk code is not loaded yet: nothing to end */ }     // the recap's conversation lives and dies with the recap card
   bsheet.classList.remove("on"); bveil.classList.remove("on"); sheetKind = null; }
 function closeSheet() { const was = !!sheetKind; hideSheet(); if (was) overlayClose(); }
 bveil.addEventListener("click", closeSheet);
@@ -2505,6 +2517,7 @@ async function loadRecap() {
   if (me) await loadFollows();
   recapData = {day: today, mins, row, asked: !!want};
   if (sheetKind === "recap") renderSheet();
+  if (row && TK.mod) { tkWarm(); tkPreloadIntro("recap"); }       // the recap's talk button: the function is started and its recording fetched before the tap
 }
 function recapHtml() {
   const t = T[lang];
@@ -2522,12 +2535,14 @@ function recapHtml() {
   const p = (lang === "hi" && row.payload_hi) || row.payload_en || {}, items = p.stories || [];
   const date = new Date(`${row.day}T12:00:00Z`).toLocaleDateString(lang === "hi" ? "hi-IN" : "en-IN", {weekday: "long", day: "numeric", month: "long"});
   // the day's brief (owner, Oct 10 2026): section by section, one short sentence per story in the colour of the
-  // lead it comes from; a tap on a sentence opens its article. Older recaps (headline + lead) still show as a list.
+  // lead it comes from; a tap on a sentence opens its article. Since Oct 12 2026 each story is its own bullet.
+  // Older recaps (headline + lead) still show as a list.
   const body = p.sections ? p.sections.map(sc => `<div class="flabel" style="margin-top:16px">${esc(sc.label)}</div>
-      <p class="rbrief">${sc.sents.map(x => `<span class="rs" role="button" tabindex="0" data-rstory="${esc(x.id)}">${sentenceHtml(x)}</span>`).join("")}</p>`).join("")
+      <ul class="rbrief">${sc.sents.map(x => `<li class="rs" role="button" tabindex="0" data-rstory="${esc(x.id)}">${sentenceHtml(x)}</li>`).join("")}</ul>`).join("")
     : items.map(it => `<button type="button" class="ritem" data-rstory="${esc(it.id)}"><div class="h">${esc(it.h)}</div><p>${(it.lead || []).map(sentenceHtml).join("")}</p></button>`).join("");
   return `<div class="bbody" style="flex:1;min-height:0;gap:0">
-    <div style="margin:4px 0 6px"><div class="bnote" style="font-size:14px">${esc(date)}</div><div style="font-weight:600">${esc(t.articles(items.length))}</div></div>
+    <div class="rhead"><div><div class="bnote" style="font-size:14px">${esc(date)}</div><div style="font-weight:600">${esc(t.articles(items.length))}</div></div>
+      <button type="button" class="rtalk" data-rtalk="${esc(row.day)}" aria-label="${esc(t.talkRecap)}">${ICON.talk}<span>${esc(t.talkRecapShort)}</span></button></div>
     ${note}${toggle}${body}</div>`;
 }
 
@@ -2551,6 +2566,7 @@ bsheet.addEventListener("click", async e => {
     catch (err) { toast(T[lang].error); }
     return;
   }
+  if (b.dataset.rtalk) { e.stopImmediatePropagation(); onRecapTalkTap(b.dataset.rtalk); return; }
   if (b.dataset.rstory) {
     e.stopImmediatePropagation();
     const id = b.dataset.rstory; closeSheet();
@@ -2595,6 +2611,7 @@ Object.assign(T.en, {
   talkEnded: "Conversation ended", talkCant: "Can't talk right now",
   talkPriv: "Your voice is processed by Google's Gemini to answer you. Nishpaksh does not keep it.",
   talkLangEnd: "Conversation ended because the language changed.",
+  talkRecap: "Talk about today's news", talkRecapShort: "Talk about it", talkReadyR: "Ask anything about today's news", talkListeningHintR: "Ask about any story in today's recap.",
   talkMsg: {idle: "It went quiet, so the conversation ended.", time: "A conversation can last 8 minutes at most.", closed: "The conversation ended.", goaway: "The conversation ended.",
             limit: "You have used your conversations for this hour. Try again in a little while.", limitHour: "You have used your conversations for this hour. The next reset is at {t}.", limitDay: "You have used your conversations for today. The next reset is at {t}.", busy: "Many readers are talking right now. Try again in a minute.",
             gone: "This story is no longer live, so it can't be discussed.", mic: "The microphone is blocked. Allow it in your browser, then try again.",
@@ -2611,6 +2628,7 @@ Object.assign(T.hi, {
   talkEnded: "बातचीत ख़त्म हुई", talkCant: "अभी बात नहीं हो सकती",
   talkPriv: "जवाब देने के लिए आपकी आवाज़ Google के Gemini से प्रोसेस होती है। निष्पक्ष उसे सहेजता नहीं।",
   talkLangEnd: "भाषा बदली, इसलिए बातचीत ख़त्म हो गई।",
+  talkRecap: "आज की ख़बरों पर बात करें", talkRecapShort: "बात करें", talkReadyR: "आज की ख़बरों के बारे में कुछ भी पूछिए", talkListeningHintR: "आज के सार की किसी भी ख़बर के बारे में पूछिए।",
   talkMsg: {idle: "कुछ देर कोई आवाज़ नहीं आई, इसलिए बातचीत ख़त्म हो गई।", time: "एक बातचीत ज़्यादा से ज़्यादा 8 मिनट की हो सकती है।", closed: "बातचीत ख़त्म हो गई।", goaway: "बातचीत ख़त्म हो गई।",
             limit: "इस घंटे की बातचीत पूरी हो गई। थोड़ी देर बाद फिर कोशिश करें।", limitHour: "इस घंटे की बातचीत पूरी हो गई। अगला रीसेट {t} पर होगा।", limitDay: "आज की बातचीत पूरी हो गई। अगला रीसेट {t} पर होगा।", busy: "अभी बहुत से पाठक बात कर रहे हैं। थोड़ी देर में फिर कोशिश करें।",
             gone: "यह ख़बर अब उपलब्ध नहीं है, इसलिए इस पर बात नहीं हो सकती।", mic: "माइक्रोफ़ोन बंद है। ब्राउज़र में अनुमति दें, फिर दोबारा कोशिश करें।",
@@ -2637,6 +2655,7 @@ const TK = {
   phase: "ready",      // ready (not started) | live | ended
   st: "idle",          // live/talk.js's own state: connecting, intro, listening, speaking, ended
   reason: "", cap: "", storyId: null, lang: null,
+  recap: null,         // the day of the recap when the conversation is about the Daily recap (owner, Oct 12 2026), else null (one article)
   mod: null, modP: null, talk: null, card: null, veil: null, wrap: null, lit: null,
 };
 const FL = 52;         // the buttons' size
@@ -2655,8 +2674,8 @@ function tkWarm() {                           // wake the token function when an
   tkWarmAt = Date.now();
   try { talkInstance().warm(); } catch (e) { /* the tap itself will do it */ }
 }
-function tkPreloadIntro() {                  // the intro recording of the chosen voice is fetched before the tap, so the tap only has to play it
-  try { talkInstance().preload({lang: TK.lang || lang, voice: tkStyle().voice}); } catch (e) { /* the guide then says the intro itself */ }
+function tkPreloadIntro(kind) {              // the intro recording of the chosen voice is fetched before the tap, so the tap only has to play it
+  try { talkInstance().preload({lang: TK.lang || lang, voice: tkStyle().voice, kind: kind || (TK.recap ? "recap" : undefined)}); } catch (e) { /* the guide then says the intro itself */ }
 }
 function talkInstance() {
   if (TK.talk) return TK.talk;
@@ -2785,8 +2804,8 @@ function tkPaint() {
   c.querySelector(".tkopen").textContent = t.tkSet;
   tkPaintSet();
   const isErr = errs.includes(TK.reason), msg = TK.reason === "limit" ? tkLimitText(t) : (t.talkMsg[TK.reason] || t.talkMsg.other);
-  const words = {ready: [t.talkReady, t.talkReadyHint], connecting: [t.talkConnecting, t.talkConnectingHint], speaking: [t.talkSpeaking, t.talkSpeakingHint], thinking: [t.talkThinking, TK.slow ? t.talkSlowHint : t.talkThinkingHint],
-                 listening: [t.talkListening, t.talkListeningHint], ended: [isErr ? t.talkCant : t.talkEnded, msg]}[ph];
+  const words = {ready: [TK.recap ? t.talkReadyR : t.talkReady, t.talkReadyHint], connecting: [t.talkConnecting, t.talkConnectingHint], speaking: [t.talkSpeaking, t.talkSpeakingHint], thinking: [t.talkThinking, TK.slow ? t.talkSlowHint : t.talkThinkingHint],
+                 listening: [t.talkListening, TK.recap ? t.talkListeningHintR : t.talkListeningHint], ended: [isErr ? t.talkCant : t.talkEnded, msg]}[ph];
   const line = c.querySelector(".tkline");
   line.textContent = words[0];
   if (think) { const d = document.createElement("span"); d.className = "tkdots"; d.setAttribute("aria-hidden", "true"); d.innerHTML = '<i style="--j:0"></i><i style="--j:1"></i><i style="--j:2"></i>'; line.appendChild(d); }
@@ -2820,13 +2839,23 @@ function onTalkTap() {
   tkShowCard({ready: !TK.mod});
   if (TK.mod) tkBegin();
 }
+// The Daily recap's button (owner, Oct 12 2026): the same card, but about the whole day. The recap's guide is a small one that reads only
+// the recap's own lines (live-token/recapbrief.ts), so it answers quickly; it can light up a story's bullet in the recap.
+function onRecapTalkTap(day) {
+  if (!me || !day || sheetKind !== "recap") return;
+  if (TK.ui !== "closed" && !TK.recap) tkLeave();             // an article's conversation is over once the recap is open
+  if (TK.ui === "mini") { tkMax(); return; }
+  if (TK.ui === "card") return;
+  tkShowCard({ready: !TK.mod, recap: day});
+  if (TK.mod) tkBegin();
+}
 function tkBegin() {
   if (!TK.mod || TK.phase === "live") return;
   const t = talkInstance();
   if (player.el && !player.el.paused) player.el.pause();       // two voices at once would be noise
   TK.phase = "live"; TK.st = "connecting"; TK.reason = ""; TK.cap = ""; TK.nudges = {}; TK.view = "main";
   tkPaint();
-  t.start({storyId: Number(TK.storyId), lang: TK.lang, style: tkStyle()});
+  t.start(TK.recap ? {recap: TK.recap, lang: TK.lang, style: tkStyle()} : {storyId: Number(TK.storyId), lang: TK.lang, style: tkStyle()});
 }
 // The limit resets on the clock: every XX:00, Indian Standard Time. The server says when (an IST midnight for the daily backstop);
 // without its answer the next IST hour is worked out here (IST is UTC+5:30 all year).
@@ -2840,7 +2869,7 @@ function tkEnded({reason, resetsAt, scope}) {
   if (TK.ui === "closed" || reason === "stopped") return;      // we stopped it ourselves
   TK.phase = "ended"; TK.reason = reason; TK.cap = ""; TK.resetsAt = reason === "limit" ? resetsAt || null : null; TK.limitScope = scope || "hour";
   tkUnlight();
-  if (!me && (reason === "network" || reason === "login")) {   // the session was ended elsewhere: sign in again
+  if (!me && !TK.recap && (reason === "network" || reason === "login")) {   // the session was ended elsewhere: sign in again (the recap needs sign-in to open at all)
     tkEndAll({noHistory: true});
     whyOverride = T[lang].talkWhy; afterSignin = () => { whyOverride = null; hideSheet(); tkShowCard({ready: true}); };
     authMode = "login"; openSheet("signin");
@@ -2855,6 +2884,15 @@ function tkEnded({reason, resetsAt, scope}) {
 
 /* ---- the sentence the guide is talking about, lit in its own colour like the read-aloud does ---- */
 function tkLight(id) {
+  if (TK.recap) {                                                // a story of the recap: its bullet (ids are s<story id>)
+    const r = /^s(\d+)$/.exec(String(id));
+    const li = r && sheetKind === "recap" && lang === TK.lang ? bsheet.querySelector(`.rs[data-rstory="${r[1]}"]`) : null;
+    if (!li) return;
+    tkUnlight();
+    li.classList.add("lit"); TK.lit = li;
+    li.scrollIntoView({block: "center", behavior: STILL.matches ? "auto" : "smooth"});
+    return;
+  }
   const m = /^p(\d+)s(\d+)/.exec(String(id));
   if (!m || String(openId) !== TK.storyId || lang !== TK.lang) return;
   const el = $("rise").querySelector(`.sent[data-k="${m[1]}.${m[2]}"]`);
@@ -2873,17 +2911,20 @@ function tkSetFrom(r) {                    // where the card grows from and shri
   c.style.setProperty("--dy", `${(r.top + r.height / 2 - innerHeight / 2).toFixed(1)}px`);
   c.style.setProperty("--s", Math.max(0.08, r.width / w).toFixed(3));
 }
-function tkShowCard({ready}) {
+const tkBehind = () => TK.recap ? bsheet : sheet;       // what the open card sits over (and makes inert): the recap card, or the article
+function tkShowCard({ready, recap}) {
   tkBuild();
-  TK.storyId = String(openId); TK.lang = lang;
+  TK.recap = recap || null;
+  TK.storyId = recap ? "recap" : String(openId); TK.lang = lang;
+  htmlEl.classList.toggle("talk-recap", !!recap);
   if (TK.ui === "closed") { TK.view = "main"; TK.phase = "ready"; TK.st = "idle"; TK.reason = ""; TK.cap = ""; }     // tkBegin makes it live
   const a = $("rise").querySelector(".acts"); if (a) a.classList.remove("peek");
-  const fromEl = $("rise").querySelector(".acts .talkbtn");      // always the button itself, even when the banner was tapped
+  const fromEl = recap ? bsheet.querySelector(".rtalk") : $("rise").querySelector(".acts .talkbtn");      // always the button itself, even when the banner was tapped
   const r = fromEl ? fromEl.getBoundingClientRect() : {left: innerWidth - 70, top: innerHeight - 70, width: FL, height: FL};
   tkSetFrom(r);
   TK.ui = "card"; tkPaint();
   htmlEl.classList.add("talk-live"); htmlEl.classList.remove("talk-mini");
-  sheet.inert = true; overlayOpen();
+  tkBehind().inert = true; if (!TK.recap) overlayOpen();           // the recap card already holds the phone's back-button entry
   void TK.card.offsetWidth;                // the card starts where the button is, then grows
   TK.card.classList.remove("min"); TK.veil.classList.add("on");
   TK.card.focus({preventScroll: true});
@@ -2895,8 +2936,8 @@ function tkMin(fromBack) {
   tkSetFrom({left: fl.x, top: fl.y, width: FL, height: FL});
   TK.card.classList.add("min"); TK.veil.classList.remove("on");
   htmlEl.classList.add("talk-mini");
-  sheet.inert = false;
-  if (!fromBack) overlayClose();
+  tkBehind().inert = false;
+  if (!fromBack && !TK.recap) overlayClose();
   tkPaint();
   fl.el.classList.add("on");
   flKick();
@@ -2910,7 +2951,7 @@ function tkMax() {
   TK.card.classList.remove("min"); TK.veil.classList.add("on");
   fl.el.classList.remove("on");
   htmlEl.classList.remove("talk-mini");
-  sheet.inert = true; overlayOpen();
+  tkBehind().inert = true; if (!TK.recap) overlayOpen();
   tkPaint();
   TK.card.focus({preventScroll: true});
 }
@@ -2918,24 +2959,26 @@ function tkMax() {
 function tkEndAll(o = {}) {
   const was = TK.ui;
   if (was === "closed") return;
-  const live = TK.phase === "live";
+  const live = TK.phase === "live", wasRecap = !!TK.recap;
   TK.ui = "closed"; TK.phase = "ready"; TK.st = "idle"; TK.cap = ""; TK.view = "main"; TK.nudges = {};
   if (live && TK.talk) { try { TK.talk.stop(); } catch (e) { /* already over */ } }
   tkUnlight();
   if (was === "card") {
     TK.card.style.setProperty("--dx", "0px"); TK.card.style.setProperty("--dy", "0px"); TK.card.style.setProperty("--s", "0.94");   // a small shrink, in place
     TK.card.classList.add("min"); TK.veil.classList.remove("on");
-    sheet.inert = false;
-    if (o.noHistory) overlay = false; else overlayClose();
+    sheet.inert = false; bsheet.inert = false;
+    if (!wasRecap) { if (o.noHistory) overlay = false; else overlayClose(); }      // the recap card keeps its own back-button entry
   }
   fl.el.classList.remove("on");
-  htmlEl.classList.remove("talk-live", "talk-mini");
-  if (o.focus && openId) $("back").focus({preventScroll: true});
+  htmlEl.classList.remove("talk-live", "talk-mini", "talk-recap");
+  TK.recap = null;
+  if (o.focus && wasRecap) { const rb = bsheet.querySelector(".rtalk"); if (rb) rb.focus({preventScroll: true}); }
+  else if (o.focus && openId) $("back").focus({preventScroll: true});
 }
 function tkLeave() { tkEndAll({noHistory: true}); }   // the article went away
 
 /* ---- the floating button's place ---- */
-function flAnchor() { const b = $("rise").querySelector(".acts .talkbtn"); return b && b.offsetParent !== null ? b.getBoundingClientRect() : null; }
+function flAnchor() { if (TK.recap) return null; const b = $("rise").querySelector(".acts .talkbtn"); return b && b.offsetParent !== null ? b.getBoundingClientRect() : null; }
 function flTarget() {
   const a = flAnchor(), cs = TK.probe ? getComputedStyle(TK.probe) : null;
   const sr = cs ? parseFloat(cs.paddingRight) || 0 : 0, sb = cs ? parseFloat(cs.paddingBottom) || 0 : 0;
