@@ -56,13 +56,15 @@ async function mint(key: string, instruction: string): Promise<string> {
       // the conversation must start within a minute of this call, and ends at the latest MAX_SECONDS later
       newSessionExpireTime: new Date(now + 60_000).toISOString(),
       expireTime: new Date(now + (60 + MAX_SECONDS) * 1000).toISOString(),
-      liveConnectConstraints: {
+      // REST name of what the SDKs call liveConnectConstraints: the setup the token is locked to
+      bidiGenerateContentSetup: {
         model: `models/${MODEL}`,
-        config: { responseModalities: ["AUDIO"], systemInstruction: { parts: [{ text: instruction }] } },
+        generationConfig: { responseModalities: ["AUDIO"] },
+        systemInstruction: { parts: [{ text: instruction }] },
       },
     }),
   });
-  if (!r.ok) throw new Error(`gemini ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  if (!r.ok) throw new Error(`gemini ${r.status}: ${(await r.text()).slice(0, 700)}`);
   const j = await r.json();
   if (!j?.name) throw new Error("gemini sent no token");
   return String(j.name);
@@ -103,7 +105,7 @@ Deno.serve(async (req) => {
     let token = "", last = "";
     for (let k = 0; k < KEYS.length && !token; k++) {
       try { token = await mint(KEYS[(Number(data.n) + k) % KEYS.length], brief.instruction); }
-      catch (e) { last = String((e as Error).message || e); }
+      catch (e) { last = String((e as Error).message || e); console.error("live-token mint failed:", last); }
     }
     if (!token) {
       await admin.rpc("live_talk_cancel", { p_id: data.id });      // not the reader's fault: not used up
