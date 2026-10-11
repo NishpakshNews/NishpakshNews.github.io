@@ -1053,7 +1053,24 @@ the design is now in `site/index.html` (below); `live/test.html` stays a plain t
 - **Fixed in `live/talk.js`:** closing while connecting (permission box up, token being fetched) used to carry on: it opened the
   microphone and the socket after the stop. Each `start()` is now a run that checks it is still wanted after every wait
   (3 tests in `controller.test.mjs`).
-- **Browser tests:** `tests/talk_ui/` (Playwright, mock module; README there). 20 checks, run by hand, not in CI.
+- **Browser tests:** `tests/talk_ui/` (Playwright, mock module; README there). 32 checks, run by hand, not in CI.
+- **Voice and pace (owner, Oct 11 2026: "give the options to the user; the default is how an Indian speaks").** A "Voice and pace"
+  link on the card opens a panel (the left button becomes a back arrow): **voice** (the 10 Gemini voices Google's docs list with a
+  descriptor: Kore, Orus, Zephyr, Autonoe, Umbriel, Erinome, Laomedeia, Schedar, Achird, Sadachbia), **pace** (slower / natural /
+  faster), **tone** (warm / newsreader), **English accent** (Indian / neutral). Kept in `localStorage` (`np-voice`), sent as `style`
+  with every start. Defaults: Kore, natural, warm, Indian English. Gemini has NO speed, accent or tone setting, only the voice and
+  a language code, so the last three are WORDS in the instruction: `voice.ts` `voiceBlock()` (pure, tested), placed before the
+  article, after the rules, and it says it never loosens them. Its fixed part is what an Indian listener expects whatever was
+  chosen: Indian names and places said the Indian way, lakh and crore and rupees (never millions or dollars), natural north-Indian
+  everyday Hindi with common English words said as in Hindi conversation, Hinglish mirrored. `cleanStyle()` checks every field against
+  a fixed list (strings only: `["indian"]` once slipped through `String()`), so request text can never reach the model.
+  Pace, tone and accent also apply LIVE: `talk.nudge(text)` sends a short `realtimeInput.text` ("From now on, speak slowly"),
+  held until the guide is listening so nobody is cut off. The voice only changes with the next conversation (it is in the setup message).
+  The function returns `voice`, and `language_code` (hi-IN, en-IN, or en-US for the neutral accent) ONLY when the secret
+  `LIVE_LANGUAGE_CODE` is `1`: native-audio models pick the language themselves and may refuse a code. Off until tested.
+  **Not verified (needs the real model, by ear):** whether each voice follows the pace/tone/accent words in Hindi and English; whether a
+  mid-conversation nudge is obeyed and whether the guide answers it aloud; whether `en-IN` is accepted; which voices suit news.
+  No voice preview (it would cost a conversation).
 - **Not verified:** a real phone (iOS Safari especially: sound start, the card's blur, `scale`/`inset` clip-path support),
   the glide at 60 fps on a mid-range Android, real Hindi wording by a native reader, the banner against the real Hind font
   (tested with a fallback face, wider than Hind).

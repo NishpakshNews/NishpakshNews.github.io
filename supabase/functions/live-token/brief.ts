@@ -6,6 +6,8 @@
 // (CLAUDE.md, "The models are simple"). Sentence ids are `p<paragraph>s<sentence>` (`p2s0.1` for a part of a
 // sentence), the same (p, s) numbering as nishpaksh/audio.py's timing files, so the site can light the sentence up.
 
+import { DEFAULT_STYLE, voiceBlock, type Style } from "./voice.ts";
+
 export type Part = { text?: string; class?: string };
 export type Sentence = { text?: string; class?: string; sources?: number[]; parts?: Part[] };
 export type Source = { n?: number; outlet?: string; read?: boolean };
@@ -83,7 +85,7 @@ THIS STORY INVOLVES SUICIDE
 
 /** The instruction, the ids the model may highlight, and the headline, for `story` in `lang` (Hindi falls back to the
  *  English page when it has no Hindi one). null when the story has no article yet. */
-export function buildBrief(story: Story, requested: string): Brief | null {
+export function buildBrief(story: Story, requested: string, style: Style = DEFAULT_STYLE): Brief | null {
   const wantHi = requested === "hi" && !!story.payload_hi?.narrative?.paragraphs?.length;
   const lang: "en" | "hi" = wantHi ? "hi" : "en";
   const payload = (wantHi ? story.payload_hi : story.payload_en) || null;
@@ -135,6 +137,8 @@ export function buildBrief(story: Story, requested: string): Brief | null {
   const instruction = [
     RULES,
     payload?.suicide ? SUICIDE : "",
+    "",
+    voiceBlock(style),
     "",
     `ARTICLE (${lang === "hi" ? "Hindi" : "English"}; the reader chose ${lang === "hi" ? "Hindi" : "English"})`,
     `HEADLINE: ${headline}`,

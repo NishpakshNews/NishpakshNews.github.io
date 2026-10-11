@@ -668,6 +668,25 @@
   .tkprobe { position: fixed; left: 0; top: 0; width: 0; height: 0; visibility: hidden; pointer-events: none;
              padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
 
+
+  /* voice and pace: the settings panel inside the card */
+  .tkcard { max-height: calc(100vh - 40px); max-height: calc(100dvh - 40px); overflow-y: auto; scrollbar-width: none; }
+  .tkcard::-webkit-scrollbar { display: none; }
+  .tkcard .tkopen { align-self: center; min-height: 40px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; }
+  .tkopts { display: none; text-align: start; padding-top: 6px; }
+  .tkcard.set .tkstage, .tkcard.set .tkline, .tkcard.set .tkhint, .tkcard.set .tkslot, .tkcard.set .tkopen { display: none; }
+  .tkcard.set .tkopts { display: block; }
+  .tkopts .orow { margin-top: 14px; }
+  .tkopts .olab { margin: 0 0 6px 2px; font-size: 13px; font-weight: 700; color: var(--muted); }
+  .tkvoices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .tkvoices button { border: 0; border-radius: 12px; background: #f1f1f4; padding: 7px 2px 6px; cursor: pointer; color: var(--ink); font-size: 14px; font-weight: 600;
+                     display: flex; flex-direction: column; align-items: center; gap: 0; transition: background-color 160ms ease, box-shadow 160ms ease; }
+  .tkvoices button small { font-size: 11.5px; font-weight: 500; color: var(--muted); }
+  .tkvoices button.on { background: linear-gradient(135deg, #eaf2fd, #d6e6fb); box-shadow: inset 0 0 0 1.5px var(--talk); color: #2f3a72; }
+  .tkopts .bseg button { height: 40px; font-size: 14px; }
+  .tkopts .onote { margin: 14px 2px 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+  .tkopts .blink { display: block; margin: 2px auto 0; }
+
   @media (prefers-reduced-motion: reduce) {
     .talkpeek .tpin, .talkpeek .tpin span, .tkcard, .tkcard.min, .tkveil, .tkfloat, .tkfloat.on { transition-duration: 1ms !important; transition-delay: 0ms !important; }
     .tkcard[data-ph="speaking"], .tkcard[data-ph="connecting"] .tkstage i, .tkfloat.connecting, .tkfloat.speaking::after { animation: none !important; }
@@ -2587,7 +2606,22 @@ Object.assign(T.hi, {
             network: "निष्पक्ष तक पहुँच नहीं हो सकी। इंटरनेट जाँचें और दोबारा कोशिश करें।", other: "अभी बातचीत उपलब्ध नहीं है। थोड़ी देर बाद कोशिश करें।"},
 });
 
+Object.assign(T.en, {
+  tkSet: "Voice and pace", tkBack: "Back", tkLVoice: "Voice", tkLPace: "Pace", tkLTone: "Tone", tkLAccent: "English accent",
+  tkPaceN: {slow: "Slower", natural: "Natural", fast: "Faster"}, tkToneN: {warm: "Warm", news: "Newsreader"}, tkAccentN: {indian: "Indian", neutral: "Neutral"},
+  tkVD: {firm: "Firm", bright: "Bright", easy: "Easy-going", clear: "Clear", upbeat: "Upbeat", even: "Even", friendly: "Friendly", lively: "Lively"},
+  tkSetNote: "Set for Indian listeners by default. Pace, tone and accent change right away; a new voice starts with your next conversation.", tkReset: "Reset to default",
+});
+Object.assign(T.hi, {
+  tkSet: "आवाज़ और रफ़्तार", tkBack: "वापस", tkLVoice: "आवाज़", tkLPace: "रफ़्तार", tkLTone: "लहजा", tkLAccent: "अंग्रेज़ी उच्चारण",
+  tkPaceN: {slow: "धीमी", natural: "सामान्य", fast: "तेज़"}, tkToneN: {warm: "आत्मीय", news: "समाचार-वाचक"}, tkAccentN: {indian: "भारतीय", neutral: "तटस्थ"},
+  tkVD: {firm: "दृढ़", bright: "खिली", easy: "सहज", clear: "स्पष्ट", upbeat: "उमंग भरी", even: "संतुलित", friendly: "मित्रवत", lively: "जीवंत"},
+  tkSetNote: "डिफ़ॉल्ट भारतीय श्रोताओं के हिसाब से तय है। रफ़्तार, लहजा और उच्चारण तुरंत बदलते हैं; नई आवाज़ अगली बातचीत से लगेगी।", tkReset: "डिफ़ॉल्ट पर लौटें",
+});
+
 const TK = {
+  view: "main",       // main | set (the voice and pace panel)
+  nudges: {},          // pace / tone / accent asked for while connecting: said once the guide is listening
   ui: "closed",        // closed | card | mini
   phase: "ready",      // ready (not started) | live | ended
   st: "idle",          // live/talk.js's own state: connecting, intro, listening, speaking, ended
@@ -2610,7 +2644,7 @@ function talkInstance() {
     tokenUrl: `${SUPABASE_URL}/functions/v1/live-token`,
     getHeaders: async () => ({apikey: SUPABASE_KEY, Authorization: `Bearer ${await token()}`}),
     introBase: "live/",
-    onState: s => { TK.st = s; if (TK.phase === "live") tkPaint(); },
+    onState: s => { TK.st = s; if (TK.phase === "live") { tkPaint(); tkFlushNudges(); } },
     onHighlight: tkLight,
     onTranscript: lines => { const g = [...lines].reverse().find(l => l.role === "guide"); TK.cap = g ? g.text : ""; tkCaption(); },
     onLevel: v => { if (TK.card && TK.st === "listening") TK.card.style.setProperty("--lv", Math.min(1, v * 7).toFixed(2)); },
@@ -2618,6 +2652,54 @@ function talkInstance() {
     onError: e => console.warn("talk:", e.code, e.message),
   });
   return TK.talk;
+}
+
+/* ---- voice and pace: remembered on this device, sent with every start; the function checks them again ----
+   The defaults are how an Indian listener expects to hear it (Kore, natural pace, warm, Indian English); the same
+   words are the server's defaults (voice.ts). Pace, tone and accent are words in the guide's instruction, so they can
+   also be asked for mid-conversation (nudge); the voice itself can only change with the next conversation. */
+const VOICE_LIST = [["Kore", "firm"], ["Orus", "firm"], ["Zephyr", "bright"], ["Autonoe", "bright"], ["Umbriel", "easy"], ["Erinome", "clear"],
+                    ["Laomedeia", "upbeat"], ["Schedar", "even"], ["Achird", "friendly"], ["Sadachbia", "lively"]];
+const STYLE_OPTS = {pace: ["slow", "natural", "fast"], tone: ["warm", "news"], accent: ["indian", "neutral"]};
+const STYLE_DEFAULT = {voice: "Kore", pace: "natural", tone: "warm", accent: "indian"};
+const NUDGE = {
+  pace: {slow: "From now on, speak slowly and clearly, with short pauses.", natural: "From now on, speak at a natural, unhurried pace.", fast: "From now on, speak a little faster, but stay clear."},
+  tone: {warm: "From now on, sound warm, friendly and calm.", news: "From now on, sound neutral and steady, like a newsreader."},
+  accent: {indian: "When you speak English, use an Indian English accent.", neutral: "When you speak English, use a neutral, international English accent."},
+};
+function tkStyle() {
+  let j = {};
+  try { j = JSON.parse(safeGet("np-voice") || "{}") || {}; } catch (e) { j = {}; }
+  const s = {...STYLE_DEFAULT};
+  if (VOICE_LIST.some(v => v[0] === j.voice)) s.voice = j.voice;
+  for (const k of Object.keys(STYLE_OPTS)) if (STYLE_OPTS[k].includes(j[k])) s[k] = j[k];
+  return s;
+}
+function tkSetStyle(next) {
+  const old = tkStyle();
+  safeSet("np-voice", JSON.stringify(next));
+  for (const k of Object.keys(STYLE_OPTS)) if (old[k] !== next[k]) TK.nudges[k] = NUDGE[k][next[k]];
+  tkFlushNudges();
+  tkPaintSet();
+}
+function tkFlushNudges() {            // only while the guide is listening, so nobody is cut off mid-sentence
+  if (TK.phase !== "live" || TK.st !== "listening" || !TK.talk) return;
+  for (const text of Object.values(TK.nudges)) TK.talk.nudge(text);
+  TK.nudges = {};
+}
+function tkPaintSet() {
+  if (!TK.card) return;
+  const t = T[lang], box = TK.card.querySelector(".tkopts"), s = tkStyle();
+  if (box.dataset.lang !== lang) {      // built once per language, so a tap does not take the keyboard focus away
+    box.dataset.lang = lang;
+    const seg = (k) => `<div class="orow"><div class="olab">${esc(t[{pace: "tkLPace", tone: "tkLTone", accent: "tkLAccent"}[k]])}</div><div class="bseg" role="group">${
+      STYLE_OPTS[k].map(v => `<button type="button" data-tks="${k}:${v}">${esc(t[{pace: "tkPaceN", tone: "tkToneN", accent: "tkAccentN"}[k]][v])}</button>`).join("")}</div></div>`;
+    box.innerHTML = `<div class="olab">${esc(t.tkLVoice)}</div><div class="tkvoices" role="group">${
+      VOICE_LIST.map(([n, d]) => `<button type="button" data-tkv="${n}">${n}<small>${esc(t.tkVD[d])}</small></button>`).join("")}</div>
+      ${seg("pace")}${seg("tone")}${seg("accent")}<p class="onote">${esc(t.tkSetNote)}</p><button type="button" class="blink" data-tk="reset">${esc(t.tkReset)}</button>`;
+  }
+  box.querySelectorAll("[data-tkv]").forEach(b => { const on = b.dataset.tkv === s.voice; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
+  box.querySelectorAll("[data-tks]").forEach(b => { const [k, v] = b.dataset.tks.split(":"), on = s[k] === v; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
 }
 
 /* ---- the card and the floating button, built once ---- */
@@ -2633,6 +2715,8 @@ function tkBuild() {
     <div class="tkline" role="status" aria-live="polite"></div>
     <p class="tkhint"></p>
     <div class="tkslot"><p class="tkcap" aria-live="off"></p><button type="button" class="bgo brand tkgo" data-tk="go"></button></div>
+    <button type="button" class="blink tkopen" data-tk="openset"></button>
+    <div class="tkopts"></div>
     <p class="tkpriv"></p></div>`;
   TK.card = TK.wrap.firstElementChild;
   const btn = document.createElement("button");
@@ -2644,8 +2728,15 @@ function tkBuild() {
   TK.veil.addEventListener("click", () => tkMin());
   btn.addEventListener("click", tkMax);
   TK.wrap.addEventListener("click", e => {
+    const v = e.target.closest("[data-tkv]");
+    if (v) { tkSetStyle({...tkStyle(), voice: v.dataset.tkv}); return; }
+    const sg = e.target.closest("[data-tks]");
+    if (sg) { const [k, val] = sg.dataset.tks.split(":"); tkSetStyle({...tkStyle(), [k]: val}); return; }
     const b = e.target.closest("[data-tk]"); if (!b) return;
-    if (b.dataset.tk === "min") tkMin();
+    if (b.dataset.tk === "openset") { TK.view = "set"; tkPaint(); }
+    else if (b.dataset.tk === "back") { TK.view = "main"; tkPaint(); }
+    else if (b.dataset.tk === "reset") tkSetStyle({...STYLE_DEFAULT});
+    else if (b.dataset.tk === "min") tkMin();
     else if (b.dataset.tk === "close") tkEndAll({focus: true});
     else if (b.dataset.tk === "go") tkBegin();            // a fresh tap: the browser lets sound and microphone start
   });
@@ -2661,9 +2752,13 @@ function tkPaint() {
   if (!TK.card) return;
   const t = T[lang], c = TK.card, ph = tkPhase(), errs = ["mic", "login", "limit", "busy", "gone", "network", "unavailable", "refused", "error"];
   c.dataset.ph = ph;
-  c.querySelector(".tkname").textContent = t.talkName;
-  c.querySelector('[data-tk="min"]').setAttribute("aria-label", t.talkMin);
+  const set = TK.view === "set", lb = c.querySelector(".tkhead .bx");
+  c.classList.toggle("set", set);
+  c.querySelector(".tkname").textContent = set ? t.tkSet : t.talkName;
+  lb.dataset.tk = set ? "back" : "min"; lb.innerHTML = set ? ICON.back : ICON.min; lb.setAttribute("aria-label", set ? t.tkBack : t.talkMin);
   c.querySelector('[data-tk="close"]').setAttribute("aria-label", t.close);
+  c.querySelector(".tkopen").textContent = t.tkSet;
+  tkPaintSet();
   const isErr = errs.includes(TK.reason), msg = t.talkMsg[TK.reason] || t.talkMsg.other;
   const words = {ready: [t.talkReady, t.talkReadyHint], connecting: [t.talkConnecting, t.talkConnectingHint], speaking: [t.talkSpeaking, t.talkSpeakingHint],
                  listening: [t.talkListening, t.talkListeningHint], ended: [isErr ? t.talkCant : t.talkEnded, msg]}[ph];
@@ -2701,9 +2796,9 @@ function tkBegin() {
   if (!TK.mod || TK.phase === "live") return;
   const t = talkInstance();
   if (player.el && !player.el.paused) player.el.pause();       // two voices at once would be noise
-  TK.phase = "live"; TK.st = "connecting"; TK.reason = ""; TK.cap = "";
+  TK.phase = "live"; TK.st = "connecting"; TK.reason = ""; TK.cap = ""; TK.nudges = {}; TK.view = "main";
   tkPaint();
-  t.start({storyId: Number(TK.storyId), lang: TK.lang});
+  t.start({storyId: Number(TK.storyId), lang: TK.lang, style: tkStyle()});
 }
 function tkEnded({reason}) {
   if (TK.ui === "closed" || reason === "stopped") return;      // we stopped it ourselves
@@ -2745,7 +2840,7 @@ function tkSetFrom(r) {                    // where the card grows from and shri
 function tkShowCard({ready}) {
   tkBuild();
   TK.storyId = String(openId); TK.lang = lang;
-  if (TK.ui === "closed") { TK.phase = "ready"; TK.st = "idle"; TK.reason = ""; TK.cap = ""; }     // tkBegin makes it live
+  if (TK.ui === "closed") { TK.view = "main"; TK.phase = "ready"; TK.st = "idle"; TK.reason = ""; TK.cap = ""; }     // tkBegin makes it live
   const a = $("rise").querySelector(".acts"); if (a) a.classList.remove("peek");
   const fromEl = $("rise").querySelector(".acts .talkbtn");      // always the button itself, even when the banner was tapped
   const r = fromEl ? fromEl.getBoundingClientRect() : {left: innerWidth - 70, top: innerHeight - 70, width: FL, height: FL};
@@ -2788,7 +2883,7 @@ function tkEndAll(o = {}) {
   const was = TK.ui;
   if (was === "closed") return;
   const live = TK.phase === "live";
-  TK.ui = "closed"; TK.phase = "ready"; TK.st = "idle"; TK.cap = "";
+  TK.ui = "closed"; TK.phase = "ready"; TK.st = "idle"; TK.cap = ""; TK.view = "main"; TK.nudges = {};
   if (live && TK.talk) { try { TK.talk.stop(); } catch (e) { /* already over */ } }
   tkUnlight();
   if (was === "card") {
@@ -2853,7 +2948,7 @@ function schedulePeek(id) {
 
 /* ---- the phone's back button, Escape and leaving ---- */
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape" && TK.ui === "card") { e.preventDefault(); e.stopImmediatePropagation(); tkMin(); }
+  if (e.key === "Escape" && TK.ui === "card") { e.preventDefault(); e.stopImmediatePropagation(); if (TK.view === "set") { TK.view = "main"; tkPaint(); } else tkMin(); }
 }, true);
 addEventListener("pagehide", () => { if (TK.phase === "live" && TK.talk) TK.talk.stop(); });
 setTimeout(loadTalk, 700);                   // the module is fetched in the background, so the first tap can start the sound at once

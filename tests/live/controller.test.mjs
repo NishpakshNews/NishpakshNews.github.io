@@ -232,3 +232,28 @@ test("closed and started again while the first start was still waiting: only the
   assert.equal(w.sockets.length, 1);               // not two conversations
   talk.stop();
 });
+
+test("the reader's style goes to the function, the voice from the grant goes into setup, and a nudge reaches the socket only when ready", async () => {
+  const w = browser({ grantBody: { token: "auth_tokens/abc", model: "m", lang: "en", instruction: "RULES", sentence_ids: ["p0s0"], voice: "Achird", language_code: "en-IN", max_seconds: 480 } });
+  let body = null;
+  const f = globalThis.fetch;
+  globalThis.fetch = async (url, init) => { if (String(url).endsWith("live-token")) body = JSON.parse(init.body); return f(url, init); };
+  const { talk } = make();
+  await talk.start({ storyId: 7, lang: "en", style: { voice: "Achird", pace: "slow", tone: "news", accent: "neutral" } });
+  assert.deepEqual(body, { story_id: 7, lang: "en", style: { voice: "Achird", pace: "slow", tone: "news", accent: "neutral" } });
+  const ws = w.sockets[0];
+  talk.nudge("From now on, speak slowly.");                       // the server has not said ready yet
+  assert.equal(ws.sent.length, 0);
+  ws.onopen();
+  const setup = ws.sent[0].setup;
+  assert.equal(setup.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName, "Achird");
+  assert.equal(setup.speechConfig.languageCode, "en-IN");
+  await ws.onmessage({ data: JSON.stringify({ setupComplete: {} }) });
+  talk.nudge("From now on, speak slowly.");
+  assert.deepEqual(ws.sent.at(-1), { realtimeInput: { text: "From now on, speak slowly." } });
+  talk.stop();
+  const n = ws.sent.length;
+  talk.nudge("after the end");
+  assert.equal(ws.sent.length, n);
+  globalThis.fetch = f;
+});

@@ -32,6 +32,7 @@ export function createTalk(o) {
   return {
     start: async (a) => { window.__log.push(["start", a]); set("connecting"); },
     stop: () => { window.__log.push(["stop"]); set("ended"); o.onEnd({ reason: "stopped" }); },
+    nudge: (t) => { window.__log.push(["nudge", t]); },
     skipIntro() {}, setMuted() {},
     get state() { return state; },
   };

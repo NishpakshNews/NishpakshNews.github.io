@@ -134,3 +134,13 @@ test("goAway is passed on; junk messages are ignored", () => {
   p.handle(null); p.handle("text"); p.handle({}); p.handle({ serverContent: {} });
   assert.deepEqual(log.events, [["goAway", "30s"]]);
 });
+
+test("setup carries the chosen voice, and a language code only when one is given", () => {
+  const a = setupMessage({ model: "m", instruction: "R", voice: "Achird" }).setup;
+  assert.equal(a.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName, "Achird");
+  assert.ok(!("languageCode" in a.speechConfig));
+  const b = setupMessage({ model: "m", instruction: "R", voice: "Achird", languageCode: "en-IN" }).setup;
+  assert.equal(b.speechConfig.languageCode, "en-IN");
+  const c = setupMessage({ model: "m", instruction: "R", languageCode: "hi-IN", nested: true }).setup;
+  assert.equal(c.generationConfig.speechConfig.languageCode, "hi-IN");
+});

@@ -9,7 +9,8 @@
 //     onGrant: ({instruction, sentenceIds, maxSeconds, daily}) => ...,   // what the guide was given (for testing)
 //     onEnd: ({reason}) => ..., onError: ({code, message}) => ...,
 //   });
-//   await talk.start({ storyId, lang });        // from a tap: the browser asks for the microphone then
+//   await talk.start({ storyId, lang, style });  // style: {voice, pace, tone, accent}, all optional (the function checks them)
+//   talk.nudge("From now on, speak slowly.");  // asks the guide to sound different mid-conversation        // from a tap: the browser asks for the microphone then
 //   talk.skipIntro(); talk.setMuted(true); talk.stop();
 //
 // What happens: microphone permission -> the live-token function (login, limits, the article's brief, a one-use Gemini
@@ -87,8 +88,9 @@ const HIGHLIGHT = {
 /** The first message on the socket. `instruction` comes from the live-token function (the same text its token is locked
  *  to). `nested`: put responseModalities and speechConfig under generationConfig (the older layout) if the server
  *  rejects the flat one. */
-export function setupMessage({ model, instruction, voice = "Kore", nested = false }) {
+export function setupMessage({ model, instruction, voice = "Kore", languageCode = null, nested = false }) {
   const speech = { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } };
+  if (languageCode) speech.languageCode = languageCode;     // only when the function sends one (off by default: native-audio models pick the language themselves)
   const setup = {
     model: `models/${model}`,
     systemInstruction: { parts: [{ text: instruction }] },
@@ -259,10 +261,10 @@ export function createTalk(opts) {
 
   function maybeOpenMic() { if (introDone && ready && !ending) startMic(); }
 
-  async function grantFor(storyId, lang) {
+  async function grantFor(storyId, lang, style) {
     let r;
     try {
-      r = await fetch(o.tokenUrl, { method: "POST", headers: { "Content-Type": "application/json", ...(await o.getHeaders()) }, body: JSON.stringify({ story_id: storyId, lang }) });
+      r = await fetch(o.tokenUrl, { method: "POST", headers: { "Content-Type": "application/json", ...(await o.getHeaders()) }, body: JSON.stringify({ story_id: storyId, lang, style }) });
     } catch { throw new TalkError("network", "could not reach Nishpaksh"); }
     let j = {};
     try { j = await r.json(); } catch { /* no body */ }
@@ -320,7 +322,7 @@ export function createTalk(opts) {
         goAway: () => end("goaway"),
       },
     });
-    ws.onopen = () => ws.send(JSON.stringify(setupMessage({ model: grant.model, instruction: grant.instruction })));
+    ws.onopen = () => ws.send(JSON.stringify(setupMessage({ model: grant.model, instruction: grant.instruction, voice: grant.voice || undefined, languageCode: grant.language_code || null })));
     ws.onmessage = async (e) => {
       try { proto.handle(JSON.parse(typeof e.data === "string" ? e.data : await e.data.text())); }
       catch { /* one bad frame does not end the conversation */ }
@@ -345,7 +347,7 @@ export function createTalk(opts) {
     o.onEnd({ reason, detail });
   }
 
-  async function start({ storyId, lang }) {
+  async function start({ storyId, lang, style }) {
     if (state !== "idle" && state !== "ended") return;
     ending = false; muted = false; micOn = false; introDone = false; ready = false; nextAt = 0;
     const run = ++runId;
@@ -362,7 +364,7 @@ export function createTalk(opts) {
       } catch { throw new TalkError("mic", "the microphone is blocked"); }
       if (stale()) { try { mic.getTracks().forEach((t) => t.stop()); } catch { /* done */ } return; }   // never leave a microphone open
       stream = mic;
-      grant = await grantFor(storyId, lang);
+      grant = await grantFor(storyId, lang, style);
       if (stale()) return;
       lang = grant.lang || lang;
       if (o.onGrant) o.onGrant({ lang, headline: grant.headline, instruction: grant.instruction, sentenceIds: grant.sentence_ids, maxSeconds: grant.max_seconds, daily: grant.daily });
@@ -384,6 +386,8 @@ export function createTalk(opts) {
   return {
     start,
     stop: () => end("stopped"),
+    // ask the guide, in words, to sound different from now on (pace, tone, accent); best effort, nothing happens when not talking
+    nudge: (text) => { if (ws && ws.readyState === 1 && ready && !ending && text) ws.send(JSON.stringify({ realtimeInput: { text: String(text).slice(0, 300) } })); },
     skipIntro: () => { try { introStop?.(); } catch { /* done */ } },
     setMuted: (m) => {
       muted = !!m;
