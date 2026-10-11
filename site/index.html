@@ -390,11 +390,21 @@
   .hbw { overflow: hidden; border-radius: 0 0 22px 22px; }
   .hbgr { height: 98px; background-size: 100% 98px; }
   .wmrow { position: relative; height: 30px; display: flex; align-items: center; justify-content: center; }
-  .wmrow .wordmark { line-height: 30px; padding: 0 40px; border: 0; background: none; color: inherit; cursor: pointer; }
+  .wmrow .wordmark { line-height: 30px; padding: 0 76px; border: 0; background: none; color: inherit; cursor: pointer; }
   .wmrow .mbtn { position: absolute; left: 0; top: 0; z-index: 1; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.22);
           background: rgba(18,12,30,0.34); color: #fff; display: flex; align-items: center; justify-content: center; padding: 0; cursor: pointer;
           font-size: 13px; font-weight: 700; transition: background-color 160ms ease; }
   .mbtn[aria-expanded="true"] { background: rgba(255,255,255,0.28); }
+  /* refresh: the menu button's twin, right beside it (owner, Oct 11 2026) */
+  .wmrow .rbtn { position: absolute; left: 38px; top: 0; z-index: 1; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.22);
+          background: rgba(18,12,30,0.34); color: #fff; display: flex; align-items: center; justify-content: center; padding: 0; cursor: pointer;
+          transition: background-color 160ms ease; }
+  .rbtn::after { content: ""; position: absolute; inset: -3px; }
+  .rbtn:active { background: rgba(255,255,255,0.28); }
+  .rbtn svg { display: block; }
+  .rbtn.spin svg { animation: rspin 800ms linear infinite; }
+  @keyframes rspin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .rbtn.spin svg { animation-duration: 2400ms; } }
   .hit { position: relative; } .hit::after { content: ""; position: absolute; inset: -7px; }
   .gspace { height: 40px; }
   header.top .greeting { position: absolute; left: 16px; right: 120px; top: 54px; line-height: 30px; height: 30px; white-space: nowrap;
@@ -553,6 +563,7 @@
     <div class="hbg" id="hbg" aria-hidden="true"><div class="hbw" id="hbw"><div class="hbgr brand" id="hbgr"></div></div></div>
     <div class="wmrow">
       <button type="button" class="mbtn hit" id="mbtn" aria-label="Menu" aria-haspopup="true" aria-expanded="false"></button>
+      <button type="button" class="rbtn" id="rbtn" aria-label="Refresh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v5h-5"/></svg></button>
       <button type="button" class="wordmark lift" id="wm" aria-label="Nishpaksh: go to the latest story">Nishpaksh</button>
     </div>
     <div class="gspace"></div>
@@ -690,6 +701,7 @@ function api(path, ms = 12000) {
 }
 
 /* ---------- data: the feed first, Supabase if the feed is missing ---------- */
+let feedNonce = "";           // set by the refresh button: a new address, so no cache answers with an older feed
 const cardCache = {};          // lang -> every card (one per thread, newest first); the deck shows a section's first MAX_CARDS
 const storyCache = new Map();  // id -> Promise<row|null>
 
@@ -752,7 +764,7 @@ async function loadCards(l) {
     // minutes after its notification (owner, Oct 10 2026); now at most a minute, and every reader shares that minute
     // a slow phone gave up after 5 s and read the database instead, ~3 MB a time (Supabase egress, Oct 10 2026):
     // the feed gets 15 s and a second try first
-    const u = `${FEED_URL}/${l}.json?m=${Math.floor(Date.now() / 60000)}`;
+    const u = `${FEED_URL}/${l}.json?m=${Math.floor(Date.now() / 60000)}${feedNonce ? `&n=${feedNonce}` : ""}`;
     const d = await getJSON(u, {cache: "no-cache"}, 15000).catch(() => getJSON(u, {cache: "no-cache"}, 15000));
     if (d && Array.isArray(d.stories) && d.stories.length) stories = d.stories;
     if (d && d.sections && d.sections.tree3) SECTIONS[l] = d.sections;   // a feed from before Domains: the built-in names
@@ -1572,6 +1584,26 @@ function refreshDeck() {
   if (openId) return;                       // an open article is not moved under the reader: the deck is read again on closing
   showDeck(keep);
 }
+// the refresh button: read the feed and the database again, whatever any cache holds, then redraw the deck
+const rbtn = $("rbtn");
+let refreshing = false;
+async function manualRefresh() {
+  if (refreshing || openId) return;
+  refreshing = true; rbtn.classList.add("spin");
+  const t0 = Date.now();
+  try {
+    feedNonce = String(t0);
+    storyCache.clear();
+    if ("serviceWorker" in navigator) navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {});   // a newer page is picked up too
+    const keep = cards[current] && cards[current].id;
+    delete cardCache.en; delete cardCache.hi;
+    await showDeck(keep);
+  } finally {
+    await new Promise(r => setTimeout(r, Math.max(0, 700 - (Date.now() - t0))));   // never a flicker: the arrow turns at least a moment
+    rbtn.classList.remove("spin"); refreshing = false;
+  }
+}
+rbtn.addEventListener("click", manualRefresh);
 function wantFresh(story) {                 // news is waiting: read the home page again (and again, if the story is not there yet)
   if (document.hidden) { freshWhileAway = true; return; }
   refreshDeck();
@@ -1658,7 +1690,7 @@ const ICON = {
   pause: '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor"/></svg>',
 };
 Object.assign(T.en, {
-  listen: "Listen", videos: "Videos", menu: "Menu", signIn: "Sign in", sort: "Sort", following: "Following", later: "Read later",
+  listen: "Listen", videos: "Videos", menu: "Menu", refresh: "Refresh", signIn: "Sign in", sort: "Sort", following: "Following", later: "Read later",
   recap: "Daily recap", search: "Search", logout: "Log out", soon: "Coming soon", close: "Close",
   sorts: {newest: "Newest", verified: "Most established", contested: "Most disputed", developing: "Still developing", outlets: "Most outlets", shortest: "Shortest read"},
   loginTitle: "Log in", name: "Name", email: "Email", password: "Password", stay: "You stay signed in on this device until you log out.",
@@ -1674,7 +1706,7 @@ Object.assign(T.en, {
   primary: "Primary footage", gone: "This article is no longer live, so it cannot be read aloud.", pause: "Pause", seek: "Position in the audio",
 });
 Object.assign(T.hi, {
-  listen: "सुनें", videos: "वीडियो", menu: "मेन्यू", signIn: "साइन इन", sort: "क्रम", following: "फ़ॉलो", later: "बाद में पढ़ें",
+  listen: "सुनें", videos: "वीडियो", menu: "मेन्यू", refresh: "रीफ़्रेश", signIn: "साइन इन", sort: "क्रम", following: "फ़ॉलो", later: "बाद में पढ़ें",
   recap: "दिन का सार", search: "खोजें", logout: "लॉग आउट", soon: "जल्द आ रहा है", close: "बंद करें",
   sorts: {newest: "सबसे नई", verified: "सबसे अधिक स्थापित", contested: "सबसे अधिक मतभेद", developing: "अभी विकसित हो रही", outlets: "सबसे अधिक स्रोत", shortest: "सबसे छोटी"},
   loginTitle: "लॉग इन", name: "नाम", email: "ईमेल", password: "पासवर्ड", stay: "लॉग आउट करने तक आप इस डिवाइस पर साइन इन रहेंगे।",
@@ -1737,6 +1769,7 @@ const mbtn = $("mbtn");
 function paintMe() {
   mbtn.innerHTML = me ? esc((me.name || "?").trim()[0].toUpperCase()) : ICON.menu;
   mbtn.setAttribute("aria-label", me ? `${T[lang].menu}: ${me.name}` : T[lang].menu);
+  $("rbtn").setAttribute("aria-label", T[lang].refresh);
   if (greeted) $("greet").textContent = greeting();
 }
 
