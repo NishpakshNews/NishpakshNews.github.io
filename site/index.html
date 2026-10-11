@@ -390,18 +390,18 @@
   .hbw { overflow: hidden; border-radius: 0 0 22px 22px; }
   .hbgr { height: 98px; background-size: 100% 98px; }
   .wmrow { position: relative; height: 30px; display: flex; align-items: center; justify-content: center; }
-  .wmrow .wordmark { line-height: 30px; padding: 0 76px; border: 0; background: none; color: inherit; cursor: pointer; }
-  .wmrow .mbtn { position: absolute; left: 0; top: 0; z-index: 1; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.22);
-          background: rgba(18,12,30,0.34); color: #fff; display: flex; align-items: center; justify-content: center; padding: 0; cursor: pointer;
-          font-size: 13px; font-weight: 700; transition: background-color 160ms ease; }
-  .mbtn[aria-expanded="true"] { background: rgba(255,255,255,0.28); }
-  /* refresh: the menu button's twin, right beside it (owner, Oct 11 2026) */
-  .wmrow .rbtn { position: absolute; left: 38px; top: 0; z-index: 1; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.22);
-          background: rgba(18,12,30,0.34); color: #fff; display: flex; align-items: center; justify-content: center; padding: 0; cursor: pointer;
-          transition: background-color 160ms ease; }
-  .rbtn::after { content: ""; position: absolute; inset: -3px; }
-  .rbtn:active { background: rgba(255,255,255,0.28); }
-  .rbtn svg { display: block; }
+  .wmrow .wordmark { line-height: 30px; padding: 0 66px; border: 0; background: none; color: inherit; cursor: pointer; }
+  /* the menu and the refresh button share one pill, made like the language pill: a dark translucent pill, white
+     circles inside (owner, Oct 11 2026) */
+  .cpill { position: absolute; left: 0; top: 0; z-index: 1; display: flex; align-items: center; gap: 2px; height: 30px; padding: 2px;
+           background: rgba(18,12,30,0.34); border: 1px solid rgba(255,255,255,0.22); border-radius: 999px;
+           -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  .cpill button { position: relative; flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: #fff; color: #1f2550;
+                  display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 12.5px; font-weight: 700;
+                  transition: background-color 200ms ease, color 200ms ease; }
+  .cpill button::after { content: ""; position: absolute; inset: -4px -1px; }
+  .cpill button:active, .mbtn[aria-expanded="true"] { background: #dfe2f2; }
+  .cpill svg { display: block; }
   .rbtn.spin svg { animation: rspin 800ms linear infinite; }
   @keyframes rspin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .rbtn.spin svg { animation-duration: 2400ms; } }
@@ -562,8 +562,7 @@
   <header class="top" id="top">
     <div class="hbg" id="hbg" aria-hidden="true"><div class="hbw" id="hbw"><div class="hbgr brand" id="hbgr"></div></div></div>
     <div class="wmrow">
-      <button type="button" class="mbtn hit" id="mbtn" aria-label="Menu" aria-haspopup="true" aria-expanded="false"></button>
-      <button type="button" class="rbtn" id="rbtn" aria-label="Refresh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v5h-5"/></svg></button>
+      <div class="cpill"><button type="button" class="mbtn" id="mbtn" aria-label="Menu" aria-haspopup="true" aria-expanded="false"></button><button type="button" class="rbtn" id="rbtn" aria-label="Refresh"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button></div>
       <button type="button" class="wordmark lift" id="wm" aria-label="Nishpaksh: go to the latest story">Nishpaksh</button>
     </div>
     <div class="gspace"></div>
@@ -1679,7 +1678,7 @@ function revealPage() {
 const ICON = {
   audio: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3z"/><path d="M3 19a2 2 0 0 0 2 2h1v-6H3z"/></svg>',
   video: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="M10 9.2v5.6l4.8-2.8z" fill="currentColor"/></svg>',
-  menu: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
+  menu: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
   user: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
   sort: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/></svg>',
   bell: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
@@ -1884,7 +1883,7 @@ function menuHtml() {
 function fitMenu() { const p = mdrop.querySelectorAll(".mpane")[mdrop.classList.contains("sub") ? 1 : 0]; if (p) mdrop.style.height = `${p.offsetHeight}px`; }
 function openMenu() {
   const r = mbtn.getBoundingClientRect();
-  mdrop.style.top = `${r.bottom + 12}px`; mdrop.style.left = `${Math.max(8, r.left - 2)}px`;
+  mdrop.style.top = `${r.bottom + 12}px`; mdrop.style.left = `${Math.max(8, r.left - 5)}px`;
   mdrop.classList.remove("sub"); mdrop.innerHTML = menuHtml(); fitMenu();
   mdrop.classList.add("on"); mveil.classList.add("on"); mbtn.setAttribute("aria-expanded", "true");
   overlayOpen();
