@@ -88,11 +88,44 @@ class SlotPool:
 
 
 KINDS = ("article", "recap")           # the recap's guide (owner, Oct 12 2026) has its own words: "...about today's news?"
+FILLER = "filler"                      # short lines played while the guide opens another article (owner, Oct 13 2026; live/talk.js FILLERS); one file per line, voice and language
+ALL_KINDS = KINDS + (FILLER,)
+MAX_FILLERS = 4                        # live/talk.js plays filler-<Voice>-<lang>-1..4: only this many are made (more would never be played)
 
 
 def clip_name(voice: str, lang: str, kind: str = "article") -> str:
     """The file the browser asks for (live/talk.js clipName: intro-<voice>-<lang>.m4a, intro-recap-<voice>-<lang>.m4a for the recap)."""
     return f"intro-{'recap-' if kind == 'recap' else ''}{voice}-{lang}.m4a"
+
+
+def filler_name(voice: str, lang: str, n: int) -> str:
+    """The filler line the browser plays while an article is opened (live/talk.js fillerName): filler-<voice>-<lang>-<n>.m4a, n from 1."""
+    return f"filler-{voice}-{lang}-{n}.m4a"
+
+
+def _voice_lang(name: str) -> tuple[str, str]:
+    """(voice, language) of a recording's file name: intro[-recap]-<Voice>-<lang>.m4a or filler-<Voice>-<lang>-<n>.m4a."""
+    parts = name[:-4].split("-")
+    if parts[0] == FILLER:
+        return parts[1], parts[2]
+    return parts[-2], parts[-1]
+
+
+def fillers(intro: dict, lang: str) -> list[str]:
+    """The filler sentences for a language (intro.json `filler_en` / `filler_hi`), at most MAX_FILLERS, [] when there are none."""
+    return list(intro.get(f"filler_{lang}") or [])[:MAX_FILLERS]
+
+
+def jobs(intro: dict, voices, langs, kinds) -> list[tuple[str, list[str]]]:
+    """Every recording to make, in order: (file name, the sentences spoken in it). Intros by kind, then the filler lines."""
+    out: list[tuple[str, list[str]]] = []
+    for kind in KINDS:
+        if kind not in kinds or (kind != "article" and not intro.get(f"{kind}_en")):
+            continue
+        out += [(clip_name(v, l, kind), words(intro, l, kind)) for v in voices for l in langs]
+    if FILLER in kinds:
+        out += [(filler_name(v, l, n), [text]) for v in voices for l in langs for n, text in enumerate(fillers(intro, l), 1)]
+    return out
 
 
 def words(intro: dict, lang: str, kind: str = "article") -> list[str]:
@@ -112,6 +145,9 @@ def load(path: pathlib.Path = INTRO_FILE) -> dict:
         r = d.get(f"recap_{lang}")
         if r is not None and not (isinstance(r, list) and len(r) in (1, 2) and all(isinstance(x, str) and x.strip() for x in r)):
             raise ValueError(f"intro.json: recap_{lang} needs one or two non-empty sentences")
+        f = d.get(f"filler_{lang}")                   # the filler lines: one sentence each, up to MAX_FILLERS
+        if f is not None and not (isinstance(f, list) and 1 <= len(f) <= MAX_FILLERS and all(isinstance(x, str) and x.strip() for x in f)):
+            raise ValueError(f"intro.json: filler_{lang} needs 1 to {MAX_FILLERS} non-empty sentences")
     if not 0.2 <= float(d.get("pause_seconds", 0)) <= 3:
         raise ValueError("intro.json: pause_seconds must be between 0.2 and 3")
     return d
@@ -208,7 +244,7 @@ def main() -> None:
     ap.add_argument("--dir", default=str(LIVE_DIR), help="default: live/ (what the site workflow publishes)")
     ap.add_argument("--lang", choices=["en", "hi"], action="append", help="default: both")
     ap.add_argument("--voice", choices=VOICES, action="append", help="default: all ten")
-    ap.add_argument("--kind", choices=KINDS, action="append", help="default: both (the article guide's intro, and the recap guide's)")
+    ap.add_argument("--kind", choices=ALL_KINDS, action="append", help="default: all (the article guide's intro, the recap guide's, and the filler lines)")
     ap.add_argument("--force", action="store_true", help="make the file again even when it exists")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -228,31 +264,24 @@ def main() -> None:
     out = pathlib.Path(args.dir)
     out.mkdir(parents=True, exist_ok=True)
     made = 0
-    kinds = [k for k in KINDS if k in (args.kind or KINDS) and (k == "article" or intro.get("recap_en"))]
-    for kind in kinds:
-        for voice in args.voice or VOICES:
-            for lang in args.lang or ["en", "hi"]:
-                path = out / clip_name(voice, lang, kind)
-                if path.exists() and not args.force:
-                    continue
-
-                def speak(text: str, lang=lang, voice=voice):
-                    return pool.speak(lambda slot: slot[0].tts(slot[1], text, voice))
-                try:
-                    pcm = build_pcm(words(intro, lang, kind), float(intro["pause_seconds"]), speak)
-                except RuntimeError as e:                # the quota is gone (or the model is down): stop here, the next run carries on from this file
-                    log.info("stopped at %s: %s", path.name, e)
-                    break
-                audio.encode(pcm, path)
-                made += 1
-                log.info("%s %s %s: %.1f s -> %s", kind, voice, lang, len(pcm) / 2 / RATE, path)
-            else:
-                continue
-            break                                    # (the inner loop stopped: do not try the other voices either)
-        else:
+    todo_all = jobs(intro, args.voice or VOICES, args.lang or ["en", "hi"], args.kind or ALL_KINDS)
+    for name, parts in todo_all:
+        path = out / name
+        if path.exists() and not args.force:
             continue
-        break                                        # ... nor the other kind
-    todo = [clip_name(v, l, k) for k in kinds for v in (args.voice or VOICES) for l in (args.lang or ["en", "hi"]) if not (out / clip_name(v, l, k)).exists()]
+        v, l = _voice_lang(name)
+
+        def speak(text: str, voice=v):
+            return pool.speak(lambda slot: slot[0].tts(slot[1], text, voice))
+        try:
+            pcm = build_pcm(parts, float(intro["pause_seconds"]), speak)
+        except RuntimeError as e:                    # the quota is gone (or the model is down): stop here, the next run carries on from this file
+            log.info("stopped at %s: %s", path.name, e)
+            break
+        audio.encode(pcm, path)
+        made += 1
+        log.info("%s: %.1f s -> %s", name, len(pcm) / 2 / RATE, path)
+    todo = [name for name, _ in todo_all if not (out / name).exists()]
     log.info("made %d; %s", made, f"{len(todo)} still to make (run again later): {', '.join(todo[:6])}{' ...' if len(todo) > 6 else ''}" if todo else "nothing left to make")
 
 

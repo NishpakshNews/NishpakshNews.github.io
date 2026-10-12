@@ -3,13 +3,16 @@ name: live-intro
 # The intro recordings of "Talk to the article" (nishpaksh/live_intro.py, live/intro.json): one per voice and language,
 # live/intro-<Voice>-<lang>.m4a. Started BY HAND (Actions -> live-intro -> Run workflow), no schedule. Makes the ones that do not
 # exist yet, as many as the day's text-to-speech quota allows, commits them to main and publishes the site with them.
-# 2 speech calls a file, 40 files for all ten voices in both languages: run it again the next day until the log says
+# 2 speech calls a file (1 for a filler line), 40 intro files per kind and 80 filler files for all ten voices in both languages: run it again the next day until the log says
 # "nothing left to make". Leave the inputs empty for every voice.
 on:
   workflow_dispatch:
     inputs:
       voice:
         description: "only this voice (for example Kore); empty = all ten"
+        default: ""
+      kind:
+        description: "only this kind: article, recap or filler (the short 'let me open that article' lines played while the guide opens another article); empty = all"
         default: ""
       force:
         description: "make the files again even if they exist (type yes)"
@@ -33,6 +36,7 @@ jobs:
       GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
       GH_TOKEN: ${{ github.token }}
       VOICE: ${{ inputs.voice }}
+      KIND: ${{ inputs.kind }}
       FORCE: ${{ inputs.force }}
     steps:
       - uses: actions/checkout@v4
@@ -47,12 +51,13 @@ jobs:
           which ffmpeg || (sudo apt-get update -q && sudo apt-get install -y -q ffmpeg)
           ARGS=()
           if [ -n "${VOICE}" ]; then ARGS+=(--voice "${VOICE}"); fi
+          if [ -n "${KIND}" ]; then ARGS+=(--kind "${KIND}"); fi
           if [ "${FORCE}" = "yes" ]; then ARGS+=(--force); fi
           python -m nishpaksh.live_intro "${ARGS[@]}"
       - name: Commit them and publish the site
         run: |
           set -euo pipefail
-          git add live/intro-*.m4a
+          git add live/intro-*.m4a live/filler-*.m4a
           if git diff --cached --quiet; then echo "no new recordings"; exit 0; fi
           git -c user.name="nishpaksh-live-intro" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit --quiet -m "Intro recordings: $(git diff --cached --name-only | wc -l) new"

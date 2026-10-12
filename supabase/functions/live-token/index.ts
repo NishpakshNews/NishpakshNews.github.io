@@ -18,7 +18,8 @@
 // sentences and colour of each story), read from ONE row of the `recaps` table, so a day of 20-60 stories costs the model a few
 // thousand words instead of the stories' full articles, and nothing is fetched from GitHub. It uses the same limits, keys and token.
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
-import { buildBrief, toolsFor, type Story } from "./brief.ts";
+import { articleDigest, buildBrief, toolsFor, type Story } from "./brief.ts";
+import { otherStories, type Feed } from "./otherstories.ts";
 import { buildRecapBrief, type RecapRow } from "./recapbrief.ts";
 import { cleanStyle, languageCode, thinkingConfig } from "./voice.ts";
 
@@ -139,6 +140,19 @@ async function getRecap(day: string): Promise<RecapRow | null> {
 }
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
+// The day's overview for the article guide's list of other stories (owner, Oct 13 2026): the site's own feed file (the cards it shows), one fetch
+// kept for a minute. Hindi falls back to the English file. A short timeout: the list is a help, so it never holds the conversation up.
+const keptFeed = new Map<string, { at: number; feed: Feed }>();
+async function getFeed(lang: "en" | "hi"): Promise<Feed | null> {
+  const hit = keptFeed.get(lang);
+  if (hit && Date.now() - hit.at < KEEP_MS) return hit.feed;
+  const r = await fetch(`${FEED_URL}/${lang}.json`, { signal: AbortSignal.timeout(2000) });
+  if (!r.ok) return lang === "hi" ? await getFeed("en") : null;
+  const feed = (await r.json()) as Feed;
+  keptFeed.set(lang, { at: Date.now(), feed });
+  return feed;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return reply({ error: "POST only" }, 405);
@@ -169,6 +183,19 @@ Deno.serve(async (req) => {
     return reply({ ok: true });
   }
 
+  // The guide called open_article (an article's conversation or the recap's). The article's text (what the page shows, with status and outlet
+  // names) goes back to the browser, which hands it to the guide. It is public text (the feed branch), so there is no login check and no
+  // count: one round trip less.
+  if (b.open !== undefined) {
+    const id = Number(b.open);
+    if (!Number.isInteger(id) || id < 1) return reply({ ok: false, error: "bad request" }, 400);
+    try {
+      const { ok, story } = await getStory(id, 4000);
+      const d = ok && story ? articleDigest(story, lang, 80, "OPENED ARTICLE") : null;
+      return d ? reply({ ok: true, headline: d.headline, text: d.text }) : reply({ ok: false, error: "gone" }, 404);
+    } catch { return reply({ ok: false, error: "unavailable" }, 503); }
+  }
+
   // the recap guide has no story id: story 0 in the database means "the day's recap"
   const recapDay = typeof b.recap === "string" ? b.recap : "";
   const isRecap = b.recap !== undefined;
@@ -192,13 +219,13 @@ Deno.serve(async (req) => {
       if (!brief) return reply({ error: "gone" }, 404);
       return await begin(user.id, 0, brief, style, t0, tm, "recap");
     }
-    const [user, page] = await Promise.all([mark("login", me(req)), mark("article", getStory(story))]);
+    const [user, page, feed] = await Promise.all([mark("login", me(req)), mark("article", getStory(story)), mark("feed", getFeed(lang).catch(() => null))]);
     if (!user) return reply({ error: "login" }, 401);
 
     // the article first: nothing is counted against the reader when there is nothing to talk about
     if (!page.ok || !page.story) return reply({ error: "gone" }, 404);
     const main = page.story;
-    brief = buildBrief(main, lang, style, await mark("earlier", earlier(main)));
+    brief = buildBrief(main, lang, style, await mark("earlier", earlier(main)), otherStories(feed, lang, story));
     if (!brief) return reply({ error: "gone" }, 404);
     return await begin(user.id, story, brief, style, t0, tm, "article");
   } catch (e) {

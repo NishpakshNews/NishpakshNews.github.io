@@ -87,7 +87,8 @@ test("the guide is told the traps: not more certain than the status, no outside 
   assert.match(ins, /ONE OUTLET ONLY is not confirmed/);
   assert.match(ins, /Never say a name, number, place or date that is not in the lines/);
   assert.match(ins, /Do not ask "Shall I go on\?"/);
-  assert.match(ins, /tap the story's line in the recap/);
+  assert.match(ins, /call open_article with that story's number/);          // depth: the guide opens the story's article itself
+  assert.match(ins, /tap its line in the recap, then use Listen/);          // a whole article read out: the recap's Listen
   assert.match(ins, /STATUSES \(what each label means\)/);
 });
 

@@ -8,6 +8,7 @@
 //     onState: (s) => ..., onHighlight: (id) => ..., onTranscript: (lines) => ..., onLevel: (rms) => ...,
 //     onMetric: ({firstAudioMs, firstToolMs, tools}) => ...,   // how long one answer took to start, after the reader stopped talking
 //     onSlow: (slow) => ...,                    // true when the guide has taken more than a few seconds to start answering, false when it starts
+//     onArticle: ({id, headline}) => ...,       // the guide opened another article (a function call it makes by itself); the page may say "Reading: <headline>"
 //     onGrant: ({instruction, sentenceIds, maxSeconds, daily}) => ...,   // what the guide was given (for testing)
 //     onEnd: ({reason}) => ..., onError: ({code, message}) => ...,
 //   });
@@ -31,6 +32,7 @@ export const IN_RATE = 16000;
 export const OUT_RATE = 24000;
 const CLIP_RATE = { slow: 0.85, natural: 1, fast: 1.15 };   // the recording is one file per voice, so the reader's pace choice is applied to it as its playback speed (owner, Oct 12 2026)
 const CLIP_LEAD_S = 1.2;                // the recording is scheduled this far ahead of "now" (owner, Oct 12 2026: heard from mid-clip, while a screen recording had it from the first word): opening the microphone makes the phone / Bluetooth / laptop re-route its audio, and until that settles the speaker swallows what it is given. The clips start with ~0.2 s of near-silence, so the first WORDS still land after the device is awake
+const FILLERS = 4;                      // filler-<Voice>-<lang>-1..4.m4a (nishpaksh/live_intro.py, live/intro.json filler_en / filler_hi): a short line played while the guide opens another article
 const CLIP_WAIT_MS = 4000;              // the intro recording must have started within this long after the connection is ready, else the guide says the intro itself
 const INTRO_WAIT_MS = 15000;            // how long the intro waits for the server to be ready
 const INTRO_MAX_MS = 30000;             // and for the guide to finish saying it
@@ -239,8 +241,18 @@ export class LiveProtocol {
 
   _tools(calls) {
     const responses = [];
+    const pending = [];
     for (const fc of calls) {
       this.on.tool?.(fc.name);
+      if (fc.name === "open_article") {
+        // The answer is the article's text, fetched by the page while the guide waits (an ordinary function, never SILENT: the guide
+        // must carry on when the text arrives). A failure is told to the guide in words, so it answers from what it has instead of freezing.
+        pending.push(Promise.resolve().then(() => this.on.open?.(fc.args?.story_id)).catch(() => null).then((r) => ({
+          id: fc.id, name: fc.name,
+          response: r && r.ok && r.text ? { article: r.text } : { error: "That article could not be opened. Answer from what you already have, and say you could not open the full article." },
+        })));
+        continue;
+      }
       let result = "unknown function";
       if (fc.name === "highlight") {
         const id = this.validId(fc.args?.sentence_id);
@@ -252,6 +264,7 @@ export class LiveProtocol {
       responses.push(this.nonBlocking ? { id: fc.id, name: fc.name, response: { result }, scheduling: "SILENT" } : { id: fc.id, name: fc.name, response: { result } });
     }
     if (responses.length) { this.send({ toolResponse: { functionResponses: responses } }); this.on.toolReplied?.(); }
+    if (pending.length) Promise.all(pending).then((rs) => { this.send({ toolResponse: { functionResponses: rs } }); this.on.toolReplied?.(); });
   }
 }
 
@@ -291,6 +304,8 @@ export function createTalk(opts) {
   let nextAt = 0, quietTimer = null, idleTimer = null, maxTimer = null, wrapTimer = null, lastActive = 0, slow = false;
   const playing = new Set();
   const clipBytes = new Map();   // intro recordings already asked for: name -> Promise of its bytes (or null)
+  let openPending = 0, curVoice = null, curLang = "en", lastFiller = 0;   // articles being fetched for the guide, the voice and language of this conversation, the filler played last
+  const opened = new Map();      // story id -> the article's answer (a promise); an article is fetched once per conversation
   let runId = 0;                 // each start() is a run; stop() during connecting must stop THAT run from carrying on
 
   const set = (s) => {
@@ -355,7 +370,7 @@ export function createTalk(opts) {
   // quiet, or (2) nothing at all came back for NO_ANSWER_MS and the guide did not end a turn (the end of the reader's turn was not noticed).
   // A guide that ended a turn without a sound and without a function call had nothing to say (noise): that is left alone.
   function watchdog(now) {
-    if (!askEnd || nudged || !ready || ending || playing.size || !ws || ws.readyState !== 1) return;
+    if (!askEnd || nudged || !ready || ending || openPending || playing.size || !ws || ws.readyState !== 1) return;
     const afterTool = toolReplyAt > askEnd && now - toolReplyAt > TOOL_STALL_MS;
     const noAnswer = silentAt <= askEnd && now - askEnd > NO_ANSWER_MS;
     if (!afterTool && !noAnswer) return;
@@ -430,6 +445,7 @@ export function createTalk(opts) {
   // The recap's guide has its own words ("what would you like to know about today's news?"), so its recordings are named intro-recap-<voice>-<lang>.m4a
   // (a voice without one is simply said by the guide itself, as for any missing recording).
   const clipName = (voice, lang, kind) => `intro-${kind === "recap" ? "recap-" : ""}${safeVoice(voice)}-${lang === "hi" ? "hi" : "en"}.m4a`;
+  const fillerName = (voice, lang, n) => `filler-${safeVoice(voice)}-${lang === "hi" ? "hi" : "en"}-${n}.m4a`;
   const safeVoice = (v) => (typeof v === "string" && /^[A-Za-z]{2,20}$/.test(v) ? v : "Kore");
   function fetchClip(name) {
     if (!clipBytes.has(name)) clipBytes.set(name, (async () => {
@@ -443,6 +459,57 @@ export function createTalk(opts) {
   }
   /** Start fetching the recording early (the page calls this before the reader taps), so the tap only has to play it. */
   function preload({ lang = "en", voice, kind } = {}) { fetchClip(clipName(voice, lang, kind)); }
+  // The guide called open_article. A recorded filler line covers the wait ("let me pull that up"), queued so the guide's own answer
+  // starts right after it; the article's text is fetched from the same function (no login check, no count) and kept for the conversation.
+  async function playFiller() {
+    if (!ctx || ending) return;
+    let n = 1 + Math.floor(Math.random() * FILLERS);
+    if (n === lastFiller) n = (n % FILLERS) + 1;                 // never the same line twice in a row
+    lastFiller = n;
+    const bytes = await fetchClip(fillerName(curVoice, curLang, n));
+    if (!bytes || !ctx || ending) return;                        // no recording for this voice: silence until the answer (it is quick)
+    try {
+      const buf = await ctx.decodeAudioData(bytes.slice(0));
+      if (!ctx || ending) return;
+      if (ctx.state !== "running") { try { await ctx.resume(); } catch { /* played or not below */ } }
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      const at = Math.max(ctx.currentTime + 0.02, nextAt);
+      src.start(at);
+      nextAt = at + buf.duration;
+      playing.add(src);
+      touch(); set("speaking");
+      src.onended = () => {
+        playing.delete(src);
+        clearTimeout(quietTimer);
+        quietTimer = setTimeout(() => { if (!playing.size && !ending && micOn) set("listening"); }, 250);
+      };
+    } catch { /* the guide's answer follows anyway */ }
+  }
+  async function openArticle(raw) {
+    const id = Math.floor(Number(String(raw ?? "").replace(/^[as]/i, "")));
+    if (!Number.isInteger(id) || id < 1 || ending) return { ok: false };
+    const t0 = Date.now(), cached = opened.has(id);
+    if (!cached) {
+      playFiller();
+      opened.set(id, (async () => {
+        try {
+          const r = await fetch(o.tokenUrl, { method: "POST", headers: { "Content-Type": "application/json", ...(await o.getHeaders()) }, body: JSON.stringify({ open: id, lang: curLang }), signal: AbortSignal.timeout(8000) });
+          const j = await r.json().catch(() => ({}));
+          return r.ok && j.ok && j.text ? j : { ok: false };
+        } catch { return { ok: false }; }
+      })());
+    }
+    openPending++;
+    let r;
+    try { r = await opened.get(id); } finally { openPending--; }
+    if (!r.ok) opened.delete(id);                                // a failed one may be tried again
+    else if (!cached) o.onArticle?.({ id, headline: r.headline });
+    touch();
+    o.onMetric?.({ openMs: Date.now() - t0, openedId: id, ok: !!r.ok, cached });
+    return r;
+  }
   /** Begins the recording as soon as it is decoded. `started` resolves true (playing, `seconds` long) or false (none, or it could not be played). */
   function startClip(lang, voice, after = Promise.resolve(), kind = "article", pace = "natural") {
     const run = { cancelled: false, seconds: 0 };
@@ -513,6 +580,7 @@ export function createTalk(opts) {
         turnComplete: () => { touch(); turnCompleteSeen = true; if (askEnd) silentAt = Date.now(); introWake?.(); if (state === "thinking" && !playing.size) set("listening"); o.onTurnComplete(); },
         tool: () => { if (askEnd && !firstTool) firstTool = Date.now(); toolCount++; },
         highlight: (id) => { touch(); o.onHighlight(id); },
+        open: openArticle,
         transcript: (lines, meta) => { touch(); o.onTranscript(lines, meta); },
         goAway: () => end("goaway"),
       },
@@ -585,6 +653,8 @@ export function createTalk(opts) {
       grant = await grantFor(storyId, lang, style, recap);
       if (stale()) return;
       lang = grant.lang || lang;
+      curLang = lang; curVoice = grant.voice || style?.voice || null; opened.clear(); openPending = 0;
+      for (let n = 1; n <= FILLERS; n++) fetchClip(fillerName(curVoice, curLang, n));      // the filler lines are small: ready before the first article is opened
       if (o.onGrant) o.onGrant({ lang, headline: grant.headline, instruction: grant.instruction, sentenceIds: grant.sentence_ids, maxSeconds: grant.max_seconds, hourly: grant.hourly });
       openSocket();
       startPings();

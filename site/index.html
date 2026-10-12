@@ -2665,6 +2665,7 @@ Object.assign(T.en, {
   talkEnded: "Conversation ended", talkCant: "Can't talk right now",
   talkPriv: "Your voice is processed by Google's Gemini to answer you. Nishpaksh does not keep it.",
   talkLangEnd: "Conversation ended because the language changed.",
+  talkReading: "Reading: ",
   talkRecap: "Talk about today's news", talkRecapShort: "Talk about it", talkReadyR: "Ask anything about today's news", talkListeningHintR: "Ask about any story in today's recap.",
   talkMsg: {idle: "It went quiet, so the conversation ended.", time: "A conversation can last 8 minutes at most.", closed: "The conversation ended.", goaway: "The conversation ended.",
             limit: "You have used your conversations for this hour. Try again in a little while.", limitHour: "You have used your conversations for this hour. The next reset is at {t}.", limitDay: "You have used your conversations for today. The next reset is at {t}.", busy: "Many readers are talking right now. Try again in a minute.",
@@ -2682,6 +2683,7 @@ Object.assign(T.hi, {
   talkEnded: "बातचीत ख़त्म हुई", talkCant: "अभी बात नहीं हो सकती",
   talkPriv: "जवाब देने के लिए आपकी आवाज़ Google के Gemini से प्रोसेस होती है। निष्पक्ष उसे सहेजता नहीं।",
   talkLangEnd: "भाषा बदली, इसलिए बातचीत ख़त्म हो गई।",
+  talkReading: "पढ़ रहे हैं: ",
   talkRecap: "आज की ख़बरों पर बात करें", talkRecapShort: "बात करें", talkReadyR: "आज की ख़बरों के बारे में कुछ भी पूछिए", talkListeningHintR: "आज के सार की किसी भी ख़बर के बारे में पूछिए।",
   talkMsg: {idle: "कुछ देर कोई आवाज़ नहीं आई, इसलिए बातचीत ख़त्म हो गई।", time: "एक बातचीत ज़्यादा से ज़्यादा 8 मिनट की हो सकती है।", closed: "बातचीत ख़त्म हो गई।", goaway: "बातचीत ख़त्म हो गई।",
             limit: "इस घंटे की बातचीत पूरी हो गई। थोड़ी देर बाद फिर कोशिश करें।", limitHour: "इस घंटे की बातचीत पूरी हो गई। अगला रीसेट {t} पर होगा।", limitDay: "आज की बातचीत पूरी हो गई। अगला रीसेट {t} पर होगा।", busy: "अभी बहुत से पाठक बात कर रहे हैं। थोड़ी देर में फिर कोशिश करें।",
@@ -2709,6 +2711,7 @@ const TK = {
   phase: "ready",      // ready (not started) | live | ended
   st: "idle",          // live/talk.js's own state: connecting, intro, listening, speaking, ended
   reason: "", cap: "", capLineId: null, capSegments: [], capFinal: false, storyId: null, lang: null,
+  reading: "",         // the headline of the other article the guide opened last (it opens one by itself when asked about another story): shown on the card
   recap: null,         // the day of the recap when the conversation is about the Daily recap (owner, Oct 12 2026), else null (one article)
   mod: null, modP: null, talk: null, card: null, veil: null, wrap: null, lit: null,
 };
@@ -2739,6 +2742,7 @@ function talkInstance() {
     introBase: "live/",
     onState: s => { TK.st = s; if (TK.phase === "live") { tkPaint(); tkFlushNudges(); } },
     onHighlight: tkLight,
+    onArticle: a => { TK.reading = String(a?.headline || "").slice(0, 90); if (TK.phase === "live") tkPaint(); },     // the guide opened another article
     onTranscript: (lines, meta) => {
       const g = [...lines].reverse().find(l => l.role === "guide"), next = g ? g.text : "";
       const nextLineId = meta?.lineId ?? null;
@@ -3072,7 +3076,7 @@ function tkPaint() {
   tkPaintSet();
   const isErr = errs.includes(TK.reason), msg = TK.reason === "limit" ? tkLimitText(t) : (t.talkMsg[TK.reason] || t.talkMsg.other);
   const words = {ready: [TK.recap ? t.talkReadyR : t.talkReady, t.talkReadyHint], connecting: [t.talkConnecting, t.talkConnectingHint], speaking: [t.talkSpeaking, t.talkSpeakingHint], thinking: [t.talkThinking, TK.slow ? t.talkSlowHint : t.talkThinkingHint],
-                 listening: [t.talkListening, TK.recap ? t.talkListeningHintR : t.talkListeningHint], ended: [isErr ? t.talkCant : t.talkEnded, msg]}[ph];
+                 listening: [t.talkListening, TK.reading ? t.talkReading + TK.reading : TK.recap ? t.talkListeningHintR : t.talkListeningHint], ended: [isErr ? t.talkCant : t.talkEnded, msg]}[ph];
   const line = c.querySelector(".tkline");
   line.textContent = words[0];
   if (think) { const d = document.createElement("span"); d.className = "tkdots"; d.setAttribute("aria-hidden", "true"); d.innerHTML = '<i style="--j:0"></i><i style="--j:1"></i><i style="--j:2"></i>'; line.appendChild(d); }
@@ -3120,7 +3124,7 @@ function tkBegin() {
   if (!TK.mod || TK.phase === "live") return;
   const t = talkInstance();
   if (player.el && !player.el.paused) player.el.pause();       // two voices at once would be noise
-  TK.phase = "live"; TK.st = "connecting"; TK.reason = ""; TK.cap = ""; TK.capLineId = null; TK.capSegments = []; TK.capFinal = false; TK.nudges = {}; TK.view = "main";
+  TK.phase = "live"; TK.st = "connecting"; TK.reason = ""; TK.reading = ""; TK.cap = ""; TK.capLineId = null; TK.capSegments = []; TK.capFinal = false; TK.nudges = {}; TK.view = "main";
   tkPaint();
   t.start(TK.recap ? {recap: TK.recap, lang: TK.lang, style: tkStyle()} : {storyId: Number(TK.storyId), lang: TK.lang, style: tkStyle()});
 }
@@ -3184,7 +3188,7 @@ function tkShowCard({ready, recap}) {
   TK.recap = recap || null;
   TK.storyId = recap ? "recap" : String(openId); TK.lang = lang;
   htmlEl.classList.toggle("talk-recap", !!recap);
-  if (TK.ui === "closed") { TK.view = "main"; TK.phase = "ready"; TK.st = "idle"; TK.reason = ""; TK.cap = ""; TK.capLineId = null; TK.capSegments = []; TK.capFinal = false; }     // tkBegin makes it live
+  if (TK.ui === "closed") { TK.view = "main"; TK.phase = "ready"; TK.st = "idle"; TK.reason = ""; TK.reading = ""; TK.cap = ""; TK.capLineId = null; TK.capSegments = []; TK.capFinal = false; }     // tkBegin makes it live
   const a = $("rise").querySelector(".acts"); if (a) a.classList.remove("peek");
   const fromEl = recap ? bsheet.querySelector(".rtalk") : $("rise").querySelector(".acts .talkbtn");      // always the button itself, even when the banner was tapped
   const r = fromEl ? fromEl.getBoundingClientRect() : {left: innerWidth - 70, top: innerHeight - 70, width: FL, height: FL};
@@ -3238,7 +3242,7 @@ function tkEndAll(o = {}) {
   }
   fl.el.classList.remove("on");
   htmlEl.classList.remove("talk-live", "talk-mini", "talk-recap");
-  TK.recap = null;
+  TK.recap = null; TK.reading = "";
   if (o.focus && wasRecap) { const rb = bsheet.querySelector(".rtalk"); if (rb) rb.focus({preventScroll: true}); }
   else if (o.focus && openId) $("back").focus({preventScroll: true});
 }

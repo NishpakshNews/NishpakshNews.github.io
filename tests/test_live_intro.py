@@ -151,3 +151,34 @@ def test_clean_part_leaves_clean_speech_alone_apart_from_the_trim_and_fades():
 def test_build_pcm_never_joins_a_burst_into_the_intro():
     pcm = live_intro.build_pcm(["one two", "three four"], 0.9, lambda t: _speech_then_glitch())
     assert not live_intro.has_burst(pcm)
+
+
+# ---- the filler lines played while the guide opens another article (owner, Oct 13 2026) ----
+def test_filler_lines_are_valid_and_named_as_the_browser_asks():
+    d = live_intro.load()
+    assert 1 <= len(d["filler_en"]) <= live_intro.MAX_FILLERS and len(d["filler_hi"]) == len(d["filler_en"])
+    assert live_intro.filler_name("Kore", "hi", 3) == "filler-Kore-hi-3.m4a"               # live/talk.js fillerName
+    assert live_intro._voice_lang("intro-recap-Orus-hi.m4a") == ("Orus", "hi")
+    assert live_intro._voice_lang("intro-Kore-en.m4a") == ("Kore", "en")
+    assert live_intro._voice_lang("filler-Zephyr-hi-2.m4a") == ("Zephyr", "hi")
+
+
+def test_jobs_list_every_recording_once_in_order_and_a_filler_is_one_sentence():
+    d = live_intro.load()
+    every = live_intro.jobs(d, ["Kore"], ["en", "hi"], live_intro.ALL_KINDS)
+    names = [n for n, _ in every]
+    assert len(names) == len(set(names))
+    assert names[0] == "intro-Kore-en.m4a" and "filler-Kore-en-1.m4a" in names and "filler-Kore-hi-4.m4a" in names
+    assert all(len(parts) == 1 for n, parts in every if n.startswith("filler"))
+    assert [n for n, _ in live_intro.jobs(d, ["Kore"], ["en"], ["filler"])] == [f"filler-Kore-en-{i}.m4a" for i in range(1, len(d["filler_en"]) + 1)]
+    assert live_intro.jobs({"en": ["a"], "hi": ["b"], "pause_seconds": 1}, ["Kore"], ["en"], ["filler"]) == []   # no filler lines, nothing made
+
+
+@pytest.mark.parametrize("key,bad", [("filler_en", []), ("filler_en", ["ok", ""]), ("filler_hi", ["a"] * 5)])
+def test_bad_fillers_fail_loudly(tmp_path, key, bad):
+    d = live_intro.load()
+    d[key] = bad
+    f = tmp_path / "intro.json"
+    f.write_text(json.dumps(d), encoding="utf-8")
+    with pytest.raises(ValueError):
+        live_intro.load(f)

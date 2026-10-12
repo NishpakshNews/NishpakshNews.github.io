@@ -11,5 +11,17 @@
   ],
   "recap_hi": [
     "चलिए, आज की ख़बरों पर चर्चा शुरू करते हैं।"
+  ],
+  "filler_en": [
+    "Let me pull that article up.",
+    "One moment, opening that story.",
+    "Sure, let me check that one.",
+    "Give me a second, I'm reading it."
+  ],
+  "filler_hi": [
+    "ज़रा रुकिए, वो ख़बर खोलते हैं।",
+    "एक सेकंड, उस ख़बर को देखते हैं।",
+    "ठीक है, इसे ज़रा पढ़ लेते हैं।",
+    "एक पल, पूरी ख़बर खोलते हैं।"
   ]
 }

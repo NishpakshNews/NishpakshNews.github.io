@@ -150,9 +150,9 @@ test("an earlier article about suicide brings the helpline rules too", () => {
   assert.match(ins, /Tele-MANAS/);
 });
 
-test("the only function is highlight (nothing is fetched while the reader waits); non-blocking only when asked", () => {
+test("the functions are highlight and open_article (the page fetches an opened article while the guide waits); highlight is non-blocking only when asked", () => {
   const names = (t) => t[0].functionDeclarations.map((d) => d.name);
-  assert.deepEqual(names(TOOLS), ["highlight"]);
+  assert.deepEqual(names(TOOLS), ["highlight", "open_article"]);
   assert.equal(TOOLS[0].functionDeclarations[0].behavior, undefined);
   assert.equal(toolsFor(true)[0].functionDeclarations[0].behavior, "NON_BLOCKING");
 });
