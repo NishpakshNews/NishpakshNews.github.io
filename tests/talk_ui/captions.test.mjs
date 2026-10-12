@@ -64,3 +64,15 @@ test("a timed segment does not make an unfinished trailing token commit early", 
   assert.equal(result.units.length, 1);
   assert.equal(result.units[0].text, "The guide explains why");
 });
+
+test("a card that is still opening (tiny width) does not cut captions into single words", () => {
+  const result = build("The voice moves line by line now", [], true, 3.2, 20, "14px sans-serif");
+  assert.equal(result.units[0].text, "The voice moves line");
+});
+
+test("while streaming without offsets, units are spread over the audio queued so far (they advance, not freeze)", () => {
+  const result = build("The voice moves line by line now with careful pace today", [], false, 4, 1000, "14px sans-serif");
+  assert.ok(result.units.length >= 2);
+  assert.equal(result.units[0].start, 0);
+  assert.ok(result.units[1].start > 0, "second unit must have a later start so the caption can advance to it");
+});

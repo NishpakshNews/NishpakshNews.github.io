@@ -2852,18 +2852,19 @@ function tkTranscriptWordTimes(text, segments) {
   return times;
 }
 function tkFitWordCount(words, start, maxCount, width, font) {
-  if (!width || maxCount < 2) return maxCount;
+  // A card that is still opening (or hidden) measures a few pixels wide; fitting to that would cut every unit to one word.
+  if (!width || width < 80 || maxCount < 2) return maxCount;
   try {
     const canvas = tkFitWordCount.canvas || (tkFitWordCount.canvas = document.createElement("canvas"));
     const context = canvas.getContext("2d");
     if (!context) return maxCount;
     context.font = font || "14px sans-serif";
-    let fit = 1;
+    let fit = Math.min(2, maxCount);
     for (let count = 1; count <= maxCount; count++) {
       if (context.measureText(words.slice(start, start + count).join(" ")).width <= width - 8) fit = count;
       else break;
     }
-    return fit;
+    return Math.max(fit, Math.min(2, maxCount));
   } catch { return maxCount; }
 }
 function tkEstimatedWordTimes(words, duration) {
@@ -2888,7 +2889,8 @@ function tkBuildCaptionUnits(text, segments, final, duration, width, font) {
   const allTimed = times.length > 0 && times.every(t => Number.isFinite(t.start) && Number.isFinite(t.end) && t.end > t.start && t.start >= 0);
   if (!allTimed) {
     // Without segment offsets, calibrate against the actual queued audio duration after generation completes.
-    times = final ? tkEstimatedWordTimes(words, duration) : tkEstimatedWordTimes(words, words.length * .32);
+    // Gemini's transcript carries no offsets, and its text arrives together with the audio, so the words so far span the audio queued so far.
+    times = tkEstimatedWordTimes(words, duration > 0 ? duration : words.length * .32);
   }
   const units = [];
   for (let i = 0; i < words.length;) {
@@ -2948,9 +2950,11 @@ function tkCaption() {
   c._lineId = TK.capLineId;
   const segments = Array.isArray(TK.capSegments) ? TK.capSegments : [];
   const segmentsKey = segments.map(s => `${s.text || ""}\u0000${s.startIndex ?? ""}\u0000${s.endIndex ?? ""}\u0000${s.startOffset ?? ""}\u0000${s.endOffset ?? ""}`).join("\u0001");
-  if (now !== c._shown || segmentsKey !== c._segmentsKey || TK.capFinal !== c._lastFinal) {
+  const curWidth = Math.max(0, c.clientWidth - 12);
+  if (now !== c._shown || segmentsKey !== c._segmentsKey || TK.capFinal !== c._lastFinal || (c._width || 0) !== curWidth) {
     tkObserveClock(c, tkClock());
-    const style = getComputedStyle(c), width = Math.max(0, c.clientWidth - 12);
+    c._width = curWidth;
+    const style = getComputedStyle(c), width = curWidth;
     const built = tkBuildCaptionUnits(now, segments, !!TK.capFinal, c._lastTotal, width, style.font);
     tkSyncCaptionUnits(inn, c, built.units);
     c._units = built.units; c._hasRealTimings = built.allTimed; c._responseComplete = !!TK.capFinal;
@@ -2991,12 +2995,7 @@ function tkCapStep(c) {
   const activeUnits = c._units || [];
   const heard = c._heard || 0;
   let target = -1;
-  if (c._hasRealTimings || c._responseComplete) {
-    activeUnits.forEach((unit, i) => { if (unit.start <= heard) target = i; });
-  } else {
-    // Do not let a guessed pace run the captions ahead while audio generation is still providing timing information.
-    target = c._active < 0 ? 0 : c._active;
-  }
+  activeUnits.forEach((unit, i) => { if (unit.start <= heard) target = i; });
   if (c._active >= 0) target = Math.max(target, c._active); // never scroll backward when timing is refined
   target = Math.max(0, Math.min(target, activeUnits.length - 1));
   c._active = target;
@@ -3010,7 +3009,7 @@ function tkCapStep(c) {
   cancelAnimationFrame(c._raf);
   // Sample the audio queue during playback even if timing offsets are absent; this captures the final response
   // duration used to calibrate fallback line timing when the model signals turnComplete.
-  if (ck?.playing && (target < activeUnits.length - 1 || (!c._hasRealTimings && !c._responseComplete))) {
+  if (c.isConnected && (ck?.playing || (!c._responseComplete && tkPhase() === "speaking")) && (target < activeUnits.length - 1 || !c._responseComplete)) {
     c._raf = requestAnimationFrame(() => tkCapStep(c));
   }
 }
