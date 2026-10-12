@@ -291,11 +291,12 @@ def _extract_one(store: Store, router: Router, a: dict) -> str:
     return "done"
 
 
-def select_for_extraction(store: Store, focus: set[int] | None = None) -> list[dict]:
+def select_for_extraction(store: Store, focus: set[int] | None = None, express: set[int] | None = None) -> list[dict]:
     """Which articles are worth an LLM call. A story only one source covers can never be
     published and teaches the perspective model nothing, so it waits until a second
     independent source appears. Within a story only one article per independent source is
-    read (a wire copy repeats its original), up to `max_extract_per_story` sources."""
+    read (a wire copy repeats its original), up to `max_extract_per_story` sources. An express story (express.py,
+    `express` ids, already limited by its own reading cap) is read from its first independent source."""
     from .wire import independence_groups, independent
     # the text itself is fetched only for the articles chosen (egress, Oct 8 2026): choosing needs its length
     q = (select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.agency, articles.c.wire_group,
@@ -321,7 +322,7 @@ def select_for_extraction(store: Store, focus: set[int] | None = None) -> list[d
         # readable page. Under 3 it can never be published, and omissions (the main evidence of a
         # perspective) can only be seen when several outlets' versions of one story are read.
         readable = {groups[a["id"]] for a in arts if a["text_source"] != "summary"}
-        if len(independent(readable)) < SETTINGS.min_sources_to_read:
+        if len(independent(readable)) < (1 if sid in (express or ()) else SETTINGS.min_sources_to_read):
             continue
         done = [a for a in arts if a["extracted_at"]]
         room = SETTINGS.max_extract_per_story - len(done)
@@ -439,10 +440,10 @@ def read_blocked_pages(store: Store, tavily, max_pages: int = 5, focus: set[int]
 
 
 def extract_pending(store: Store, router: Router, deadline: float, workers: int = 6,
-                    focus: set[int] | None = None) -> int:
+                    focus: set[int] | None = None, express: set[int] | None = None) -> int:
     """Read the selected articles, several at a time, while the router keeps every model inside
     its limits."""
-    pending = select_for_extraction(store, focus)
+    pending = select_for_extraction(store, focus, express)
     if not pending:
         return 0
     stop = threading.Event()

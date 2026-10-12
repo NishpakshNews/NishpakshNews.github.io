@@ -49,8 +49,18 @@ def _beats(store: Store, ids: list[int]) -> set[int]:
     if bf:
         for r in store.rows(select(articles.c.story_id, articles.c.feed_id).where(articles.c.story_id.in_(ids))):
             tags.setdefault(r["story_id"], []).append(bf.get(r["feed_id"]))
+    # an express story (express.py) shares the beat seat
     return {r["id"] for r in store.rows(select(stories.c.id, stories.c.analysis).where(stories.c.id.in_(ids)))
-            if is_beat({"beat_feed": _feed_beat(tags.get(r["id"], []))}, r["analysis"] or {})}
+            if is_beat({"beat_feed": _feed_beat(tags.get(r["id"], []))}, r["analysis"] or {})
+            or (r["analysis"] or {}).get("qualified_by") == "express"}
+
+
+def _express_ids(store: Store, ids: list[int]) -> set[int]:
+    """The express stories among `ids` (qualified by the express rule, express.py)."""
+    if not ids:
+        return set()
+    return {r["id"] for r in store.rows(select(stories.c.id, stories.c.analysis).where(stories.c.id.in_(ids)))
+            if (r["analysis"] or {}).get("qualified_by") == "express"}
 
 
 def seats(store: Store, now: dt.datetime | None = None) -> tuple[int, int]:
@@ -191,6 +201,7 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
     max_tries = SETTINGS.desk_tries + 2 * extra
     queue = ready(store, now)
     beats = _beats(store, queue)
+    express_ids = _express_ids(store, queue)
     stats["ready"] = len(queue)
     stats["ready_beat"] = len(beats)
     stats["skipped"] = {}
@@ -210,6 +221,8 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
         verify.base_verdicts(store, sid)            # the 6-hour clock moved since it was analysed
         if compose.publish_story(store, router, sid):
             stats["published"].append(sid)
+            if sid in express_ids:
+                stats.setdefault("express", []).append(sid)
             stats["tried"] += 1
             if beat and beat_room > 0:
                 beat_room -= 1

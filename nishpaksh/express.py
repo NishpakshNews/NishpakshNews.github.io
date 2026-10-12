@@ -8,7 +8,7 @@ Built in parts (see CLAUDE.md, "Express lane"):
      question to a small model (`gate`: lane or not, asked twice, order swapped, unsure = no; the verdict is kept in
      `articles.extraction["express"]`, so a headline is asked about once) and the embedding slice
      (`embed_daily_cap`, booked in quota_usage as "express:embed"), so an express article is embedded only if it passed;
-  3. reading and qualifying an express story from one independent outlet with a named origin; the one-hour wait;
+  3. (built) reading and qualifying an express story from one independent outlet with a named origin; the one-hour wait;
      the dispute check when a second outlet turns up;
   4. the seats (the beat seat shared with Domains/Sport) and the record in CLAUDE.md.
 
@@ -453,3 +453,216 @@ def gate(store, router, arts: list[dict], now: dt.datetime) -> tuple[set[int], s
     _now("allowance", allowance)
     _save(store, save)
     return held, first
+
+
+# --- Part 3: an express story, read from one independent outlet ----------------------------------------------------
+#
+# A story is express when: one lane's headline question said yes for a member (above), no member is excluded or
+# off-lane, and fewer than 3 independent outlets cover it (3 or more is the normal route). It is read with its own
+# small cap (`reads_per_run` NEW stories a run; stories already begun are always finished). It qualifies when:
+#   - every independent outlet whose page is readable has been read (a second outlet is never ignored),
+#   - the statements of what happened (kind "event") name their origin: the company, the league, an official; one
+#     "sources said" event, or one event credited to another media house, and it does not qualify (unsure = no),
+#   - with two outlets, nothing is disputed between them (a conflict or a denial).
+# Sport results may stand on the outlet's own voice (`own_voice_lanes`): a match result is the reporter's own
+# observation. The reason a story did not qualify is counted in STATS["story_out"], for the ledger.
+
+ANON, OWN, NAMED, MEDIA, AGENCY = "anon", "own", "named", "media", "agency"
+
+
+def _count(group: str, key: str) -> None:
+    g = STATS.setdefault(group, {})
+    g[key] = g.get(key, 0) + 1
+
+
+def attribution_kind(raw: str | None) -> str:
+    """How a statement's source reads: own voice, anonymous, an agency, another media house (not an origin), or named."""
+    from .origins import ANON_WORDS, OWN_WORDS, _norm
+    try:
+        from .origins import AGENCIES
+    except ImportError:  # noqa: BLE001
+        AGENCIES = set()
+    n = _norm(raw or "")
+    if n in OWN_WORDS:
+        return OWN
+    if n in ANON_WORDS or n.startswith(("unnamed", "anonymous", "sources ")):
+        return ANON
+    if n in AGENCIES:
+        return AGENCY
+    words = [str(w).lower() for w in setting("media_words", [])]
+    if any(re.search(rf"\b{re.escape(w)}\b", n) for w in words):
+        return MEDIA
+    return NAMED
+
+
+def origin_verdict(claims: list[dict], lane: str) -> tuple[bool, str]:
+    """(named enough, why). `claims` are the story's statement rows ({kind, stance, attributed_to}). Only statements
+    of what happened count (kind "event", stance asserts or attributes). Plain code, no model."""
+    events = [c for c in claims if c.get("kind") == "event" and c.get("stance") in ("asserts", "attributes")]
+    if not events:
+        return False, "no_event"
+    kinds = [attribution_kind(c.get("attributed_to")) for c in events]
+    if ANON in kinds:
+        return False, "anonymous_source"
+    if MEDIA in kinds:
+        return False, "other_media_source"
+    if AGENCY in kinds:
+        return False, "agency_source"
+    if NAMED in kinds:
+        return True, "named"
+    if lane in (setting("own_voice_lanes", ["sport"]) or []):
+        return True, "own_voice"
+    return False, "not_named"
+
+
+def story_lane(members: list[dict], lane_of: dict[int, str] | None = None) -> tuple[str | None, str | None]:
+    """(lane, None) when the members make an express story, else (None, why). A member judged excluded or off-lane,
+    or a member any exclusion list matches, keeps the whole story out; two lanes in one story is unsure = out."""
+    lanes_yes: set[str] = set()
+    for a in members:
+        v = verdict_of(a)
+        if not v:
+            continue
+        if v.get("verdict") == "yes" and v.get("lane"):
+            lanes_yes.add(v["lane"])
+        elif v.get("verdict") == "excluded" or v.get("why") == "not_lane":
+            return None, "member_" + ("excluded" if v.get("verdict") == "excluded" else "not_lane")
+    if not lanes_yes:
+        return None, "no_lane"
+    if len(lanes_yes) > 1:
+        return None, "two_lanes"
+    lane = next(iter(lanes_yes))
+    for a in members:
+        why = excluded(a.get("title") or "", "", a.get("url") or "", lane)
+        if why:
+            return None, "member_excluded"
+    return lane, None
+
+
+def _readable(a: dict) -> bool:
+    return (a.get("text_source") or "full") != "summary" and a.get("has_text", True)
+
+
+def candidates(store, now: dt.datetime | None = None) -> dict[int, dict]:
+    """{story id: {"lane", "groups", "read"}} for stories that are express now: unpublished, fresh, a lane, one or
+    two independent readable outlets. `read` is True once an article of the story has been read."""
+    from sqlalchemy import func, select
+    from .config import SETTINGS
+    from .db import articles
+    from .editions import frozen_ids
+    from .wire import independence_groups, independent
+    now = now or _now_utc()
+    lane_of = lane_feeds(store)
+    if not enabled() or not lane_of:
+        return {}
+    since = now - dt.timedelta(hours=SETTINGS.stale_after_hours)
+    mine = {r["story_id"] for r in store.rows(
+        select(articles.c.story_id).where(articles.c.story_id.is_not(None), articles.c.feed_id.in_(sorted(lane_of)),
+                                          articles.c.published_at >= since))}
+    mine -= frozen_ids(store)
+    if not mine:
+        return {}
+    cols = [articles.c.id, articles.c.story_id, articles.c.outlet, articles.c.url, articles.c.agency,
+            articles.c.wire_group, articles.c.title, articles.c.text_source, articles.c.extracted_at,
+            articles.c.extraction, articles.c.feed_id, articles.c.published_at,
+            (func.length(articles.c.text) > 0).label("has_text")]
+    by: dict[int, list[dict]] = {}
+    ids = sorted(mine)
+    for i in range(0, len(ids), 500):
+        for r in store.rows(select(*cols).where(articles.c.story_id.in_(ids[i:i + 500]))):
+            by.setdefault(r["story_id"], []).append(r)
+    out = {}
+    for sid, arts in by.items():
+        lane, why = story_lane(arts, lane_of)
+        if not lane:
+            continue
+        groups = independence_groups(arts)
+        n = len(independent({groups[a["id"]] for a in arts if _readable(a)}))
+        if n < 1 or n >= int(setting("normal_route_outlets", 3)):
+            continue
+        out[sid] = {"lane": lane, "groups": n, "read": any(a["extracted_at"] for a in arts),
+                    "newest": max((a["published_at"] for a in arts if a["published_at"]), default=now)}
+    return out
+
+
+def _now_utc() -> dt.datetime:
+    from .db import utcnow
+    return utcnow()
+
+
+def focus(store, now: dt.datetime | None = None) -> set[int]:
+    """The express stories to read and analyse this run: those already begun, plus the newest `reads_per_run`
+    that have not been read at all. The cap is the express lane's own; it never takes a place from the
+    preparation queue (priority.py)."""
+    cands = candidates(store, now)
+    begun = {sid for sid, c in cands.items() if c["read"]}
+    new = sorted((sid for sid, c in cands.items() if not c["read"]), key=lambda sid: cands[sid]["newest"], reverse=True)
+    take = new[:int(setting("reads_per_run", 3))]
+    bump("story_candidates", len(cands))
+    bump("story_begun", len(begun))
+    bump("story_started", len(take))
+    _now("stories_waiting_to_read", len(new) - len(take))
+    return begun | set(take)
+
+
+def disputed(store, sid: int) -> bool:
+    """Two outlets, and a conflict was marked between statements or a statement is denied by one of them."""
+    from sqlalchemy import select
+    from .db import canonical, claims
+    if any(r["stance"] == "denies" for r in store.rows(select(claims.c.stance).where(claims.c.story_id == sid))):
+        return True
+    return any(r["conflicts"] for r in store.rows(select(canonical.c.conflicts).where(canonical.c.story_id == sid)))
+
+
+def assess(store, sid: int) -> bool:
+    """Does the story qualify under the express rule? (See the block comment above.) Code only; counts why not."""
+    from sqlalchemy import func, select
+    from .config import SETTINGS
+    from .db import articles, claims
+    from .wire import independence_groups, independent
+    if not enabled():
+        return False
+    lane_of = lane_feeds(store)
+    arts = store.rows(select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.agency, articles.c.wire_group,
+                             articles.c.title, articles.c.text_source, articles.c.extracted_at, articles.c.extraction,
+                             articles.c.feed_id, (func.length(articles.c.text) > 0).label("has_text"))
+                      .where(articles.c.story_id == sid))
+    lane, why = story_lane(arts, lane_of)
+    if not lane:
+        if why != "no_lane":          # a normal story is not an express miss
+            _count("story_out", why)
+        return False
+    groups = independence_groups(arts)
+    readable = {groups[a["id"]] for a in arts if _readable(a)}
+    read = {groups[a["id"]] for a in arts if a["extracted_at"] and _readable(a)}
+    if len(independent(readable)) >= int(setting("normal_route_outlets", SETTINGS.qualify_min_outlets)):
+        return False                  # three outlets or more: the normal rule decides
+    if not independent(read):
+        _count("story_out", "not_read_yet")
+        return False
+    if independent(readable) - independent(read):
+        _count("story_out", "second_outlet_unread")     # its page is readable but not yet read: wait, never skip it
+        return False
+    if len(independent(read)) >= 2 and disputed(store, sid):
+        _count("story_out", "disputed")
+        return False
+    rows = store.rows(select(claims.c.kind, claims.c.stance, claims.c.attributed_to).where(claims.c.story_id == sid))
+    ok, why = origin_verdict(rows, lane)
+    if not ok:
+        _count("story_out", why)
+        return False
+    _count("story_in", f"{lane}:{why}")
+    bump("story_qualified")
+    return True
+
+
+def settle_decision(now: dt.datetime, last: dt.datetime | None, met: dt.datetime | None,
+                    stale_after_hours: float, wait_hours: float | None = None) -> str | None:
+    """Ready to write: the express rule has been met for `wait_for_second_hours` (a second outlet that reports it
+    in that hour is read and checked first), and the newest report is not stale. Else None."""
+    wait = float(setting("wait_for_second_hours", 1) if wait_hours is None else wait_hours)
+    if last is None or (now - last).total_seconds() >= stale_after_hours * 3600:
+        return None
+    if met and (now - met).total_seconds() >= wait * 3600:
+        return "express"
+    return None

@@ -169,7 +169,11 @@ def settle_reason(store: Store, sid: int, now: dt.datetime | None = None) -> str
     last = last_new_source(store, sid)
     if last is None:
         return None
-    _, ed = _edition(store, sid)
+    an, ed = _edition(store, sid)
+    if an.get("qualified_by") == "express":
+        # one or two outlets (express.py): written after its own short wait, not the 8-hour cap or the quiet rule
+        from . import express
+        return express.settle_decision(now, last, _parse(ed.get("met_at")), SETTINGS.stale_after_hours)
     return settle_decision(now, last, _parse(ed.get("met_at")), lambda: independent_outlets(store, sid))
 
 

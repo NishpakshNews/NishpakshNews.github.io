@@ -773,11 +773,39 @@ every outlet that covered it, and colours every sentence by how well it is suppo
      - **Already useful before Part 3:** an express-feed article that passed is embedded and grouped like any other, so a sport
        or company story that three independent outlets carry now reaches the normal strict route (rating, reading, writing) and
        the beat seat; what Part 3 adds is one-outlet stories.
-  3. TODO (next): qualify an express story from one independent outlet with a named origin (`origins.py`, `priority.py`,
-     `stories`/`editions` settle of one hour, reading cap); dispute check at 2 outlets for express stories only; find every
-     place that still assumes 3 outlets (`qualify_min_outlets`, `min_sources_to_read`, `established_*` stay for green; the
-     essay checks, perspectives, `follow_up_ok`).
-  4. TODO: seats (`desk_beat_seat` 2, shared with express), the writer's attribution wording for company claims, final
+  3. DONE (Oct 13 2026, Part 3; NOT RUN ON REAL DATA; the plain-logic tests ran in the sandbox, `tests/test_express_story_db.py`
+     needs sqlalchemy and runs on the runner). Built from the first 9 runs of the ledger (see "What the ledger showed" below).
+     - **An express story** (`express.candidates`): unpublished, fresh, a member whose stored verdict is "yes" with ONE lane; any
+       member judged excluded or off-lane, or whose headline any exclusion list matches, keeps the whole story out (`story_lane`);
+       1 or 2 independent readable outlets (3+ is the normal route; `normal_route_outlets`).
+     - **Reading** (`express.focus`, added to `focus` in `run.py`, `extract.select_for_extraction(express=...)` reads from the first
+       independent source instead of the third): `reads_per_run` 3 NEW stories a run, newest first, plus every story already
+       begun. Its own cap, apart from the 16-place preparation queue. At 2+ outlets `consolidate_story` runs for express stories
+       too (it marks conflicts).
+     - **Qualifying** (`express.assess`, code only, in `analyse` and the second loop of `run.py` after the normal rule):
+       every independent outlet with a readable page has been read (a second outlet is never skipped: `second_outlet_unread`);
+       with 2 outlets nothing is disputed (a `conflicts` mark or a "denies" claim: `disputed`); the statements of what happened
+       (`kind` event) name their origin: one anonymous ("sources said", "officials", "analysts"), agency (PTI) or other-media
+       ("Bloomberg reported", `media_words`) event and it is out; a named event is needed, except sport, where the outlet's own
+       voice stands for a match result (`own_voice_lanes`). Then `perspectives.mark_qualified(sid, "express")`. Unsure = no. The
+       reason a story fell out is counted in `STATS["story_out"]`, the ones that went in in `story_in` (ledger prints both).
+     - **Settling** (`editions.settle_reason`: `qualified_by == "express"` -> `express.settle_decision`): written `wait_for_second_hours`
+       (1) after it first qualified (`met_at`), not by the 8-hour cap or the quiet rule; never when stale. If a third outlet turns
+       up the story is analysed again and the normal rule takes over.
+     - **Desk**: an express story counts as a beat story (`desk._beats`), so it shares the beat seat; `stats["desk"]["express"]` lists
+       the express stories published. Colour: one outlet is "single" purple by `narrative.shade` as always; nothing changed there.
+     - **Not yet checked on real data (Part 4 starts here):** that `perspectives.analyze_story`, `compose.build_payload`, `verify.base_verdicts`
+       and the writer cope with a story of ONE outlet (read for assumptions, not run); `follow_up_ok` and the essay checks; the
+       writer's wording for a company's own claim.
+     - **What the ledger showed (9 runs, Oct 2026), which the dials follow:** companies and tech starve (the business and tech feeds
+       are mostly economy, markets and RBI items, which are excluded by design), sport and entertainment dominate; the intake caps
+       (not the embedding slice) were binding, so `intake_per_run` went from 80 to 120; the writer and reading are the bottleneck
+       (217 qualifying, queue of 16, 0-2 published an hour), hence the separate express reading cap and the shared beat seat; the
+       Indian Express and Firstpost lane feeds look weak or dead; `harm:detained` hit 91 headlines in business and sport feeds and may be
+       too strict. Read `ledger/LEDGER.md` for the new "did not qualify, and why" table before changing any dial.
+     - Open question for the owner: sport results on the outlet's own voice (`own_voice_lanes: [sport]`); add entertainment or
+       leave it, after the first batch is read.
+  4. TODO (next): seats (`desk_beat_seat` 2, shared with express), the writer's attribution wording for company claims, final
      CLAUDE.md pass, replay on stored data (`tools/replay.py`).
 - **The ledger (owner, Oct 12 2026: "embedding is a lot of confusion ... store them in detail, so we can use them to fine tune";
   `ledger.py`, folder `ledger/`, `.github/scripts/ledger.sh`).** One record per hourly run, committed to the repository (so the

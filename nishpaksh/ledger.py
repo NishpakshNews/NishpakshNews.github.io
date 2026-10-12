@@ -262,6 +262,16 @@ def render(entries: list[dict], now: dt.datetime | None = None) -> str:
             L += ["The words doing the excluding (top 25; a word that keeps out good stories is too strict, "
                   "loosen it in config/express.yaml):", "",
                   *_table(["list:word", "count"], [[k, int(v)] for k, v in terms.most_common(25)]), ""]
+        for key, title, head in (("story_in", "Express stories that qualified (lane:origin kind):", "lane:origin"),
+                                 ("story_out", "Express stories that did not qualify, and why (a reason that "
+                                  "dominates is the dial to look at):", "reason")):
+            c: Counter = Counter()
+            for e in ex:
+                c.update({k: v for k, v in (e["express"].get(key) or {}).items() if _num(v)})
+            if c:
+                L += [title, "", *_table([head, "count"], [[k, int(v)] for k, v in c.most_common()]), ""]
+        wrote = sum(len((e.get("desk") or {}).get("express") or []) for e in entries)
+        L += [f"Express articles written by the desk in these runs: {wrote}.", ""]
         last = (ex[-1]["express"].get("now") or {})
         if last:
             L += ["At the last run: " + ", ".join(f"{k} {v}" for k, v in last.items()) + ".", ""]

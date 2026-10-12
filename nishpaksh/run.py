@@ -113,8 +113,11 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     stats["rated"] = step("priority", lambda: priority.rank_new(store, router))
     focus = set(priority.queue(store))
     stats["queue"] = len(focus)
+    # express stories (express.py): their own small reading cap, read from one outlet; apart from the queue
+    express_ids = step("express_focus", lambda: _express.focus(store)) or set()
+    focus |= express_ids
     # time plan: reading stops 20 minutes before the deadline; the story stage gets the rest
-    stats["extracted"] = extract.extract_pending(store, router, deadline - 20 * 60, focus=focus)
+    stats["extracted"] = extract.extract_pending(store, router, deadline - 20 * 60, focus=focus, express=express_ids)
 
     # published stories are closed (editions.py): never re-analysed, re-read or rewritten
     from . import editions
@@ -155,12 +158,15 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         match.match_story(store, router, sid)
         # merge duplicate statements, mark contradictions, one spelling per name: only for stories
         # that can be published (it costs a model call)
-        if origins.independent_read_outlets(store, sid) >= SETTINGS.qualify_min_outlets:
-            consolidate_story(store, router, sid)
+        n_read = origins.independent_read_outlets(store, sid)
+        if n_read >= SETTINGS.qualify_min_outlets or (sid in express_ids and n_read >= 2):
+            consolidate_story(store, router, sid)      # two outlets of an express story: conflicts are marked first
         perspectives.analyze_story(store, sid)
         if origins.assess_story(store, router, sid):
             # interim rule while perspectives are unknown: 3+ independent outlets, 2+ origins
             perspectives.mark_qualified(store, sid, "interim")
+        elif sid in express_ids and _express.assess(store, sid):
+            perspectives.mark_qualified(store, sid, "express")     # one or two outlets, a named origin (express.py)
     analysed = _parallel(dirty, analyse, deadline - 12 * 60, workers)
     stats["global_clusters"] = perspectives.recompute_global(store)
     # labels may have changed (or the clusters gone): re-label analysed stories (code only). A
@@ -169,6 +175,8 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         perspectives.analyze_story(store, sid)
         if origins.assess_story(store, None, sid):
             perspectives.mark_qualified(store, sid, "interim")
+        elif sid in express_ids and _express.assess(store, sid):
+            perspectives.mark_qualified(store, sid, "express")
 
     # a story whose read articles were grouped on another embedding model's vectors cannot be
     # trusted to be one event (real data: one such "story" mixed GST, a temple and a phone launch);
@@ -214,6 +222,8 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
                  claims_checked=checked, colours_matured=matured,
                  live_pages=len(store.rows(select(_published.c.story_id))),
                  left_for_next_run=len(dirty) - len(analysed))
+    if _express.STATS:      # the funnel again: the story stage added its own counts (express.py)
+        stats["express"] = {k: (dict(v) if isinstance(v, dict) else v) for k, v in _express.STATS.items()}
     from . import heavy
     stats["heavy_cache"] = dict(heavy.stats, active=heavy.active(store))   # egress: values served locally vs fetched
     from . import positions

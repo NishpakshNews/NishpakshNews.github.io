@@ -34,11 +34,10 @@ lanes:
 embed_daily_cap: 400        # embedding texts an express article may use per quota day (spread by the day's pacing curve)
 filter_batch: 20            # headlines per cheap model question
 filter_calls_per_run: 6     # first-asking calls per run (a headline is asked about once; undecided ones wait for the next run)
-intake_per_run: 80          # new express-feed links taken per run, apart from the 400 the main feeds share
+intake_per_run: 120         # new express-feed links taken per run, apart from the 400 the main feeds share
 intake_per_feed: 12         # ... and at most this many from one express feed
 reads_per_run: 3            # express stories read (Flash-Lite) per run
 seats_per_hour: 2           # the beat seat: Domains/Sport stories and express stories share it
-wait_for_second_hours: 1    # after the first outlet, wait this long for another before writing
 
 # Worked examples for the headline question (a small model: show the traps). "headline -> lane" or "-> none (why)".
 filter_examples:
@@ -374,3 +373,11 @@ allow_phrases:
   - hard court
   - indoor court
   - may day
+
+# Part 3: reading and qualifying
+wait_for_second_hours: 1    # an express story is written this long after it qualified, so a second outlet can be read and checked first
+normal_route_outlets: 3     # a story with this many independent outlets is not express: the normal rule decides
+own_voice_lanes: [sport]    # lanes where the outlet's own voice may stand for a named origin (a match result)
+# an attribution containing one of these is another media house, not an origin ("Bloomberg reported", "according to Mint")
+media_words: [reuters, bloomberg, pti, ani, ians, afp, ap, bbc, cnbc, ndtv, mint, moneycontrol, livemint, "economic times",
+  "times of india", "hindustan times", "hindu", "indian express", news, report, reports, reported, sources, media, tweet, post]
