@@ -605,6 +605,12 @@ export function createTalk(opts) {
       if (!ctx || !turnTotal || !playing.size) return 1;
       return Math.max(0, Math.min(1, (ctx.currentTime - turnStart) / turnTotal));
     },
+    // where the guide's voice is, in seconds of its current speech: `at` heard so far, `total` queued so far (null when nothing is playing);
+    // the captions give every word its moment on this clock, so the text follows what is HEARD
+    clock: () => {
+      if (!ctx || !playing.size) return null;
+      return { at: Math.max(0, ctx.currentTime - turnStart), total: turnTotal };
+    },
     get state() { return state; },
   };
 }

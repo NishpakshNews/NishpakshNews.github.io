@@ -657,9 +657,10 @@
   /* no fade at the top edge: the top line is fully clear until it moves out, and then fades by itself (.old) as it goes up */
   .tkcap .tkin { transition: transform .6s cubic-bezier(.22,.7,.2,1); will-change: transform; }
   /* a whole line at a time (owner, Oct 12 2026): the line comes up from below while it fades in; the top line fades out as it moves up.
-     The line is shown when the voice reaches its first word (talk.js pace()), so the text keeps the speed of the speech. */
+     The line is shown when the voice reaches its first word (talk.js clock(): every word has its own moment on the voice's timeline), and the line being spoken sits in the middle of the three. */
   .tkcap .tkw { opacity: 0; transition: opacity .6s ease; }
   .tkcap .tkw.on { opacity: 1; }
+  .tkcap .tkw.on.prev { opacity: 0.42; }          /* the line just before the one being spoken */
   .tkcap .tkw.old { opacity: 0; }
   @media (prefers-reduced-motion: reduce) { .tkcap .tkin, .tkcap .tkw { transition: none; } }
   .tkcard .tkgo { width: 100%; }
@@ -2805,56 +2806,73 @@ function tkCaption() {
   const c = TK.card && TK.card.querySelector(".tkcap"); if (!c) return;
   const now = TK.cap || "";
   let inn = c.querySelector(".tkin");
-  if (!inn) { inn = document.createElement("div"); inn.className = "tkin"; c.appendChild(inn); c._words = []; c._shown = ""; c._k = 0; }
+  if (!inn) { inn = document.createElement("div"); inn.className = "tkin"; c.appendChild(inn); c._words = []; c._shown = ""; c._tPrev = null; c._tLast = -1; }
   if (now !== c._shown) {
     if (c._shown && now.startsWith(c._shown) && c._words.length) {      // the guide is still talking: the new words are added (hidden until the voice gets there)
       tkAddWords(inn, c, now.slice(c._shown.length));
     } else {                                                            // a new answer
-      inn.textContent = ""; inn.style.transform = ""; c._words = []; c._k = 0; c._line = -1;
+      inn.textContent = ""; inn.style.transform = ""; c._words = []; c._tPrev = null; c._tLast = -1;
       tkAddWords(inn, c, now);
     }
     c._shown = now;
   }
   tkCapStep(c);
 }
+/* where the voice is, in seconds of the guide's current speech: {at: heard so far, total: queued so far}; null when nothing is being spoken
+   (then every word has been said) */
+function tkClock() {
+  if (TK.st !== "speaking" && TK.st !== "intro") return null;
+  let k = null; try { k = TK.talk && TK.talk.clock ? TK.talk.clock() : null; } catch (e) { k = null; }
+  return k || {at: 0, total: 0};
+}
+/* Every word gets the moment (in the voice's own timeline) when it is spoken. The transcript arrives in pieces together with the audio, so a
+   piece that arrives when T seconds of audio are queued was spoken in the stretch between the last piece's end and T: its words are spread over
+   that stretch (never faster than ~5 words a second). The text then follows the voice, not the speed at which the transcript happens to arrive. */
 function tkAddWords(inn, c, text) {
+  const fresh = [];
   for (const part of text.split(/(\s+)/)) {
     if (!part) continue;
     if (/^\s+$/.test(part)) { inn.appendChild(document.createTextNode(" ")); c._tail = " "; continue; }
     const last = c._words[c._words.length - 1];
     if (last && !/\s$/.test(c._tail || " ")) { last.textContent += part; c._tail = part; continue; }   // a word split between two pieces
-    const w = document.createElement("span"); w.className = "tkw"; w.textContent = part; inn.appendChild(w); c._words.push(w); c._tail = part;
+    const w = document.createElement("span"); w.className = "tkw"; w.textContent = part; inn.appendChild(w); c._words.push(w); c._tail = part; fresh.push(w);
   }
+  if (!fresh.length) return;
+  const ck = tkClock(), tq = ck ? ck.total : 0, m = fresh.length;
+  if (c._tPrev == null) c._tPrev = Math.max(0, tq - m * 0.4);
+  const t0 = c._tPrev, t1 = Math.max(tq, t0);
+  fresh.forEach((w, j) => { w._t = Math.max(t0 + (t1 - t0) * j / m, c._tLast + 0.2); c._tLast = w._t; });
+  c._tPrev = Math.max(tq, c._tLast);
 }
-/* the number of words that have been "said" by now: while the voice plays, in step with it; when it has stopped, all of them */
-function tkCapTarget(c) {
-  const n = c._words.length;
-  if (TK.st !== "speaking" && TK.st !== "intro") return n;
-  let f = 1; try { f = TK.talk && TK.talk.pace ? TK.talk.pace() : 1; } catch (e) { f = 1; }
-  return Math.min(n, Math.ceil(n * f));
-}
+/* A line is shown whole, once: when the voice reaches its first word, and only when the line is complete (the next line has begun, or the
+   voice has gone past its last word). The line being spoken always sits in the MIDDLE of the three; the one before it is dimmed above. */
 function tkCapStep(c) {
   const ws = c._words; if (!ws || !ws.length) { cancelAnimationFrame(c._raf); return; }
   const inn = c.querySelector(".tkin");
-  const k = Math.max(c._k || 0, tkCapTarget(c));          // never goes back
-  c._k = k;
-  const line = ws[Math.min(k, ws.length) - 1 > 0 ? Math.min(k, ws.length) - 1 : 0];
-  // lines are found by the words' heights (all words are laid out, only the ones reached are visible)
+  const ck = tkClock(), heard = ck ? ck.at : Infinity;
   const lh = parseFloat(getComputedStyle(c).lineHeight) || 21;
-  const tops = ws.map(w => w.offsetTop);
-  const row = i => Math.round(tops[i] / lh);
-  const cur = k ? row(Math.min(k, ws.length) - 1) : 0;     // the line of the latest word said
-  // the whole line shows at once: every word on a line up to the current one is on (words after the voice's position on this line too)
-  let lastOn = -1;
-  for (let i = 0; i < ws.length; i++) { if (row(i) <= cur && k) lastOn = i; }
-  for (let i = 0; i < ws.length; i++) {
-    const r = row(i), on = i <= lastOn && r > cur - 3, old = i <= lastOn && r <= cur - 3;
-    ws[i].classList.toggle("on", on); ws[i].classList.toggle("old", old);
-  }
-  inn.style.transform = `translateY(${-Math.max(0, cur - 2) * lh}px)`;
-  const more = cur > 2; c.classList.toggle("more", more);
+  const lines = [];                                        // lines are found by the words' heights (all words are laid out, only the ones reached are visible)
+  ws.forEach((w, i) => {
+    const r = Math.round(w.offsetTop / lh), L = lines[lines.length - 1];
+    if (L && L.row === r) L.last = i; else lines.push({row: r, first: i, last: i});
+  });
+  let cur = -1;
+  lines.forEach((L, n) => {
+    const reached = ws[L.first]._t <= heard;
+    const complete = n < lines.length - 1 || !ck || heard >= ws[L.last]._t + 0.6;
+    if (reached && complete) cur = n;
+    L.n = n;
+  });
+  lines.forEach(L => {
+    for (let i = L.first; i <= L.last; i++) {
+      ws[i].classList.toggle("on", L.n <= cur && L.n >= cur - 1);
+      ws[i].classList.toggle("prev", L.n === cur - 1);
+      ws[i].classList.toggle("old", L.n < cur - 1);
+    }
+  });
+  inn.style.transform = `translateY(${(1 - Math.max(cur, 0)) * lh}px)`;
   cancelAnimationFrame(c._raf);
-  if (k < ws.length || TK.st === "speaking") c._raf = requestAnimationFrame(() => tkCapStep(c));
+  if (ck || cur < lines.length - 1) c._raf = requestAnimationFrame(() => tkCapStep(c));
 }
 function tkPaint() {
   if (!TK.card) return;
@@ -2874,7 +2892,7 @@ function tkPaint() {
                  listening: [t.talkListening, TK.recap ? t.talkListeningHintR : t.talkListeningHint], ended: [isErr ? t.talkCant : t.talkEnded, msg]}[ph];
   const line = c.querySelector(".tkline");
   line.textContent = words[0];
-  if (think || ph === "connecting") { const d = document.createElement("span"); d.className = "tkdots"; d.setAttribute("aria-hidden", "true"); d.innerHTML = '<i style="--j:0"></i><i style="--j:1"></i><i style="--j:2"></i>'; line.appendChild(d); }
+  if (think) { const d = document.createElement("span"); d.className = "tkdots"; d.setAttribute("aria-hidden", "true"); d.innerHTML = '<i style="--j:0"></i><i style="--j:1"></i><i style="--j:2"></i>'; line.appendChild(d); }
   c.querySelector(".tkhint").textContent = words[1];
   const go = c.querySelector(".tkgo");
   go.textContent = ph === "ended" ? t.talkAgain : t.talkStart;
