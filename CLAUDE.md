@@ -548,6 +548,13 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   ...\"); a role written first (\"Actor Rajpal Yadav\") or the event first is fine). Names every Indian knows may open
   one: `config/known_names.yaml` (owner can extend; a surname alone counts only when it belongs to one known name).
   Still 12 words at most (card width). Published headlines never change, so this shows from the next new article.
+  **A headline never repeats an earlier one (owner, Oct 13 2026: follow-ups carried their parent's headline, later stories
+  an older story's).** `compose.recent_headlines` (published, last 7 days, not this story) and the story's parents' headlines
+  go to `write_headline(taken=, parents=)`. The prompt shows the parents and the 6 closest ones (`TAKEN_NOTE`) and asks for what
+  THIS article adds. By code (`news.repeats`): a correct headline that shares 4+ content words and half of the shorter
+  headline's (or 3 words and three quarters) with a taken one is a repeat, whatever the verb (stemmed words, numbers count).
+  A repeat loses to any fresh candidate; if both tries give only repeats, the least repeated is used (an article is never
+  held back for this). Tune with `REPEAT_SHARED`, `REPEAT_RATIO`, `REPEAT_CLOSE`.
 - **Threads:** a later development links to its earlier story (parent → daughter, many-to-many).
   Daughter opens with the new development + ≤2 background sentences + "Earlier in this story"; the
   parent gains no link (it is closed). Archived parents are found through the branch index.
