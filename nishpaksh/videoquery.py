@@ -82,9 +82,10 @@ def code_phrase(headline: str, limit: int = 3) -> str:
     return " ".join(out)
 
 
-def clean_phrase(phrase: str | None, headline: str, deva: bool) -> str:
+def clean_phrase(phrase: str | None, headline: str, deva: bool, thread: list[str] | None = None) -> str:
     """The model's phrase if it is usable, else ''. Usable: 1-5 words, no figure, in the right script, no name of
-    the headline, and (English) it shares a word beginning with the headline's."""
+    the headline (or of the story's earlier headlines, `thread`), and (English) it shares a word beginning with
+    the headline's or an earlier one's."""
     p = re.sub(r"\s+", " ", (phrase or "").strip().strip("\"'`“”.,;:")).strip()
     if not p or re.search(r"[\d०-९]", p):
         return ""
@@ -95,10 +96,12 @@ def clean_phrase(phrase: str | None, headline: str, deva: bool) -> str:
     if deva != has_deva or (not deva and not p.isascii()):
         return ""
     if not deva:
-        names = _capitalised_inside(headline)
+        names = set()
+        for h in [headline] + list(thread or []):
+            names |= _capitalised_inside(h)
         if any(w.lower().strip("'’-") in names for w in ws):
             return ""
-        heads = {w.lower()[:4] for w in _words(headline) if len(w) >= 4}
+        heads = {w.lower()[:4] for h in [headline] + list(thread or []) for w in _words(h) if len(w) >= 4}
         if not any(w.lower()[:4] in heads for w in ws if len(w) >= 4):
             return ""
     return p.lower() if not deva else p
@@ -119,20 +122,35 @@ If unsure: the two most important plain words of the headline.
 English headline: {en}
 Hindi headline: {hi}
 
-Reply with JSON only: {{"en": "...", "hi": "..."}}"""
+{thread}Reply with JSON only: {{"en": "...", "hi": "..."}}"""
+
+THREAD_NOTE = """EARLIER HEADLINES OF THE SAME ONGOING STORY (the headline above is only its newest step, written to say what
+is new):
+{lines}
+Videos exist about the ONGOING story or process, not about the newest step alone. Write the phrase for the ongoing
+event these headlines share, in plain words, still with no names and no numbers.
+
+"""
 
 
-def phrases(headline_en: str, headline_hi: str, router=None) -> dict[str, str]:
+def phrases(headline_en: str, headline_hi: str, router=None, thread_en: list[str] | None = None,
+            thread_hi: list[str] | None = None) -> dict[str, str]:
     """{"en": phrase, "hi": phrase} (a language with no words is left out). One small model call, every answer checked
-    by `clean_phrase`; whatever the model did not give usably, code writes."""
+    by `clean_phrase`; whatever the model did not give usably, code writes. `thread_en`/`thread_hi`: the headlines
+    of the story's earlier stories (parents, nearest first): the follow-up's own headline says only what is new, so
+    the model is asked for the phrase of the whole ongoing story. Same single call, no extra quota."""
     out = {"en": "", "hi": ""}
+    thread_en, thread_hi = [h for h in thread_en or [] if h], [h for h in thread_hi or [] if h]
     if router is not None and (headline_en or headline_hi):
         try:
-            res = router.call("page", PHRASE_PROMPT.format(en=headline_en or "-", hi=headline_hi or "-"),
+            lines = [f"English: {e}" + (f" | Hindi: {h}" if h else "") for e, h in zip(thread_en, thread_hi + [""] * len(thread_en))]
+            lines += [f"Hindi: {h}" for h in thread_hi[len(thread_en):]]
+            note = THREAD_NOTE.format(lines="\n".join(lines)) if lines else ""
+            res = router.call("page", PHRASE_PROMPT.format(en=headline_en or "-", hi=headline_hi or "-", thread=note),
                               json_out=True, max_output_tokens=200)
             data = res.data if isinstance(res.data, dict) else {}
-            out["en"] = clean_phrase(data.get("en"), headline_en or "", deva=False) if headline_en else ""
-            out["hi"] = clean_phrase(data.get("hi"), headline_hi or "", deva=True) if headline_hi else ""
+            out["en"] = clean_phrase(data.get("en"), headline_en or "", deva=False, thread=thread_en) if headline_en else ""
+            out["hi"] = clean_phrase(data.get("hi"), headline_hi or "", deva=True, thread=thread_hi) if headline_hi else ""
         except Exception:  # noqa: BLE001  (quota, refusal, bad JSON: code does it)
             pass
     if not out["en"] and headline_en:
@@ -143,9 +161,40 @@ def phrases(headline_en: str, headline_hi: str, router=None) -> dict[str, str]:
 
 
 # ------------------------------------------------------------------------------------------------ the story's words
-def document(headline: str, paragraphs: list[str] | None = None) -> dict[str, float]:
+THREAD_WEIGHT = 2.0       # a word of an earlier headline of the same story (the video may use the story's old words)
+NEIGHBOUR_WEIGHT = 0.75   # a word that two or more other recent headlines on this topic share (a weak topic hint)
+NEIGHBOUR_MIN = 2         # ...one other headline alone says nothing about THIS story, so it adds nothing
+NEIGHBOUR_SHARED = 2      # a recent headline is a topic neighbour when it shares this many root words with the headline
+NEIGHBOURS_MAX = 6
+
+
+def neighbours(headline: str, pool: list[str], n: int = NEIGHBOURS_MAX) -> list[str]:
+    """The recent headlines of OTHER stories nearest this one: those sharing at least NEIGHBOUR_SHARED root words
+    with `headline`, most shared first. Not the story's own thread (the caller leaves that out of `pool`)."""
+    mine = roots(headline)
+    scored = []
+    for h in pool:
+        shared = len(mine & roots(h))
+        if h and h != headline and shared >= NEIGHBOUR_SHARED:
+            scored.append((shared, h))
+    scored.sort(key=lambda t: -t[0])
+    out: list[str] = []
+    for _, h in scored:
+        if h not in out:
+            out.append(h)
+    return out[:n]
+
+
+def document(headline: str, paragraphs: list[str] | None = None, thread: list[str] | None = None,
+             neighbours: list[str] | None = None) -> dict[str, float]:
     """root word -> weight for one language of one story: a headline word weighs 3, and a word of the article adds
-    half a point per mention (at most four mentions), so what the article keeps coming back to counts most."""
+    half a point per mention (at most four mentions), so what the article keeps coming back to counts most.
+
+    Owner, Oct 13 2026: headlines now avoid repeating the story's earlier ones, so a follow-up's headline names only
+    what is new, while videos are titled for the ongoing story. So the words of the story's earlier headlines
+    (`thread`) weigh at least THREAD_WEIGHT even when this article never uses them, and a word that two or more
+    other recent headlines on the topic (`neighbours`, other stories) share weighs at least NEIGHBOUR_WEIGHT. These
+    only RAISE a weight to that floor; the headline's and the article's own words keep theirs."""
     w: dict[str, float] = {}
     for r in roots(headline):
         w[r] = 3.0
@@ -159,6 +208,16 @@ def document(headline: str, paragraphs: list[str] | None = None) -> dict[str, fl
             counts[r] = counts.get(r, 0) + 1
     for r, n in counts.items():
         w[r] = w.get(r, 0.0) + 0.5 * min(n, 4)
+    for h in thread or []:
+        for r in roots(h):
+            w[r] = max(w.get(r, 0.0), THREAD_WEIGHT)
+    seen_in: dict[str, int] = {}
+    for h in neighbours or []:
+        for r in roots(h):
+            seen_in[r] = seen_in.get(r, 0) + 1
+    for r, k in seen_in.items():
+        if k >= NEIGHBOUR_MIN:
+            w[r] = max(w.get(r, 0.0), NEIGHBOUR_WEIGHT)
     return w
 
 
@@ -257,3 +316,30 @@ def video_language(title: str, tag: str | None = None, channel_lang: str | None 
     if tag == "en" or channel_lang == "en" or words & ENGLISH_WORDS:
         return "en"
     return None
+
+
+# ------------------------------------------------------------------------------------------------ shorts
+# YouTube Shorts (owner, Oct 13 2026): made by anyone, add nothing to the story; the one reliable sign is how short
+# they are. A Short could be up to 60 s, since Oct 2024 up to 3 min, so duration alone cannot catch them all: the
+# #shorts tag in the title or description is the second sign. 90 s keeps a real news clip of a minute and a half.
+MIN_SECONDS = 90
+SHORT_TAG = re.compile(r"(?i)#shorts?\b|\bshorts?\s*video\b|\byoutube\s*shorts?\b")
+_ISO_DURATION = re.compile(r"^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$")
+
+
+def parse_duration(iso: str | None) -> int | None:
+    """Seconds in an ISO 8601 duration as YouTube gives it ('PT1M5S' -> 65), or None when missing, unreadable or
+    zero ('P0D' is what a live broadcast reports: its length is not known yet, so it is not called short)."""
+    m = _ISO_DURATION.match((iso or "").strip())
+    if not m:
+        return None
+    d, h, mi, sec = (int(x or 0) for x in m.groups())
+    total = d * 86400 + h * 3600 + mi * 60 + sec
+    return total or None
+
+
+def is_short(title: str | None, desc: str | None, seconds: int | None, min_seconds: int = MIN_SECONDS) -> bool:
+    """A YouTube Short: shorter than `min_seconds` (when the length is known), or tagged as one."""
+    if seconds is not None and seconds < min_seconds:
+        return True
+    return bool(SHORT_TAG.search(f"{title or ''} {desc or ''}"))

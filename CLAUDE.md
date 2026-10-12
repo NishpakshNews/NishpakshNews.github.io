@@ -919,6 +919,20 @@ every outlet that covered it, and colours every sentence by how well it is suppo
     `lang`; the site trusts it (`vlang`). Cost 200 units a story (400 with the older search) of 10,000/day (`DAY_UNITS`
     9,000), `limit` 6 stories a run. A story that found nothing is tried once more about 3 h later (`videos._due`). Needs
     `YOUTUBE_API_KEY`. Not run against the live API (no network or key in the sandbox).
+    **Ongoing story + no Shorts (owner, Oct 13 2026).** (4) Headlines now avoid repeating earlier ones, so a follow-up's
+    headline names only what is NEW while videos are titled for the whole story. `videos._thread` reads the story's earlier
+    headlines from `story_links` (parents, their parents, nearest first, plus the root; at most `THREAD_MAX` 4; DB only).
+    They go (a) into the same single phrase call (`videoquery.phrases(thread_en=, thread_hi=)`, `THREAD_NOTE`: write the phrase
+    for the ONGOING event; `clean_phrase` accepts a word shared with an earlier headline and refuses an earlier headline's
+    names) and (b) into the ranking words (`videoquery.document(thread=)`: floor `THREAD_WEIGHT` 2.0, so a video using the
+    story's old words scores even though the new article never repeats them). Headlines of OTHER recent stories on the topic
+    (`videoquery.neighbours`: share 2+ root words, last 7 days, at most 6) count only as a WEAK hint: a word counts
+    (`NEIGHBOUR_WEIGHT` 0.75) only when 2+ of them share it, never in the search phrase, because another story's headline
+    says nothing about THIS story's event. No extra YouTube or model call. (5) SHORTS are dropped first, before ranking and
+    before the fill-up to `MIN_SHOW`: shorter than `videoquery.MIN_SECONDS` (90) or tagged #shorts (`is_short`). The length
+    comes from `contentDetails` in the same `videos.list` call (`videos._details`, still 1 unit); a live broadcast ('P0D')
+    or a failed details call means unknown length: kept unless tagged. More videos are now dropped, so the older no-date search
+    (+200 units) runs a little more often.
   - **On the site: trial_version_2.1 (owner, Oct 9 2026; designed on the canvas, approved, built into site/index.html).**
     A plain interface published earlier without his asking was taken back the same night: never publish site/UI changes
     he has not approved. 2.1: a 30px menu button (the reader's initial once signed in) at the LEFT of the wordmark; the

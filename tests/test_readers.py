@@ -4,7 +4,7 @@ import json
 
 from nishpaksh import audio, notify, people, places, videos
 from nishpaksh.db import (Store, audio_files, audio_requests, follows, insert, notifications, published,
-                          push_subscriptions, recaps, select)
+                          push_subscriptions, recaps, select, story_links)
 from nishpaksh.feed import card
 
 
@@ -202,6 +202,51 @@ def test_videos_are_fetched_once_for_new_articles(tmp_path):
     assert got == {"e1": "en", "h1": "hi"}                      # the Bengali video is never shown
     assert videos.fetch_new(s, key="k", get=get) == []         # once
     assert videos.fetch_new(s, key="", get=get) == []          # no key: nothing
+
+
+def test_videos_follow_the_ongoing_story_through_the_thread_and_skip_shorts(tmp_path):
+    """Owner, Oct 13 2026: a follow-up's headline says only what is new, so the earlier headlines of its thread weigh
+    in the ranking; YouTube Shorts (under MIN_SECONDS, or tagged #shorts) are never shown, not even to fill the card."""
+    s = _store(tmp_path)
+    now = dt.datetime.utcnow()
+    _publish(s, 400, now - dt.timedelta(hours=40), _payload("Delhi Police detains CJP leader Abhijit",
+                                                             [("Detained.", "established")]))
+    _publish(s, 500, now, _payload("Court seeks report on bail plea", [("Court asked.", "established")]))
+    s.exec(insert(story_links).values(parent_id=400, child_id=500, created_at=now, reason="t"))
+    head = "Delhi Police detains CJP leader Abhijit"
+    assert videos._thread(s, 500) == ([head], [head])
+    assert videos._thread(s, 400) == ([], [])
+
+    def item(vid, title):
+        return {"id": {"videoId": vid}, "snippet": {"title": title, "channelTitle": "NDTV", "channelId": "c" + vid,
+                                                    "publishedAt": "2026-10-12T10:00:00Z"}}
+    found = [item("p1", "Abhijit detained: CJP leader taken into custody over the weekend"),
+             item("sh", "Court bail plea update from the capital"),            # matches the NEW headline, but 40 s
+             item("sh2", "CJP leader Abhijit detained and the story of the day #shorts"),
+             item("x", "Cricket: India win the toss in Mumbai")]
+    lengths = {"p1": "PT5M", "sh": "PT40S", "sh2": "PT10M", "x": "PT10M"}
+
+    class R:
+        def __init__(self, items):
+            self.items = items
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"items": self.items}
+
+    def get(url, params, timeout):
+        if "id" in params:
+            assert params["part"] == "snippet,contentDetails"
+            return R([{"id": v, "snippet": {"defaultAudioLanguage": "en"}, "contentDetails": {"duration": d}}
+                      for v, d in lengths.items()])
+        return R(found)
+    assert videos.fetch_new(s, key="k", get=get) == [500]
+    from nishpaksh.db import videos as vt
+    ids = [v["id"] for v in s.one(select(vt))["items"]]
+    assert ids[0] == "p1"                         # found only through the thread's earlier headline
+    assert "sh" not in ids and "sh2" not in ids   # Shorts: by length, and by the #shorts tag
 
 
 def test_feed_card_carries_length_places_and_people():

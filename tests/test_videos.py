@@ -209,3 +209,108 @@ def test_gather_returns_none_when_a_search_fails():
     def get(url, params, timeout):
         raise RuntimeError("quota")
     assert _gather(_Store(), "KEY", [("x y", "en")], None, get) is None
+
+
+# ---------------------------------------------------------------- the ongoing story (owner, Oct 13 2026)
+def test_earlier_headlines_of_the_thread_raise_the_ranking_words_to_a_floor():
+    """A follow-up's headline says only what is new; the video is titled with the story's old words."""
+    plain = vq.document("Court seeks report on bail plea", [])
+    assert "abhij" not in plain
+    doc = vq.document("Court seeks report on bail plea", [], thread=["Delhi Police detains CJP leader Abhijit"])
+    assert doc["abhij"] == vq.THREAD_WEIGHT and doc["court"] == 3.0          # floors only raise: own words keep theirs
+    vids = [{"title": "Abhijit detained: CJP leader taken into custody"}, {"title": "Cricket highlights"}]
+    assert vq.scores(vids, doc)[0] > vq.scores(vids, plain)[0] == 0
+
+
+def test_a_thread_word_never_lowers_a_heavier_headline_word():
+    doc = vq.document("Opposition march to Supreme Court", [], thread=["Opposition march planned"])
+    assert doc["oppos"] == 3.0 and doc["march"] == 3.0
+
+
+def test_topic_neighbours_count_only_for_words_two_other_headlines_share():
+    pool = ["Heavy rain floods Patna streets as river rises", "River rises in Patna, schools shut",
+            "Cricket: India win toss", "Sensex ends flat"]
+    head = "Patna flood relief camps open as river rises"
+    near = vq.neighbours(head, pool)
+    assert set(near) == set(pool[:2])
+    one = vq.document(head, [], neighbours=near[:1])
+    assert "schoo" not in one and "heavy" not in one                         # one other headline alone adds nothing
+    two = vq.document(head, [], neighbours=near)
+    assert two["patna"] == 3.0                                               # the headline's own weight is kept
+    assert "cricket" not in two
+
+
+def test_neighbours_need_shared_words_and_skip_the_headline_itself():
+    assert vq.neighbours("Rain in Patna", ["Rain in Patna", "Cricket final", "Patna rain damage"]) == \
+        ["Patna rain damage"]                                   # itself skipped; no shared words, no neighbour
+    assert vq.neighbours("Patna floods worsen", ["Patna floods: rescue begins", "Delhi smog"]) == \
+        ["Patna floods: rescue begins"]
+
+
+def test_phrases_give_the_model_the_threads_headlines_in_the_same_single_call():
+    calls = []
+
+    class Res:
+        data = {"en": "arrest of leader", "hi": "नेता की गिरफ्तारी"}
+
+    class Router:
+        def call(self, role, prompt, **kw):
+            calls.append(prompt)
+            return Res()
+    out = vq.phrases("Court seeks report on bail plea", "अदालत ने जमानत पर रिपोर्ट मांगी", Router(),
+                     thread_en=["Delhi Police arrests leader Abhijit"], thread_hi=["दिल्ली पुलिस ने नेता को गिरफ्तार किया"])
+    assert len(calls) == 1 and "Delhi Police arrests leader Abhijit" in calls[0] and "ONGOING" in calls[0]
+    assert out["en"] == "arrest of leader"          # shares 'arre' with the EARLIER headline, accepted because of it
+    calls.clear()
+    vq.phrases("Court seeks report on bail plea", "", Router())
+    assert "EARLIER HEADLINES" not in calls[0]       # no thread: the prompt is as before
+
+
+def test_a_phrase_with_a_name_from_an_earlier_headline_is_still_refused():
+    assert vq.clean_phrase("abhijit arrest", "Court seeks report on bail plea", False,
+                           thread=["Delhi Police arrests leader Abhijit"]) == ""
+    assert vq.clean_phrase("leader arrest", "Court seeks report on bail plea", False,
+                           thread=["Delhi Police arrests leader Abhijit"]) == "leader arrest"
+
+
+# ---------------------------------------------------------------- Shorts (owner, Oct 13 2026)
+def test_durations_are_read_and_a_live_broadcast_has_no_length_yet():
+    assert vq.parse_duration("PT45S") == 45 and vq.parse_duration("PT1M5S") == 65
+    assert vq.parse_duration("PT1H2M3S") == 3723
+    assert vq.parse_duration("P0D") is None and vq.parse_duration("") is None and vq.parse_duration(None) is None
+
+
+def test_a_short_is_a_video_under_the_minimum_or_tagged_as_one():
+    assert vq.is_short("Rally", "", 45) and vq.is_short("Rally", "", vq.MIN_SECONDS - 1)
+    assert not vq.is_short("Rally", "", vq.MIN_SECONDS)
+    assert vq.is_short("Rally #Shorts", "", 600) and vq.is_short("Rally", "watch on YouTube Shorts", None)
+    assert not vq.is_short("Rally", "", None)                      # length unknown (live, or the call failed): kept
+
+
+def test_choose_drops_shorts_before_ranking_and_before_the_fill_up():
+    from nishpaksh.videos import choose
+    docs = {"en": vq.document("Opposition march to the Supreme Court", []), "hi": {}}
+    cands = [_video("s1", "Opposition march to the Supreme Court today", "A"),        # best match, but 40 s
+             _video("s2", "Opposition march Supreme Court #shorts", "B"),             # tagged, length unknown
+             _video("ok", "Opposition march reaches the Supreme Court", "C"),
+             _video("f1", "Weather in Delhi this week", "D")]
+    tags = {v["id"]: "en" for v in cands}
+    got = [v["id"] for v in choose(cands, docs, tags, seconds={"s1": 40, "ok": 300, "f1": 200})]
+    assert "s1" not in got and "s2" not in got and got[0] == "ok"
+    # fill-up: with every video short, the card stays empty rather than showing Shorts
+    shorts = [_video(str(i), f"Opposition march clip {i}", str(i)) for i in range(4)]
+    assert choose(shorts, docs, {v["id"]: "en" for v in shorts}, seconds={v["id"]: 30 for v in shorts}) == []
+
+
+def test_details_return_language_tag_and_length_in_one_call():
+    from nishpaksh.videos import _details
+    seen = []
+
+    def get(url, params, timeout):
+        seen.append(params)
+        return _response([{"id": "a", "snippet": {"defaultAudioLanguage": "en"}, "contentDetails": {"duration": "PT45S"}},
+                          {"id": "b", "snippet": {"defaultLanguage": "hi"}, "contentDetails": {"duration": "P0D"}},
+                          {"id": "c", "snippet": {}}])
+    got = _details("KEY", ["a", "b", "c"], get)
+    assert len(seen) == 1 and seen[0]["part"] == "snippet,contentDetails"
+    assert got == {"a": {"tag": "en", "seconds": 45}, "b": {"tag": "hi", "seconds": None}, "c": {"tag": None, "seconds": None}}
