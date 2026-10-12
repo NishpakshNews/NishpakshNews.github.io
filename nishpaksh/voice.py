@@ -340,3 +340,81 @@ def is_body(name: str | None) -> bool:
     last = words[-1].lower() if words else ""
     return last in BODY_WORDS or any(w.lower() in ("department", "ministry", "commission", "court", "trust", "party",
                                                        "government", "police", "council") for w in words[-2:])
+
+
+# ------------------------------------------------------------------ a speaker named inside what they say, or too vaguely
+# (owner, Oct 13 2026: "The Chief Justice responded to Gandhi's letter the previous night, Kant said." reads as two
+# people; "Opposition leaders sought a meeting ..., the leaders said." says nothing of who)
+BARE_GROUPS = {"leaders", "leader", "officials", "official", "members", "member", "sources", "spokespersons",
+               "spokesperson", "lawmakers", "ministers", "workers", "activists", "representatives", "party", "parties",
+               "delegation", "group", "organisers", "organizers", "protesters", "residents", "authorities"}
+_SKIP = {"also", "senior", "the", "and", "for", "india", "said", "told"}
+
+
+def _label_words(who: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z]{3,}", who.lower())} - _SKIP
+
+
+def refers_to_speaker(body: str, speaker: str | None) -> bool:
+    """True when the content of a statement already names its own speaker: by surname or name anywhere, by role
+    (\"the Chief Justice\", \"Opposition leaders\") within its first ten words, where it is the subject."""
+    if not body or not speaker:
+        return False
+    low = body.lower()
+    first = set(re.findall(r"[a-z]{3,}", " ".join(low.split()[:10])))
+    allw = set(re.findall(r"[a-z]{3,}", low))
+    words = _label_words(speaker) | speaker_words(speaker)
+    own = {x for x in words}
+    for w in words:
+        if w in ROLE_WORDS or w in BARE_GROUPS:
+            if w in first and _role_is_speaker(body, w, own):
+                return True
+        elif w in allw:
+            return True
+    return False
+
+
+def _role_is_speaker(body: str, role: str, own: set[str]) -> bool:
+    """\"the Chief Minister\" in the body is the speaker unless it is followed by another person's name
+    (\"Chief Minister Mamata Banerjee\") or another place (\"Chief Minister of Punjab\")."""
+    for m in re.finditer(rf"\b{re.escape(role)}\b", body, re.I):
+        nxt = re.findall(r"[\w'’.-]+", body[m.end():])
+        while nxt and nxt[0].lower() in own:            # the rest of the same title (\"Chief\" + \"Minister\")
+            nxt = nxt[1:]
+        nxt = nxt[:3]
+        if not nxt:
+            return True
+        t0 = nxt[0]
+        if t0[:1].isupper() and t0.lower() not in own:
+            continue                                    # another person's name follows the role
+        if t0.lower() == "of" and len(nxt) > 1 and nxt[1][:1].isupper() and nxt[1].lower() not in own | {"india"}:
+            continue                                    # \"of Punjab\": another office
+        return True
+    return False
+
+
+def self_attributed(sentence: str, speakers: list[str]) -> str | None:
+    """The trailing speaker (\"..., Kant said.\") when the words before it already name the same speaker; else None."""
+    t = (sentence or "").strip()
+    m = TRAIL_WHO.search(t)
+    if not m:
+        return None
+    who = m.group("who").strip()
+    body = t[:m.start()]
+    names = [who] + [sp for sp in speakers if sp and speaker_key(sp) == speaker_key(who) or sp and (_label_words(sp) & _label_words(who))]
+    return who if any(refers_to_speaker(body, n) for n in names) else None
+
+
+def vague_speaker(sentence: str, speakers: list[str]) -> str | None:
+    """The trailing speaker when it is a bare group word (\"the leaders said\") and the statement's speaker has
+    more words than that (\"Opposition leaders\"): the detail was dropped."""
+    m = TRAIL_WHO.search((sentence or "").strip())
+    if not m:
+        return None
+    who = re.sub(r"^(?:the|a|an)\s+", "", m.group("who").strip().lower())
+    if who not in BARE_GROUPS:
+        return None
+    for sp in speakers:
+        if sp and len(re.findall(r"[A-Za-z]+", sp)) > 1 and sp.lower().split()[-1] == who:
+            return m.group("who")
+    return None

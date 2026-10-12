@@ -26,6 +26,7 @@ import datetime as dt
 import logging
 import re
 
+from . import clock
 from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
@@ -170,7 +171,7 @@ def _pick(items: list[dict]) -> tuple[list[int], int | None]:
 
 # ------------------------------------------------------------------------------------------- headline
 
-HEADLINE_PROMPT = """Write THREE different headlines for this news story, for a reader who has never heard of it.
+HEADLINE_PROMPT = """{now}Write THREE different headlines for this news story, for a reader who has never heard of it.
 Each: at most 12 words, plain English, sentence case (capital letters only for names). A good headline tells
 the outcome and the one detail that makes it matter, so the reader wants the article. "Who did what" alone is
 not enough.
@@ -191,6 +192,10 @@ Rules:
 4. Only what the statements say: no number, name or cause ("due to", "amid", "because") that is not in them.
    Never "reportedly", "reports say". Use a figure only when it carries the story (a toll, an amount, a deadline).
 5. Short words, no jargon, no abbreviation a reader may not know.
+5b. Tense comes from NOW and the date of the newest development: happened today or yesterday -> present tense
+   (\"declines\"); not yet happened (dated after NOW) -> future (\"to hear\", \"will\"), never present or past; a
+   development of several days ago is not today's headline unless it is all the statements carry, then simple past.
+   Never \"had\" or \"has / have\" for a plain event.
 {dispute}
 Weak -> strong:
 - "India Block leaders hold protest near Jantar Mantar" (the setting)
@@ -208,7 +213,7 @@ Weak -> strong:
 - police put a toll at 40 and families at 50: "Building collapse kills 40" (takes a side)
   -> "Seemapuri collapse: police count 40 dead, families say 50"
 {thread}
-THE NEWS: {news}
+THE NEWS: {news}{news_when}
 {latest}The article opens: {lead}
 Other statements (for one detail, if needed):
 {others}
@@ -437,7 +442,9 @@ def write_headline(router: Router | None, news: dict, items: dict[int, dict], le
     latest_text = latest["text"] if latest else ""
     disputed, versions = _disputed_answers(news, items)
     ctx = f"\nThis is a new development in an ongoing story ({thread}): headline the NEW development.\n" if thread else ""
+    ago = clock.relative(((latest or news).get("time") or {}).get("start"))
     prompt = HEADLINE_PROMPT.format(
+        now=clock.now_line().split("\n", 1)[0] + "\n\n", news_when=f" (dated: {ago})" if ago else "",
         dispute=DISPUTE_NOTE.format(versions=versions) if versions else "", thread=ctx, news=news["text"],
         newest="the one marked LATEST" if latest else "THE NEWS", latest=LATEST_NOTE.format(latest=latest_text) if latest else "",
         lead=lead or news["text"], others="\n".join(f"- {i['text']}" for i in others) or "- (none)")

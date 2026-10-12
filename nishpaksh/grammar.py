@@ -111,12 +111,22 @@ def shape_line(item: dict, status: str) -> str | None:
         if sp:
             return f'"<the claim>, {sp} said", then that it is denied (the denial is given with the statement)'
         return None
+    if sp and voice.refers_to_speaker(voice.split(item.get("text") or "", sp)[0], sp):
+        # the statement is about its own speaker ("The Chief Justice responded to the letter", said by the Chief
+        # Justice): "..., Kant said." would read as two people (owner, Oct 13 2026)
+        return (f"the content is about {sp} themselves: write it plainly with them as the subject and do NOT add "
+                f'", {_surname_of(sp)} said." after it; he / she only if marked in the people list, otherwise '
+                f"use the name or the role once, never both")
     if sp:
         act = voice.ACT.search(item.get("text") or "")
         if act:
             return f'pin it on {sp} with the statement\'s own verb "{act.group(0).lower()}", never a stronger one'
         return f'"<the content>, {sp} said."'
     return None
+
+
+def _surname_of(name: str) -> str:
+    return voice._surname(name) or name
 
 
 # ------------------------------------------------------------------ empty set-up
@@ -221,7 +231,33 @@ def _pronoun(text: str, ids: list[int], by_id: dict, scope: set[str]) -> str | N
     return next(iter(speakers.values())) + text[len(m.group(1)):]
 
 
+def _self_attr(text: str, ids: list[int], by_id: dict, scope: set[str]) -> str | None:
+    """"The Chief Justice responded to the letter, Kant said.": the speaker is already the subject, so the
+    attribution is taken off and the plain sentence stays. Never for a disputed or false statement (they need their
+    holder named) or when other speakers are among the statements."""
+    if any(by_id[i]["verdict"] in ("false", "disputed") for i in ids):
+        return None
+    speakers = {voice.speaker_key(by_id[i]["speaker"]) for i in ids if by_id[i].get("speaker")}
+    m = voice.TRAIL_WHO.search(text.strip())
+    if not m or len(speakers) != 1:
+        return None
+    head = text.strip()[:m.start()].rstrip(" ,")
+    return head + "." if len(head.split()) >= 4 else None
+
+
+def _specific(text: str, ids: list[int], by_id: dict, scope: set[str]) -> str | None:
+    """"..., the leaders said." for "Opposition leaders": the speaker as the statement gives it."""
+    full = {by_id[i]["speaker"] for i in ids if by_id[i].get("speaker")}
+    m = voice.TRAIL_WHO.search(text.strip())
+    if not m or len(full) != 1:
+        return None
+    t = text.strip()
+    return t[:m.start("who")] + next(iter(full)) + t[m.end("who"):]
+
+
 REPAIRS = {
+    "speaker attributes himself": _self_attr,
+    "speaker not specific": _specific,
     "not a full sentence": _close,
     "claim without its speaker": _pin,
     "false without saying so": _false,

@@ -101,23 +101,80 @@ def _units(ordered: list[dict]) -> list[list[dict]]:
     return sorted(units.values(), key=lambda u: pos[u[0]["id"]])
 
 
-def _pack(units: list[list[dict]], words) -> list[list[dict]]:
-    """Units into paragraphs: closed at MAX_STATEMENTS, or when the subject changes once it has MIN_STATEMENTS
-    (a paragraph of one statement takes the next unit whatever it is about: seven one-sentence paragraphs
-    in "Explained" were the failure, story 13792). A lone last statement joins the paragraph before it."""
+# words every Indian story has: sharing only these does not make two statements one subject (\"Delhi Police\" is in a
+# complaint and in a protest)
+COMMON = {"delhi", "police", "government", "minister", "court", "india", "indian", "party", "leader", "leaders",
+          "state", "election", "commission", "chief", "union", "supreme", "monday", "tuesday", "wednesday",
+          "thursday", "friday", "saturday", "sunday", "october", "september", "november", "official", "officials"}
+
+
+def _related(a: set, b: set) -> bool:
+    """Do two statements share a subject? A shared name or key word counts 1, a shared everyday word a third."""
+    shared = a & b
+    return sum(1 / 3 if w in COMMON else 1 for w in shared) >= 1
+
+
+def _lean(u: list[dict]) -> bool:
+    from . import narrative
+    return bool(narrative.PRONOUN_START.match((u[0].get("text") or "").strip()))
+
+
+def _cluster(units: list[list[dict]], words) -> list[list[dict]]:
+    """Units about the same thing side by side (owner, Oct 13 2026: a paragraph read \"transferred the complaints to
+    the Crime Branch. Then the Supreme Court issued a notice on the Election Commission. Delhi Police denied
+    permission for the protest.\": time order put three unrelated facts in one paragraph). A unit that leans on the
+    one before it (\"He added ...\") stays with it. The rest are grouped by subject: the first unit, then the earliest
+    one that shares its subject, and so on; when none does, the earliest left starts a new group."""
+    glued: list[list[dict]] = []
+    for u in units:
+        if glued and _lean(u):
+            glued[-1] = glued[-1] + u
+        else:
+            glued.append(list(u))
+    left = list(glued)
+    out: list[list[dict]] = []
+    while left:
+        cur = left.pop(0)
+        out.append(cur)
+        grp_words = set().union(*(words(i) for i in cur))
+        while True:
+            nxt = next((u for u in left if _related(grp_words, set().union(*(words(i) for i in u)))), None)
+            if nxt is None:
+                break
+            left.remove(nxt)
+            out.append(nxt)
+            grp_words = set().union(*(words(i) for i in nxt))       # the next one must fit the one before it
+    return out
+
+
+def _pack(units: list[list[dict]], words, strict: bool = True) -> list[list[dict]]:
+    """Units into paragraphs: closed at MAX_STATEMENTS, or when the next unit is not about what the paragraph is
+    about. `strict` (every section but one speaker's own argument): units are first grouped by subject, a unit
+    joins a paragraph only if it shares a subject with the unit before it, and a lone statement stays alone rather
+    than join a paragraph it has nothing to do with. Not strict (a speaker's argument): the earlier rule, a
+    paragraph changes subject after MIN_STATEMENTS statements."""
+    if strict:
+        units = _cluster(units, words)
     paras: list[list[dict]] = []
     cur: list[dict] = []
     cur_words: set = set()
+    last_words: set = set()
     for u in units:
         w = set().union(*(words(i) for i in u))
-        if cur and (len(cur) + len(u) > MAX_STATEMENTS or (len(cur) >= MIN_STATEMENTS and not (w & cur_words))):
+        if strict:
+            split = bool(cur) and (len(cur) + len(u) > MAX_STATEMENTS or not _related(last_words, w))
+        else:
+            split = bool(cur) and (len(cur) + len(u) > MAX_STATEMENTS
+                                   or (len(cur) >= MIN_STATEMENTS and not (w & cur_words)))
+        if split:
             paras.append(cur)
             cur, cur_words = [], set()
         cur += u
         cur_words |= w
+        last_words = w
     if cur:
         paras.append(cur)
-    if len(paras) > 1 and len(paras[-1]) == 1 and len(paras[-2]) < MAX_STATEMENTS:
+    if (not strict and len(paras) > 1 and len(paras[-1]) == 1 and len(paras[-2]) < MAX_STATEMENTS):
         tail = paras.pop()
         paras[-1] += tail
     return paras
@@ -190,7 +247,7 @@ def _say(items: list[dict], words) -> list[Para]:
             pending += group
             continue
         flush()
-        for n, part in enumerate(_pack(_units(group), words)):
+        for n, part in enumerate(_pack(_units(group), words, strict=False)):
             ids = [i["id"] for i in part]
             partners = set().union(*(narrative._partners(i) for i in part)) - set(ids)
             hit = sorted(partners & seen)

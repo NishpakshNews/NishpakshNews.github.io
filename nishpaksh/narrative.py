@@ -27,7 +27,7 @@ import logging
 import re
 import threading
 
-from . import figures, grammar, sentences, voice
+from . import clock, figures, grammar, sentences, voice
 from . import plan as planning
 from .grammar import (ATTRIBUTION_VERBS, CONNECTIVE, DISPUTE_MARKERS, FALSE_MARKERS,  # noqa: F401 (moved to grammar.py)
                       HEDGE_MARKERS)
@@ -110,6 +110,20 @@ Write as ONE author telling the story to a reader, not as a summary of reports. 
 sentence by how well it is supported, so the words never need to: NEVER write "according to reports",
 "reportedly", "reports said", "one report said", "another report said", "it is reported".
 
+{now}
+Naming people (important):
+- Never name the same person twice in one sentence, once by title and once as the speaker. When a statement is
+  about its own speaker (said by Chief Justice Surya Kant: "The Chief Justice responded to Gandhi's letter the
+  previous night") write it plainly with that person as the subject and do NOT add ", Kant said." after it.
+  Wrong: "The Chief Justice responded to Gandhi's letter the previous night, Kant said." Right: "Kant responded to
+  Gandhi's letter the previous night." (or "Kant said he responded ..." only when he is marked (he)).
+- Never attribute to a bare group word ("the leaders said", "officials said") when the statements say more. Write
+  the party, body or people the statements name ("Opposition leaders Rahul Gandhi and Mallikarjun Kharge") and
+  say it at first mention: a reader must know who "Opposition leaders" are. If the statements do not say who,
+  do not attribute to a bare title: state the fact plainly.
+- Each paragraph is about ONE thing. Do not add a sentence that is not about the paragraph's subject, and do not
+  bridge two unrelated sentences with a time word.
+
 Attribution, the way a good newspaper does it (important):
 - NEVER name a newspaper, channel or website. Do not write "X reported", "according to X" for an outlet.
 - ESTABLISHED and REPORTED (no "said by"): state plainly, with no attribution and no hedge.
@@ -176,7 +190,9 @@ paragraph if needed) and fix each failed sentence (or drop it if it cannot pass)
 they are. Each statement says which planned paragraph it belongs to ("paragraph: n"): write the statements of
 one paragraph number together, one paragraph per number, and never mix numbers. The rest of the article is shown so you continue it: do not repeat what it already says, and
 do not introduce again a person it already introduced.
-Rules as before (a SHAPE on a statement is the form to write it in, a LINK says how its sentence connects to the one before): only the statements given; no outlet named as a source; no number or speaker the
+{now}Rules as before: never name a speaker twice in one sentence (\"The Chief Justice replied, Kant said.\" is wrong:
+write \"Kant replied.\"); never attribute to a bare \"the leaders\" / \"officials\" when the statements say who; a paragraph
+is about one thing, so write no sentence that is not about its subject (a SHAPE on a statement is the form to write it in, a LINK says how its sentence connects to the one before): only the statements given; no outlet named as a source; no number or speaker the
 statements do not have; allegations name who makes them; a claim and the response to it together;
 disputes give both versions and whose they are; a sentence joining statements of different statuses is
 written in two or three "parts", each with only its own ids (as before); a speaker is named once, then the surname or role
@@ -456,7 +472,8 @@ def _statement_line(i: dict) -> str:
         line += f" | SHAPE: {shape}"
     when = english_when(i.get("time") or {})
     if when:
-        line += f" | when: {when}"
+        ago = clock.relative((i.get("time") or {}).get("start"))
+        line += f" | when: {when}" + (f" ({ago})" if ago else "")
     return line
 
 
@@ -581,6 +598,12 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
             return _no("wrong speaker")
         if voice.double_attribution(text, source_text):
             return _no("speaker named twice")
+        # "The Chief Justice responded ..., Kant said." names one person twice; "..., the leaders said." hides
+        # who they are (owner, Oct 13 2026)
+        if voice.self_attributed(text, sp_all):
+            return _no("speaker attributes himself")
+        if voice.vague_speaker(text, sp_all):
+            return _no("speaker not specific")
     # the verb that names the act is the outlets' (owner, Oct 8 2026): never "accused", "denied",
     # "threatened" for what the statements only say someone said
     if style and voice.unsupported_acts(text, source_text):
@@ -1232,13 +1255,15 @@ def _target_length(items: list[dict]) -> str:
 
 COHERE_PROMPT = """Below is one paragraph of a news article, written from numbered statements. It reads badly:
 {problem}
-Rewrite it the way a good newspaper would:
+{now}Rewrite it the way a good newspaper would:
 - a speaker's points as one argument: the main point first, then what supports it; one attribution may
   carry two points ("Kabir accused the police of interfering with voting and said 64 people had been
   detained"); the attribution may come at the end ("..., Kabir said.")
 - name each speaker in full ONCE; after that the surname or the role ("Kabir", "the MLA"); "he" or "she"
   ONLY for the people marked (he) or (she) here: {marked}
 - never "X also stated ... X further stated ..."; never open two sentences in a row the same way
+- never name a speaker twice in one sentence (not "The Chief Justice replied, Kant said."); never "the leaders said"
+  when the statements say who
 - the verb: "said", or the stronger one the statements themselves use ("accused", "denied"), never another
 - put sentences about the same subject together; split into 2 or 3 paragraphs by subject when it is long;
   join two statements in one sentence only when they are about the same thing
@@ -1279,7 +1304,7 @@ def _cohere(router: Router, paragraphs: list, keys: list, by_id: dict, banned: s
             continue
         ids = list(dict.fromkeys(i for s_ in para for i in s_["ids"]))
         marked = ", ".join(f"{p_} ({g})" for p_, g in sorted(pron.items())) or "(nobody)"
-        prompt = COHERE_PROMPT.format(problem="; ".join(problem), marked=marked,
+        prompt = COHERE_PROMPT.format(problem="; ".join(problem), marked=marked, now=clock.now_line(),
                                       paragraph=" ".join(s_["text"] for s_ in para),
                                       statements="\n".join(_statement_line(by_id[i]) for i in ids))
         try:
@@ -1558,7 +1583,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
         if background:
             bg = ("This story is a later development of an earlier story on the site. The section "
                   "\"background\" holds facts from the earlier story: give at most TWO sentences of them.\n\n")
-        prompt = WRITER_PROMPT.format(banned=", ".join(sorted(banned)) or "(none)", background=bg,
+        prompt = WRITER_PROMPT.format(banned=", ".join(sorted(banned)) or "(none)", background=bg, now=clock.now_line(),
                                       statements=planning.block(pl, by_id, _statement_line, sentences.link_line),
                                       length=_target_length(items), people=_people(items))
         drafted, model, failure = _call_writer(router, prompt)
@@ -1587,7 +1612,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
             continue
         mine = [i for i in items if sec.get(i["id"]) in group]
         prompt = FILL_PROMPT.format(
-            banned=", ".join(sorted(banned)) or "(none)", article=_article_with_sections(drafted), people=_people(items),
+            now=clock.now_line(), banned=", ".join(sorted(banned)) or "(none)", article=_article_with_sections(drafted), people=_people(items),
             keys=", ".join(k for k in group if k == "news" or any(sec.get(i["id"]) == k for i in mine)),
             statements="\n".join(f"[{sec[i['id']]}] " + _statement_line(i) + f" | paragraph: {at[i['id']] + 1}"
                                  + (f" | LINK: {how}" if (how := sentences.link_line(i, by_id.get(before.get(i['id'])))) else "")

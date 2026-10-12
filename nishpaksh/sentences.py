@@ -22,6 +22,7 @@ drops a sentence. No model in this module.
 """
 from __future__ import annotations
 
+import datetime as dt
 import re
 
 from . import grammar, voice
@@ -79,7 +80,8 @@ def link_line(item: dict, prev: dict | None) -> str | None:
                 "do not begin it with the name again")
     w, pw = _when(item), _when(prev)
     if w and pw and w != pw:
-        return f"later than #{p} ({w}): say when, or \"then\" / \"later\""
+        return (f"at a different time than #{p} ({w}): give its own date or day (\"On Monday, ...\"); use \"later\" or "
+                f"\"then\" only if #{p} is about the same thing, and never to start a paragraph")
     if _words(item["text"]) & _words(prev["text"]):
         return f"same subject as #{p}: refer back to it (\"the company\", \"it\"), do not repeat its full name"
     return None
@@ -90,6 +92,38 @@ def strip_filler(text: str) -> str | None:
     """The sentence without its empty opening word, or None when it has none."""
     t = text.strip()
     m = FILLER.match(t) or FILLER_THAT.match(t)
+    if not m or len(t) - m.end() < 15:
+        return None
+    return _cap(t[m.end():])
+
+
+# a time word that links a sentence to the one before it (owner, Oct 13 2026: "Later, ..." opened paragraphs and
+# followed sentences it had nothing to do with)
+LINKER = re.compile(r"(?i)^(?:later|then|earlier|afterwards|subsequently|meanwhile)\b\s*,?\s+")
+
+
+def _start(sent: dict, by_id: dict):
+    ts = [(by_id[i].get("time") or {}).get("start") for i in sent.get("ids") or [] if by_id.get(i)]
+    try:
+        return min(dt.datetime.fromisoformat(t) for t in ts if t)
+    except (ValueError, TypeError):
+        return None
+
+
+def earned_linker(prev: dict | None, sent: dict, by_id: dict) -> bool:
+    """A \"Later, ...\" is earned only by a sentence right before it, about the same thing, whose statements really
+    happened earlier than this one's."""
+    if not prev:
+        return False
+    a, b = _start(prev, by_id), _start(sent, by_id)
+    if a is None or b is None or not a < b:
+        return False
+    return bool(_words(str(prev.get("text") or "")) & _words(str(sent.get("text") or "")))
+
+
+def strip_linker(text: str) -> str | None:
+    t = text.strip()
+    m = LINKER.match(t)
     if not m or len(t) - m.end() < 15:
         return None
     return _cap(t[m.end():])
@@ -218,10 +252,20 @@ def polish(paragraphs: list, by_id: dict, check) -> tuple[list, dict]:
     out: list = []
     for para in paragraphs:
         new: list = []
+        linked = 0                      # earned linkers kept in this paragraph: one at most
         for sent in para:
             if not isinstance(sent, dict) or not sent.get("text"):
                 new.append(sent)
                 continue
+            if not sent.get("parts") and LINKER.match(sent["text"].strip()):
+                prev = new[-1] if new and isinstance(new[-1], dict) else None
+                if not linked and earned_linker(prev, sent, by_id):
+                    linked += 1
+                elif (bare_l := strip_linker(sent["text"])):
+                    cand = dict(sent, text=bare_l)
+                    if check(cand):
+                        sent = cand
+                        done["linker"] = done.get("linker", 0) + 1
             if sent.get("parts"):
                 one = collapse_same_parts(sent, check)
                 if one:
