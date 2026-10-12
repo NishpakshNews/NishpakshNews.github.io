@@ -2050,6 +2050,7 @@ function menuHtml() {
       <button type="button" class="mrow" data-m="notes">${ICON.inbox}<span class="grow">${esc(t.notes)}</span>${unread > 0 ? `<span class="mcount">${unread > 9 ? "9+" : unread}</span>` : ""}${ICON.chev}</button>
       <button type="button" class="mrow" data-m="recap">${ICON.recap}<span class="grow">${esc(t.recap)}</span><small>${esc(istNow().getUTCHours() >= 23 ? t.recapReadyHint : t.recapTimeHint)}</small>${ICON.chev}</button>
       <button type="button" class="mrow" data-m="sort">${ICON.sort}<span class="grow">${esc(t.sort)}</span><small>${esc(t.sorts[sortKey])}</small>${ICON.chev}</button>
+      ${canInstall() ? `<button type="button" class="mrow" data-m="install">${ICON.install}<span class="grow">${esc(t.install)}</span></button>` : ""}
       ${me ? `<div class="msep"><button type="button" class="mrow" data-m="logout" style="color:#b2251c">${ICON.out}<span class="grow">${esc(t.logout)}</span></button></div>` : ""}
     </div><div class="mpane">
       <button type="button" class="mrow" data-m="back" style="font-weight:600">${ICON.back}<span class="grow">${esc(t.sort)}</span></button>
@@ -2092,6 +2093,7 @@ mdrop.addEventListener("click", e => {
   if (m === "sort") { mdrop.classList.add("sub"); fitMenu(); }
   else if (m === "back") { mdrop.classList.remove("sub"); fitMenu(); }
   else if (m === "signin") { hideMenu(); openSheet("signin"); }
+  else if (m === "install") { if (installEvt) { doInstall(); closeMenu(); } else { hideMenu(); doInstall(); } }
   else if (m === "follow" || m === "notes" || m === "recap") asSheet(m);
   else if (m === "logout") { me = null; saveMe(); follows = new Map(); unread = 0; paintMe(); paintBadge(); closeMenu(); }
 });
@@ -2166,6 +2168,13 @@ function renderSheet() {
           <div style="min-width:0"><div style="font-size:15px;font-weight:600;line-height:1.3">${esc(v.title)}</div><div class="bnote" style="margin-top:4px">${esc(v.channel)}</div>
           <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><span class="btag" style="background:${v.lang === "hi" ? "#fbefe0" : "#e9ecfb"};color:${v.lang === "hi" ? "#8a4b00" : "#2f3a72"}">${esc(v.lang === "hi" ? t.hindi : t.english)}</span>
           ${v.primary ? `<span class="btag" style="background:#e8f3ee;color:#1d6a45">${esc(t.primary)}</span>` : ""}</div></div></a>`).join("")}</div>`);
+  } else if (sheetKind === "install") {
+    const ios = !installEvt && isIOS;
+    bsheet.innerHTML = frame(t.installTitle, `<div class="bbody">
+      <div style="display:flex;gap:14px;align-items:center"><img src="icon-192.png" alt="" width="56" height="56" style="border-radius:14px;flex:none"><p style="margin:0;font-size:15px;line-height:1.5;color:var(--ink-soft)">${esc(t.installBody)}</p></div>
+      ${installHow ? `<ol style="margin:0;padding-inline-start:22px;font-size:15px;line-height:1.7">${t.installSteps.map(x => `<li>${esc(x)}</li>`).join("")}</ol>`
+                   : `<button type="button" class="bgo brand" data-b="install">${esc(ios ? t.installShow : t.installGo)}</button>`}
+      <button type="button" class="blink" data-b="close">${esc(installHow ? t.close : t.notNow)}</button></div>`);
   }
 }
 bsheet.addEventListener("submit", async e => {
@@ -2199,8 +2208,43 @@ bsheet.addEventListener("click", async e => {
   else if (a === "switch") { authMode = authMode === "signup" ? "login" : "signup"; sheetErr = ""; renderSheet(); }
   else if (a === "play") { closeSheet(); playAudio(`${audioState.id}-${chosenLang || lang}`); }
   else if (a === "make") makeAudio();
+  else if (a === "install") doInstall();
 });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && (sheetKind || mdrop.classList.contains("on"))) { e.stopPropagation(); closeMenu(); closeSheet(); } }, true);
+
+/* install the app (owner, Oct 13 2026): a card on every open and a menu row, both only while the app is not installed.
+   Chrome / Edge / Samsung Internet send "beforeinstallprompt" only when the app is installable and not yet installed;
+   iPhone and iPad have no install prompt, so there the button shows the Add to Home Screen steps instead. */
+Object.assign(T.en, {install: "Install app", installTitle: "Install Nishpaksh", installBody: "Add Nishpaksh to your home screen. It opens full screen, loads faster and is one tap away.",
+  installGo: "Install", notNow: "Not now", installShow: "Show me how", installSteps: ["Tap the Share button in your browser.", "Choose “Add to Home Screen”.", "Tap Add."]});
+Object.assign(T.hi, {install: "ऐप इंस्टॉल करें", installTitle: "निष्पक्ष इंस्टॉल करें", installBody: "निष्पक्ष को अपनी होम स्क्रीन पर जोड़ें। यह पूरी स्क्रीन पर खुलता है, तेज़ चलता है और बस एक टैप दूर रहता है।",
+  installGo: "इंस्टॉल करें", notNow: "अभी नहीं", installShow: "तरीका देखें", installSteps: ["अपने ब्राउज़र में शेयर बटन दबाएँ।", "“होम स्क्रीन में जोड़ें” चुनें।", "जोड़ें दबाएँ।"]});
+ICON.install = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>';
+let installEvt = null, installHow = false, installCardDone = false;
+const isStandalone = () => { try { return matchMedia("(display-mode: standalone)").matches || matchMedia("(display-mode: minimal-ui)").matches || navigator.standalone === true; } catch (e) { return false; } };
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+function canInstall() { return !isStandalone() && !!(installEvt || isIOS); }
+async function doInstall() {
+  if (installEvt) {
+    const ev = installEvt; installEvt = null;            // a browser prompt can be used once; the next visit gets a fresh one
+    try { ev.prompt(); } catch (e) { /* already used */ }   // must run inside the tap, so it comes first
+    closeSheet();
+    try { await ev.userChoice; } catch (e) { /* closed without choosing */ }
+    return;
+  }
+  if (isIOS && !isStandalone()) { installHow = true; if (sheetKind === "install") renderSheet(); else openSheet("install"); }
+}
+/* the card shows once per open, never on top of the splash, a menu, an article or the talk card */
+function installCardSoon(n = 0) {
+  try {
+    if (installCardDone || !canInstall()) return;
+    if (!revealed || sheetKind || mdrop.classList.contains("on") || sheet.classList.contains("on") || TK.ui !== "closed") { if (n < 8) setTimeout(() => installCardSoon(n + 1), 2500); return; }
+    installCardDone = true; installHow = false; openSheet("install");
+  } catch (e) { /* page still starting: the next try covers it */ if (n < 8) setTimeout(() => installCardSoon(n + 1), 2500); }
+}
+addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; setTimeout(installCardSoon, 1500); });
+addEventListener("appinstalled", () => { installEvt = null; if (sheetKind === "install") closeSheet(); });
+setTimeout(installCardSoon, 3000);
 
 /* audio: one new request a day per reader; audio already made is free (owner) */
 const istDayStart = () => { const ist = new Date(Date.now() + 5.5 * 3600e3); ist.setUTCHours(0, 0, 0, 0); return new Date(ist.getTime() - 5.5 * 3600e3).toISOString(); };
