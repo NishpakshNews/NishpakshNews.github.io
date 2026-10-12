@@ -27,8 +27,14 @@ the next session starts from numbers.
 - `quota_left`, `tier_calls`: Gemini quota left per tier at the end of the run, and the calls made, by outcome.
 - `desk`: the writing desk's record of the hour: `published` (story ids), `seats` (general / beat left), `ready`,
   `ready_beat`, `skipped`, `beat_seat`, `short`.
-- `express`: the express lane's funnel for the run (appears when the lane runs): counts per step and, under
-  `excluded`, how many headlines each exclusion list kept out.
+- `express`: the express lane's funnel for the run (appears when the lane runs). Counts per step, in order:
+  `taken` (new links from express feeds that were downloaded), `intake_excluded` (kept out by code before the page was
+  fetched) and `intake_over_cap`, `unreadable` (page not fully readable: option B), `asked` (headlines the model
+  answered, each asked twice), `not_lane` (no lane, or the two answers differed), `passed` and `passed_<lane>`,
+  `embedded` (texts used from the day's express slice), `calls` (model calls). `excluded` {list: n} and
+  `excluded_terms` {"list:word": n} count the code exclusions at every step. `now` holds readings that are not
+  sums: `cap_left` (of `embed_daily_cap` today), `allowance` (what the pacing curve opens now), `passed_waiting`
+  (passed, waiting for slice room), `undecided` (headlines still to ask).
 - `problems`: the run's health problems and failed steps.
 
 ## Reading it
