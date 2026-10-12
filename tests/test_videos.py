@@ -1,59 +1,137 @@
-"""YouTube search words and relevance (owner, Oct 12 2026: videos often failed to be found; take the numbers
-out of the search and work on what is searched). videoquery.py has no database; _due and _run are tested with
-a fake store and a fake `get`."""
+"""YouTube search phrase, language certainty, similarity ranking (owner, Oct 12 2026: the names-based design found no
+videos; rebuilt on vague headline phrases + similarity). videoquery.py has no database; `choose`, `_due` and
+`_gather` are tested with a fake store and a fake `get`."""
 import datetime as dt
 
 from nishpaksh import videoquery as vq
 
-FRAMES = [
-    {"who": "Defence Ministry", "action": "signs", "what": "Rs 661.50 crore deal for BrahMos launchers", "where": "New Delhi"},
-    {"who": "Ministry of Defence", "action": "signed", "what": "contract for BrahMos launchers", "where": ""},
-    {"who": "Defence Ministry", "action": "signed", "what": "deal with Bharat Dynamics", "where": ""},
-    {"who": "Police", "action": "said", "what": "", "where": "Delhi"},
-]
-HEAD_EN = "Defence Ministry signs Rs 661.50 crore deal for BrahMos launchers"
-HEAD_HI = "रक्षा मंत्रालय ने ब्रह्मोस लॉन्चर के लिए 661.50 करोड़ रुपये का सौदा किया"
+H1 = "Delhi Police releases detained CJP leader Abhijit after conditional bond"
+H2 = "Rahul Gandhi announces Monday opposition march to Supreme Court over election disputes"
+H3 = "Donald Trump waives sanctions on Russian diesel while demanding Zelensky be replaced"
 
 
-def test_numbers_money_and_ordinals_are_taken_out():
-    out = vq.strip_numbers("Rs 661.50 crore deal, 40 dead, 3rd time, ₹5 lakh, 12 percent")
-    assert not any(ch.isdigit() for ch in out)
-    assert "crore" not in out and "lakh" not in out and "deal" in out and "dead" in out
-    assert not any(ch.isdigit() for ch in vq.strip_numbers("२६ लोग, 5 करोड़ रुपये"))
-    assert "T20" in vq.strip_numbers("T20 World Cup 2026")          # a name that contains a figure stays
+def test_the_code_phrase_keeps_the_kind_of_event_and_drops_names_and_figures():
+    assert vq.code_phrase(H1) == "releases detained leader"
+    assert vq.code_phrase(H2) == "announces opposition march"
+    assert not any(ch.isdigit() for ch in vq.code_phrase("Rs 661.50 crore deal signed for BrahMos launchers"))
+    assert vq.code_phrase("") == ""
+    hindi = vq.code_phrase("दिल्ली पुलिस ने हिरासत में लिए गए नेता को सशर्त जमानत पर रिहा किया")
+    assert hindi and all("\u0900" <= w[0] <= "\u097f" for w in hindi.split())
 
 
-def test_queries_hold_names_not_figures_and_hindi_is_searched_in_hindi():
-    qs = dict((lang, q) for q, lang in vq.queries(FRAMES, HEAD_EN, HEAD_HI))
-    assert "BrahMos" in qs["en"] and "Defence Ministry" in qs["en"]
-    assert "Ministry of Defence" not in qs["en"]                    # the same words in another order
-    assert "Delhi" not in qs["en"] and "Police" not in qs["en"]     # too general to find one story
-    assert not any(ch.isdigit() for q in qs.values() for ch in q)
-    assert any("\u0900" <= ch <= "\u097f" for ch in qs["hi"]) and "ब्रह्मोस" in qs["hi"]
-    assert all(len(q.split()) <= vq.MAX_QUERY_WORDS for q in qs.values())
+def test_a_title_case_headline_keeps_its_words():
+    assert vq.code_phrase("Opposition March Against Election Disputes") == "opposition march election"
 
 
-def test_short_query_is_shorter_and_a_story_without_frames_uses_its_headline():
-    long_q = dict((l, q) for q, l in vq.queries(FRAMES, HEAD_EN, HEAD_HI))
-    short_q = dict((l, q) for q, l in vq.queries(FRAMES, HEAD_EN, HEAD_HI, short=True))
-    assert len(short_q["en"].split()) < len(long_q["en"].split())
-    assert len(short_q["hi"].split()) < len(long_q["hi"].split())
-    bare = dict((l, q) for q, l in vq.queries([], "Kotdwar gym trainer who defended shopkeeper faces court", ""))
-    assert "Kotdwar" in bare["en"] and "hi" not in bare       # no Hindi headline: no Hindi search
+def test_the_models_phrase_is_checked_by_code():
+    assert vq.clean_phrase("Release of detained leader.", H1, deva=False) == "release of detained leader"
+    assert vq.clean_phrase("opposition march", H2, deva=False) == "opposition march"
+    assert vq.clean_phrase("waiving of sanctions", H3, deva=False) == "waiving of sanctions"   # 'waiv' starts both
+    assert vq.clean_phrase("Delhi Police release", H1, deva=False) == ""        # a name of the headline
+    assert vq.clean_phrase("release of 5 leaders", H1, deva=False) == ""        # a figure
+    assert vq.clean_phrase("one two three four five six", H1, deva=False) == ""  # too long
+    assert vq.clean_phrase("weather forecast", H1, deva=False) == ""            # nothing from the headline
+    assert vq.clean_phrase("सशर्त रिहाई", "दिल्ली पुलिस ने नेता को रिहा किया", deva=True) == "सशर्त रिहाई"
+    assert vq.clean_phrase("release", "दिल्ली पुलिस ने नेता को रिहा किया", deva=True) == ""   # wrong script
 
 
-def test_relevance_uses_names_and_both_headlines_not_the_headline_alone():
-    kw = vq.keywords(FRAMES, "Rs 661.50 crore for launchers: the deal that arms the Navy", HEAD_HI)
-    assert vq.relevant("BrahMos launchers: Defence Ministry signs contract", kw)    # names, not in this headline
-    assert vq.relevant("रक्षा मंत्रालय ब्रह्मोस सौदा लाइव", kw)                      # a Hindi title
-    assert not vq.relevant("Medicare ad compilation 2026", kw)                       # October 10 junk stays out
-    assert not vq.relevant("Hindi audiobook chapter 5", kw)
-    assert not vq.relevant("Live news today breaking update", kw)                    # no story word in it
+class _Router:
+    def __init__(self, data=None, fail=False):
+        self.data, self.fail, self.calls = data, fail, 0
+
+    def call(self, tier, prompt, json_out=True, max_output_tokens=0):
+        self.calls += 1
+        if self.fail:
+            raise RuntimeError("quota")
+
+        class R:
+            pass
+        r = R()
+        r.data = self.data
+        return r
 
 
-def test_one_shared_word_is_not_enough():
-    kw = vq.keywords(FRAMES, HEAD_EN, HEAD_HI)
-    assert not vq.relevant("BrahMos cricket highlights", kw)
+def test_phrases_use_one_model_call_and_fall_back_to_code_per_language():
+    r = _Router({"en": "release of detained leader", "hi": "weather"})            # the Hindi one is the wrong script
+    got = vq.phrases(H1, "दिल्ली पुलिस ने नेता को रिहा किया", r)
+    assert r.calls == 1 and got["en"] == "release of detained leader" and got["hi"]
+    assert "\u0900" <= got["hi"][0] <= "\u097f"
+    assert vq.phrases(H1, "", _Router(fail=True)) == {"en": "releases detained leader"}      # no model: code
+    assert vq.phrases(H1, "", None) == {"en": "releases detained leader"}
+    assert vq.phrases("", "", None) == {}
+
+
+def test_language_is_given_only_when_sure():
+    L = vq.video_language
+    assert L("Delhi Braces For CJP Protest 2.0 Against CEC Gyanesh Kumar") == "en"
+    assert L("Opposition march to Supreme Court") == "en"
+    assert L("Opposition march Supreme Court") is None                           # no English word, no tag: not sure
+    assert L("Opposition march Supreme Court", "en") == "en"                     # the tag makes it sure
+    assert L("Opposition march Supreme Court", "en-IN") == "en"
+    assert L("Opposition march Supreme Court", None, "en") == "en"               # a known English channel
+    assert L("दिल्ली पुलिस ने नेता को छोड़ा") == "hi"
+    assert L("दिल्ली पुलिस नेता छोड़ा", "hi") == "hi"
+    assert L("दिल्ली पुलिस नेता छोड़ा") is None                                    # no Hindi word, no tag
+    # the October 12 case: another language shown as English
+    assert L("দিল্লি পুলিশ নেতাকে ছেড়ে দিয়েছে") is None
+    assert L("The Opposition march in Delhi", "bn") is None                      # the tag is another language
+    assert L("Marcha de la oposición en Delhi") is None                          # accented Latin letters
+    assert L("Himashree Boro Case: Train Mein Kya Hua Tha?") is None             # romanised Hindi
+    assert L("दिल्ली में विपक्ष का मार्च आहे") is None                              # Marathi
+    assert L("दिल्ली पुलिस ले नेता छोडेको छ") is None                               # Nepali
+    assert L("दिल्ली में विपक्ष का मार्च", "en") is None                           # tag disagrees with the script
+    assert L("") is None and L("12345") is None
+
+
+def test_similarity_ranks_the_story_first_and_counts_repeated_article_words():
+    doc = vq.document("Opposition march to Supreme Court over election disputes",
+                      ["The opposition marched to the Supreme Court. The march was led by Rahul Gandhi."])
+    assert doc["oppos"] == 3.5 and doc["march"] >= 3.0 and doc["rahul"] == 0.5
+    vids = [{"title": "Cricket highlights from Mumbai"}, {"title": "Opposition march reaches Supreme Court"},
+            {"title": "Rahul Gandhi on the march"}]
+    s = vq.scores(vids, doc)
+    assert s[1] > s[2] > s[0] == 0
+
+
+def _video(vid, title, channel="Some Channel", at="2026-10-12T05:00:00Z", desc=""):
+    return {"id": vid, "title": title, "desc": desc, "channel": channel, "channelId": channel, "at": at,
+            "credible": False}
+
+
+def test_choose_shows_only_sure_languages_ranked_by_similarity_two_per_channel():
+    from nishpaksh.videos import choose
+    docs = {"en": vq.document(H2, ["Opposition leaders marched to the Supreme Court."]),
+            "hi": vq.document("विपक्ष का सुप्रीम कोर्ट तक मार्च", [])}
+    cands = [_video("e1", "Opposition march to the Supreme Court over election disputes", "A"),
+             _video("e2", "Opposition leaders march to Supreme Court today", "A"),
+             _video("e3", "Opposition march reaches the Supreme Court", "A"),            # a third from channel A
+             _video("e4", "The march of the opposition in Delhi", "B"),
+             _video("x1", "বিরোধী মিছিল সুপ্রিম কোর্টে", "C"),                              # Bengali: never
+             _video("h1", "विपक्ष का सुप्रीम कोर्ट तक मार्च, राहुल गांधी ने किया ऐलान", "D"),
+             _video("h2", "क्रिकेट मैच के बाद का हाल", "E")]
+    got = choose(cands, docs)
+    ids = [v["id"] for v in got]
+    assert "x1" not in ids and "e3" not in ids and "h2" not in ids
+    assert ids.index("e1") < ids.index("e4") and "h1" in ids
+    assert {v["id"]: v["lang"] for v in got}["h1"] == "hi" and all("desc" not in v and "score" not in v for v in got)
+
+
+def test_choose_never_leaves_the_card_empty_when_a_sure_video_exists():
+    from nishpaksh.videos import choose
+    docs = {"en": vq.document("Opposition march", []), "hi": {}}
+    cands = [_video("a", "Weather report for the week in Delhi", "A"), _video("b", "Cricket match of the day", "B"),
+             _video("c", "A song of the year", "C"), _video("d", "Chinese drama 12 of the season", "D")]
+    got = choose(cands, docs)
+    assert len(got) == 3                                                   # topped up to MIN_SHOW with the best sure ones
+    assert choose([_video("z", "অসমে বন্যা")], docs) == []                   # nothing sure, nothing shown
+
+
+def test_choose_uses_the_language_tags():
+    from nishpaksh.videos import choose
+    docs = {"en": vq.document("Opposition march", []), "hi": {}}
+    c = [_video("a", "Opposition march Supreme Court"), _video("b", "Opposition march Parliament", "B")]
+    assert [v["id"] for v in choose(c, docs, {})] == []                        # no English word, no tag
+    assert [v["id"] for v in choose(c, docs, {"a": "en", "b": "ta"})] == ["a"]  # b is tagged Tamil
 
 
 def test_due_retries_an_empty_row_once_and_never_a_filled_one():
@@ -86,65 +164,26 @@ def _response(items):
     return R()
 
 
-def _video(vid, title, channel="Some Channel"):
-    return {"id": {"videoId": vid}, "snippet": {"title": title, "channelTitle": channel, "channelId": channel,
-                                                 "publishedAt": "2026-10-12T05:00:00Z", "thumbnails": {}}}
-
-
-def test_run_keeps_only_relevant_videos_and_counts_each_search():
-    from nishpaksh.videos import _run
+def test_gather_searches_each_phrase_in_its_language_with_and_without_a_date_limit():
+    from nishpaksh.videos import _gather
     seen = []
 
     def get(url, params, timeout):
         seen.append(params)
-        return _response([_video("a", "BrahMos launchers deal signed by Defence Ministry", "The Hindu"),
-                          _video("b", "Chinese drama episode 12")])
+        return _response([{"id": {"videoId": "a"}, "snippet": {"title": "T", "channelTitle": "C", "channelId": "c",
+                                                               "description": "d", "publishedAt": "2026-10-12T05:00:00Z"}}])
     store = _Store()
-    kw = vq.keywords(FRAMES, HEAD_EN, HEAD_HI)
-    lists = _run(store, "KEY", vq.queries(FRAMES, HEAD_EN, HEAD_HI), dt.datetime(2026, 10, 12), kw, get)
-    assert [[v["id"] for v in l] for l in lists] == [["a"], ["a"]]
-    assert store.units == 200 and [p["relevanceLanguage"] for p in seen] == ["en", "hi"]
-    assert not any(ch.isdigit() for p in seen for ch in p["q"])
+    qs = [("opposition march", "en"), ("विपक्ष मार्च", "hi")]
+    got = _gather(store, "KEY", qs, dt.datetime(2026, 9, 1), get)
+    assert [v["id"] for v in got] == ["a", "a"] and store.units == 200
+    assert [p["relevanceLanguage"] for p in seen] == ["en", "hi"] and "publishedAfter" in seen[0]
+    _gather(store, "KEY", qs[:1], None, get)
+    assert "publishedAfter" not in seen[-1]
 
 
-def test_run_returns_none_when_a_search_fails():
-    from nishpaksh.videos import _run
+def test_gather_returns_none_when_a_search_fails():
+    from nishpaksh.videos import _gather
 
     def get(url, params, timeout):
         raise RuntimeError("quota")
-    assert _run(_Store(), "KEY", [("x y", "en")], dt.datetime(2026, 10, 12), set(), get) is None
-
-
-def test_a_loosely_related_recent_video_is_kept_as_the_weakest_tier_and_junk_still_is_not():
-    from nishpaksh.videos import _run, pick
-    names = vq.name_keywords(FRAMES)
-    kw = vq.keywords(FRAMES, HEAD_EN, HEAD_HI)
-
-    def get(url, params, timeout):
-        return _response([_video("a", "BrahMos missile test footage"),                       # one name only
-                          _video("b", "BrahMos launchers deal signed by Defence Ministry"),  # close
-                          _video("c", "Chinese drama episode 12")])                          # junk
-    lists = _run(_Store(), "KEY", [("brahmos", "en")], dt.datetime(2026, 10, 12), kw, get, names)
-    assert {v["id"]: v["tier"] for v in lists[0]} == {"a": 2, "b": 0}
-    assert [v["id"] for v in pick(lists)] == ["b", "a"]                                       # close first
-
-
-def test_the_older_search_has_no_date_limit_and_keeps_only_closely_related_videos_as_tier_one():
-    from nishpaksh.videos import _run
-    seen = []
-
-    def get(url, params, timeout):
-        seen.append(params)
-        return _response([_video("a", "BrahMos missile test footage"),
-                          _video("b", "BrahMos launchers deal signed by Defence Ministry")])
-    kw = vq.keywords(FRAMES, HEAD_EN, HEAD_HI)
-    lists = _run(_Store(), "KEY", [("brahmos", "en")], None, kw, get, vq.name_keywords(FRAMES))
-    assert "publishedAfter" not in seen[0]
-    assert [(v["id"], v["tier"]) for v in lists[0]] == [("b", 1)]          # the weaker tier only for recent videos
-
-
-def test_pick_ranks_by_tier_before_credibility():
-    from nishpaksh.videos import pick
-    vids = [{"id": "w", "tier": 2, "credible": True, "channel": "x"}, {"id": "o", "tier": 1, "credible": False, "channel": "y"},
-            {"id": "c", "tier": 0, "credible": False, "channel": "z"}]
-    assert [v["id"] for v in pick([vids])] == ["c", "o", "w"]
+    assert _gather(_Store(), "KEY", [("x y", "en")], None, get) is None

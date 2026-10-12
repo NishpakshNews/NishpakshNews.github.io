@@ -2217,7 +2217,7 @@ function audioData(id) {
     .then(([files, mineToday, mineHere]) => ({id, loaded: true, ready: files.map(f => f.lang), left: Math.max(0, 1 - mineToday.length), mine: mineHere.map(r => r.lang)}))
     .catch(e => e.message === "login" ? {id, login: true} : {id, loaded: true, ready: [], left: 1, mine: []});
 }
-const vlang = v => /[\u0900-\u097f]/.test(v.title || "") || HINGLISH.test(v.title || "") ? "hi" : "en";
+const vlang = v => v.lang === "hi" || v.lang === "en" ? v.lang : /[\u0900-\u097f]/.test(v.title || "") || HINGLISH.test(v.title || "") ? "hi" : "en";
 const HINGLISH = /\b(kya|hai|hain|mein|kaise|kyun|kyon|nahi|nahin|aur|ki|ka|ke|ko|se|tha|thi|hua|hui|kab|kaun|bada|badi)\b.*\b(kya|hai|hain|mein|kaise|kyun|kyon|nahi|nahin|aur|ki|ka|ke|ko|se|tha|thi|hua|hui|kab|kaun|bada|badi)\b/i;
 function videoData(id) {
   return api(`videos?select=items&story_id=eq.${encodeURIComponent(id)}`).then(rows => {

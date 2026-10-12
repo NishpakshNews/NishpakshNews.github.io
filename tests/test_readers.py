@@ -165,38 +165,41 @@ def test_timing_shares_each_chunk_by_length():
     assert tm[0]["t"] == 0 and 3.0 < tm[1]["t"] < 3.5
 
 
-def test_videos_keep_youtube_order_two_per_channel_both_languages():
-    en = [{"id": f"e{k}", "channel": "NDTV" if k < 3 else f"C{k}", "channelId": "ndtv" if k < 3 else f"c{k}"} for k in range(6)]
-    hi = [{"id": f"h{k}", "channel": "Aaj Tak", "channelId": "aaj"} for k in range(4)]
-    got = [v["id"] for v in videos.pick([en, hi], keep=7)]
-    assert got == ["e0", "h0", "e1", "h1", "e3", "e4", "e5"]
-    assert videos.is_primary("Sansad TV") and not videos.is_primary("NDTV")
-
-
 def test_videos_are_fetched_once_for_new_articles(tmp_path):
+    """Oct 12 2026 design: two vague searches (English, Hindi), one details call, language only when sure."""
     s = _store(tmp_path)
     _publish(s, 500, dt.datetime.utcnow(), _payload("Floods in Assam", [("Floods.", "established")]), hi="असम में बाढ़")
-    asked = []
+    asked, details = [], []
+    found = [{"id": {"videoId": "e1"}, "snippet": {"title": "Floods in Assam &amp; Bihar", "channelTitle": "PIB India",
+                                                  "channelId": "pib", "publishedAt": "2026-10-09T10:00:00Z"}},
+             {"id": {"videoId": "h1"}, "snippet": {"title": "असम में बाढ़ से हालात खराब, राहत के लिए सेना तैनात",
+                                                  "channelTitle": "Some Channel", "channelId": "sc",
+                                                  "publishedAt": "2026-10-09T11:00:00Z"}},
+             {"id": {"videoId": "b1"}, "snippet": {"title": "অসমে বন্যা", "channelTitle": "Bangla",
+                                                  "channelId": "bn", "publishedAt": "2026-10-09T11:00:00Z"}}]
 
     class R:
-        def __init__(self, q):
-            self.q = q
+        def __init__(self, items):
+            self.items = items
 
         def raise_for_status(self):
             pass
 
         def json(self):
-            return {"items": [{"id": {"videoId": self.q[:2] + "1"}, "snippet": {"title": "Floods in Assam &amp; Bihar", "channelTitle": "PIB India",
-                                                                                 "channelId": "pib", "publishedAt": "2026-10-09T10:00:00Z"}}]}
+            return {"items": self.items}
 
     def get(url, params, timeout):
-        asked.append(params["relevanceLanguage"])
-        return R(params["q"])
+        if "id" in params:                                     # the details call: language tags
+            details.append(params["id"])
+            return R([{"id": "e1", "snippet": {"defaultAudioLanguage": "en"}}])
+        asked.append((params["relevanceLanguage"], params["q"]))
+        return R(found)
     assert videos.fetch_new(s, key="k", get=get) == [500]
-    assert asked == ["hi", "en"]
+    assert [l for l, _ in asked][:2] == ["en", "hi"] and len(details) == 1
     from nishpaksh.db import videos as vt
     items = s.one(select(vt))["items"]
-    assert items[0]["title"] == "Floods in Assam & Bihar" and items[0]["primary"] is True
+    got = {v["id"]: v["lang"] for v in items}
+    assert got == {"e1": "en", "h1": "hi"}                      # the Bengali video is never shown
     assert videos.fetch_new(s, key="k", get=get) == []         # once
     assert videos.fetch_new(s, key="", get=get) == []          # no key: nothing
 
@@ -277,20 +280,6 @@ def test_brief_problems():
     assert problem("Reportedly, the bridge fell.", "The bridge fell.").startswith("hedge")
     assert problem("Modi met Trump.", "The PM met the US President.").startswith("a name")
     assert problem("The RBI held rates.", "The Reserve Bank of India held rates.") is None
-
-
-def test_videos_must_share_two_words_with_a_headline():
-    heads = ["New 30 percent margin cap to lower cancer drug prices", "कैंसर की दवाओं की कीमतों के लिए 30 प्रतिशत मार्जिन कैप"]
-    assert videos.relevant("Cancer Drug Prices May Fall As Government Caps Trade Margins At 30%", heads)
-    assert videos.relevant("कैंसर की दवाओं का ट्रेड मार्जिन 30% तक सीमित", heads)
-    assert not videos.relevant("The Medicare Advantage Letter That Could RUIN Your Retirement", heads)
-    assert not videos.relevant("Anne of Green Gables | Full English Audiobook", heads)
-
-
-def test_a_videos_language_is_read_from_its_title():
-    assert videos.title_lang("Delhi Braces For CJP Protest 2.0 Against CEC Gyanesh Kumar") == "en"
-    assert videos.title_lang("हिमाश्री बोरो के साथ ट्रेन में आखिर क्या हुआ?") == "hi"
-    assert videos.title_lang("Himashree Boro Case: Train Mein Kya Hua Tha?") == "hi"
 
 
 def test_reader_tables_and_run_logs_go_to_the_readers_database(tmp_path):

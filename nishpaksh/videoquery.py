@@ -1,48 +1,38 @@
-"""What to search YouTube for, and what a found video must share with the story (owner, Oct 12 2026).
+"""What to search YouTube for, which videos are in a language we are SURE of, and how to rank them (owner, Oct 12 2026).
 
-Why this exists. The videos step searched with the story's raw statement fields (`who`, `what`, `where`: whole
-phrases, often with figures: "Rs 661.50 crore deal for BrahMos launchers") and sent the SAME English words for
-the Hindi search too, then kept a video only if its title shared two words with the HEADLINE. Three ways to
-find nothing: a figure no video title repeats, English words for a Hindi search, and a headline that is now
-written to be read, not matched (news.py, Oct 12), so it shares fewer words with a video's title.
+Why this was rebuilt. The first design searched the story's NAMES and demanded two shared words in a video's title.
+It found almost nothing: a video about the same event rarely repeats a story's names and words. Scrapped.
 
-Now, by code and without any call:
-  * numbers, money and ordinals are taken out of every query (titles of videos on one event rarely agree on a figure);
-  * the keywords of a story are its NAMES (people, bodies, places) ranked by how many statements carry them, plus
-    the main act; the English search uses them, the Hindi search uses the Hindi headline's own words;
-  * a second, shorter search is made only when the first one left fewer than 2 usable videos;
-  * a video is relevant when its title shares two root words with the story's keywords (names, English headline,
-    Hindi headline together), never with the headline alone.
+The idea now (owner's):
+  1. SEARCH VAGUE. Take the headline and keep only the kind of event, no names, no figures: "Delhi Police releases
+     detained CJP leader Abhijit after conditional bond" -> "release of detained leader"; "Rahul Gandhi announces Monday
+     opposition march to Supreme Court over election disputes" -> "opposition march". A vague phrase always brings
+     videos back. One small model call writes the phrase (checked by code); without a model, code writes it.
+  2. RANK BY SIMILARITY. Every video found is scored against the story's own words (the headline and the article's
+     text; English videos against the English article, Hindi videos against the Hindi one) and the best are kept.
+  3. LANGUAGE ONLY WHEN SURE. A video is shown as English or Hindi only when its title and YouTube's language tags
+     leave no doubt (an English search once returned a Bengali video that was then labelled English). Any other script,
+     Marathi/Nepali in Devanagari, romanised Hindi, an unclear title: not shown.
 No file here imports the database, so all of it is tested on plain text (tests/test_videos.py).
 """
 from __future__ import annotations
 
+import math
 import re
 
 # words that say nothing about WHICH story (a video titled "Big news live today" matches every story)
 STOP = set("""the a an and or of to in on at for with from by as is are was were be been has have had will would after
-before over under into about than this that these those its his her their new says said news live video latest update
+before over under into about against amid than this that these those its his her their new says said news live video latest update
 updates today full what why how who when where watch big breaking report reports की के का में से पर और है हैं को ने
 भी एक यह वह लिए साथ बाद तक कर किया गया गई गए हुआ हुई रहा रही रहे ख़बर खबर""".split())
 
-# figures in any form: digits (Latin and Devanagari), spelled numbers, money and units, ordinals
-NUMBERISH = re.compile(
-    r"(?i)(?<![\w])(?:rs\.?|inr|usd|us\$|₹|\$)?\s*[\d०-९][\d०-९,.]*(?:st|nd|rd|th|%)?(?![\w])"
-    r"|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|forty|fifty|hundred|"
-    r"thousand|lakh|lakhs|crore|crores|million|billion|trillion|percent|per cent|dozen)\b"
-    r"|(?:लाख|करोड़|करोड|हज़ार|हजार|प्रतिशत|रुपये|रुपए|रुपया)")
-# the verb that names the act, kept as one keyword; speech and being verbs name nothing
-BARE_ACTS = {"said", "says", "is", "are", "was", "were", "has", "have", "had", "will", "would", "can", "could",
-             "may", "might", "also", "not", "been", "being", "held", "made", "gave", "took", "went", "came"}
-# names too general to find ONE story with
-GENERIC_NAMES = {"india", "indian", "government", "centre", "police", "court", "minister", "ministry", "state",
-                 "delhi", "new delhi", "country", "people", "party", "leader", "leaders", "officials", "sources", "reports"}
+# figures in any form: digits (Latin and Devanagari), money, ordinals
+NUMBERISH = re.compile(r"(?i)(?<![\w])(?:rs\.?|inr|usd|us\$|₹|\$)?\s*[\d०-९][\d०-९,.]*(?:st|nd|rd|th|%)?(?![\w])")
 
-MAX_QUERY_WORDS = 7
+MAX_PHRASE_WORDS = 5
 
 
 def strip_numbers(text: str | None) -> str:
-    """The text with every figure, amount and ordinal taken out, spaces closed."""
     t = NUMBERISH.sub(" ", text or "")
     return re.sub(r"\s+", " ", t).strip(" ,.;:-")
 
@@ -52,8 +42,7 @@ def _words(text: str) -> list[str]:
 
 
 def roots(text: str | None) -> set[str]:
-    """Root words of a title or headline: lower case, Latin words trimmed to 5 letters, Devanagari kept whole.
-    Figures never count (they are not words)."""
+    """Root words: lower case, Latin words trimmed to 5 letters, Devanagari kept whole. Figures and stop words out."""
     out = set()
     for w in _words(strip_numbers(text)):
         w = w.lower().strip("'’-")
@@ -63,134 +52,208 @@ def roots(text: str | None) -> set[str]:
     return out
 
 
-def _capitalised_run(text: str) -> list[str]:
-    """Names inside a phrase: runs of capitalised words ('Delhi Police', 'BrahMos'), figures removed."""
-    out, run = [], []
-    for tok in re.findall(r"[A-Za-z][\w'’.-]*|[^\sA-Za-z]+", strip_numbers(text)):
-        if tok[0].isupper() and tok.lower() not in STOP:
-            run.append(tok)
-        else:
-            if run:
-                out.append(" ".join(run))
-            run = []
-    if run:
-        out.append(" ".join(run))
-    return out
+# ------------------------------------------------------------------------------------------------ the search phrase
+def _capitalised_inside(headline: str) -> set[str]:
+    """Lower-cased words the headline writes with a capital (names, places, bodies) after its first word."""
+    ws = _words(headline)
+    return {w.lower() for w in ws[1:] if w[0].isupper()}
 
 
-def _short(phrase: str, limit: int = 4) -> str:
-    return " ".join(phrase.split()[:limit])
-
-
-def entities(frames: list[dict], limit: int = 4) -> list[str]:
-    """The names a story is about, most-carried first. `frames` are the statement frames
-    ({who, action, what, value, where}); a name counts once per statement that carries it, so what many outlets
-    repeat comes first. A phrase wholly inside a longer one ('Modi' in 'Narendra Modi') is folded into it."""
-    count: dict[str, int] = {}
-    shown: dict[str, str] = {}
-    for fr in frames:
-        seen = set()
-        for field in ("who", "where", "what"):
-            val = (fr or {}).get(field) or ""
-            # who/where are short names already; `what` is a phrase: only its proper names are wanted
-            names = _capitalised_run(val) if field == "what" else [strip_numbers(val)]
-            for nm in names:
-                nm = _short(nm)
-                key = nm.lower()
-                if len(nm) < 3 or key in GENERIC_NAMES or key in STOP or key in seen:
-                    continue
-                seen.add(key)
-                count[key] = count.get(key, 0) + 1
-                shown.setdefault(key, nm)
-    ranked = sorted(count, key=lambda k: (-count[k], list(count).index(k)))
-    keep: list[str] = []
-    have_roots: list[set[str]] = []
-    for k in ranked:
-        if any(k in other for other in ranked if other != k and count[other] >= count[k]):
-            continue       # folded into the longer name that is carried at least as often
-        r = roots(k)
-        if r and any(r == h for h in have_roots):
-            continue       # the same words in another order ("Defence Ministry", "Ministry of Defence")
-        have_roots.append(r)
-        keep.append(k)
-    return [shown[k] for k in keep[:limit]]
-
-
-def act_word(frames: list[dict]) -> str:
-    """The main act as one search word ('arrested'), from the most common action in the frames, or ''."""
-    count: dict[str, int] = {}
-    for fr in frames:
-        a = ((fr or {}).get("action") or "").strip().lower().split()
-        if a and a[0].isalpha() and a[0] not in BARE_ACTS and a[0] not in STOP and len(a[0]) >= 4:
-            count[a[0]] = count.get(a[0], 0) + 1
-    return max(count, key=count.get) if count else ""
-
-
-def _content(text: str | None, limit: int) -> list[str]:
+def code_phrase(headline: str, limit: int = 3) -> str:
+    """The vague phrase made by code: the headline's plain content words, names and figures left out. A headline
+    written in Title Case (most words capitalised) keeps every content word. Used when no model answered."""
+    ws = _words(strip_numbers(headline))
+    if not ws:
+        return ""
+    deva = any("\u0900" <= ch <= "\u097f" for ch in headline)
+    caps = [w for w in ws if w[0].isupper()]
+    title_case = len(caps) > 0.6 * len(ws)
     out: list[str] = []
-    for w in _words(strip_numbers(text)):
+    for w in ws:
         if w.lower() in STOP or (w.isascii() and len(w) < 3):
             continue
-        out.append(w)
+        if not deva and not title_case and (w[0].isupper() or w.isupper()):
+            continue                        # a name, a place, a body: too specific
+        out.append(w.lower() if not deva else w)
         if len(out) >= limit:
             break
-    return out
+    if not out:                             # everything was a name: the first content words, as written
+        out = [w for w in ws if w.lower() not in STOP][:2]
+    return " ".join(out)
 
 
-def english_query(names: list[str], act: str, headline_en: str, short: bool = False) -> str:
-    """Names first (up to 3, within MAX_QUERY_WORDS words), then the act. A story with no names is searched by
-    the content words of its headline. `short`: the names only, at most 2 (the second try)."""
-    words: list[str] = []
-    for nm in names[: 2 if short else 3]:
-        parts = nm.split()
-        if len(words) + len(parts) > (4 if short else MAX_QUERY_WORDS):
-            break
-        words += parts
-    if not words:
-        words = _content(headline_en, 4 if short else MAX_QUERY_WORDS)
-    elif act and not short and len(words) < MAX_QUERY_WORDS:
-        words.append(act)
-    return " ".join(words)
+def clean_phrase(phrase: str | None, headline: str, deva: bool) -> str:
+    """The model's phrase if it is usable, else ''. Usable: 1-5 words, no figure, in the right script, no name of
+    the headline, and (English) it shares a word beginning with the headline's."""
+    p = re.sub(r"\s+", " ", (phrase or "").strip().strip("\"'`“”.,;:")).strip()
+    if not p or re.search(r"[\d०-९]", p):
+        return ""
+    ws = p.split()
+    if not 1 <= len(ws) <= MAX_PHRASE_WORDS:
+        return ""
+    has_deva = any("\u0900" <= ch <= "\u097f" for ch in p)
+    if deva != has_deva or (not deva and not p.isascii()):
+        return ""
+    if not deva:
+        names = _capitalised_inside(headline)
+        if any(w.lower().strip("'’-") in names for w in ws):
+            return ""
+        heads = {w.lower()[:4] for w in _words(headline) if len(w) >= 4}
+        if not any(w.lower()[:4] in heads for w in ws if len(w) >= 4):
+            return ""
+    return p.lower() if not deva else p
 
 
-def hindi_query(headline_hi: str, short: bool = False) -> str:
-    """The Hindi headline's own content words (figures out): a Hindi search must be made in Hindi."""
-    return " ".join(_content(headline_hi, 4 if short else MAX_QUERY_WORDS))
+PHRASE_PROMPT = """You write YouTube search phrases for news headlines.
+For each headline write the VAGUE phrase a person would type to find videos about this KIND of event: only the main
+act or event, 2 to 4 plain words, grammatical. NO names of people, parties, places or outlets. NO numbers.
+Write the English phrase for the English headline and the Hindi phrase (in Devanagari) for the Hindi headline.
+
+Examples:
+Delhi Police releases detained CJP leader Abhijit after conditional bond -> release of detained leader
+Rahul Gandhi announces Monday opposition march to Supreme Court over election disputes -> opposition march
+Donald Trump waives sanctions on Russian diesel while demanding Zelensky be replaced -> waiving of sanctions
+RBI keeps repo rate unchanged at 5.5 per cent -> repo rate decision
+If unsure: the two most important plain words of the headline.
+
+English headline: {en}
+Hindi headline: {hi}
+
+Reply with JSON only: {{"en": "...", "hi": "..."}}"""
 
 
-def queries(frames: list[dict], headline_en: str, headline_hi: str, short: bool = False) -> list[tuple[str, str]]:
-    """[(query, relevanceLanguage)] for a story: English then Hindi, empty ones left out, no repeats."""
-    names = entities(frames)
-    act = act_word(frames)
+def phrases(headline_en: str, headline_hi: str, router=None) -> dict[str, str]:
+    """{"en": phrase, "hi": phrase} (a language with no words is left out). One small model call, every answer checked
+    by `clean_phrase`; whatever the model did not give usably, code writes."""
+    out = {"en": "", "hi": ""}
+    if router is not None and (headline_en or headline_hi):
+        try:
+            res = router.call("page", PHRASE_PROMPT.format(en=headline_en or "-", hi=headline_hi or "-"),
+                              json_out=True, max_output_tokens=200)
+            data = res.data if isinstance(res.data, dict) else {}
+            out["en"] = clean_phrase(data.get("en"), headline_en or "", deva=False) if headline_en else ""
+            out["hi"] = clean_phrase(data.get("hi"), headline_hi or "", deva=True) if headline_hi else ""
+        except Exception:  # noqa: BLE001  (quota, refusal, bad JSON: code does it)
+            pass
+    if not out["en"] and headline_en:
+        out["en"] = code_phrase(headline_en)
+    if not out["hi"] and headline_hi:
+        out["hi"] = code_phrase(headline_hi)
+    return {k: v for k, v in out.items() if v}
+
+
+# ------------------------------------------------------------------------------------------------ the story's words
+def document(headline: str, paragraphs: list[str] | None = None) -> dict[str, float]:
+    """root word -> weight for one language of one story: a headline word weighs 3, and a word of the article adds
+    half a point per mention (at most four mentions), so what the article keeps coming back to counts most."""
+    w: dict[str, float] = {}
+    for r in roots(headline):
+        w[r] = 3.0
+    counts: dict[str, int] = {}
+    for para in paragraphs or []:
+        for word in _words(strip_numbers(para)):
+            word = word.lower().strip("'’-")
+            if word in STOP or (word.isascii() and len(word) < 3):
+                continue
+            r = word[:5] if word.isascii() else word
+            counts[r] = counts.get(r, 0) + 1
+    for r, n in counts.items():
+        w[r] = w.get(r, 0.0) + 0.5 * min(n, 4)
+    return w
+
+
+def scores(videos: list[dict], doc: dict[str, float]) -> list[float]:
+    """Similarity of each video (title, and its short description at a third of the weight) to the story's words.
+    A word in most of the found titles (the search words themselves) counts less (inverse document frequency)."""
+    n = len(videos)
+    title_roots = [roots(v.get("title")) for v in videos]
+    df: dict[str, int] = {}
+    for tr in title_roots:
+        for r in tr:
+            df[r] = df.get(r, 0) + 1
+
+    def idf(r: str) -> float:
+        return 1.0 if n < 3 else math.log((n + 1) / (df.get(r, 0) + 1)) + 1.0
     out = []
-    for q, lang in ((english_query(names, act, headline_en, short), "en"), (hindi_query(headline_hi, short), "hi")):
-        if q and (q, lang) not in out:
-            out.append((q, lang))
+    for v, tr in zip(videos, title_roots):
+        s = sum(doc.get(r, 0.0) * idf(r) for r in tr)
+        s += 0.33 * sum(doc.get(r, 0.0) for r in roots(v.get("desc")) - tr)
+        out.append(s / math.sqrt(max(len(tr), 1)))
     return out
 
 
-def keywords(frames: list[dict], headline_en: str, headline_hi: str) -> set[str]:
-    """The root words a video's title is compared with: the story's names and both headlines, figures out."""
-    out = roots(headline_en) | roots(headline_hi)
-    for nm in entities(frames, limit=6):
-        out |= roots(nm)
-    return out
+# ------------------------------------------------------------------------------------------------ language, if sure
+HINDI_WORDS = {"है", "हैं", "में", "के", "की", "का", "को", "से", "ने", "और", "पर", "यह", "था", "थे", "थी", "रहा", "रहे",
+               "रही", "गया", "गए", "गई", "कर", "किया", "लिए", "क्या", "कैसे", "बाद", "तक", "नहीं", "भी", "वो", "यहां"}
+# Devanagari is also Marathi, Nepali and Sanskrit: these words are theirs, not Hindi's
+OTHER_DEVA = {"आहे", "आणि", "नाही", "मध्ये", "च्या", "ची", "चे", "साठी", "झाले", "झाला", "आहेत", "छ", "हुन्छ", "भयो",
+              "गर्छ", "गरेको", "लाई", "छन्", "पनि", "र", "अनि", "तथा", "भएको", "गर्न", "बाट"}
+ROMAN_HINDI = {"kya", "hai", "hain", "mein", "kaise", "kyun", "kyon", "nahi", "nahin", "aur", "ki", "ka", "ke", "ko",
+               "se", "tha", "thi", "hua", "hui", "kab", "kaun", "bada", "badi", "ne", "par", "yeh", "ye", "wo", "abhi",
+               "kiya", "gaya", "gayi", "raha", "rahi", "rahe", "sabse", "lekin", "ab", "bhi", "toh", "ek", "liye",
+               "kuch", "sach", "jaaniye", "dekhiye", "bol", "khabar"}
+ENGLISH_WORDS = {"the", "of", "to", "in", "on", "at", "for", "with", "over", "after", "as", "is", "are", "was", "were", "and",
+                 "by", "from", "says", "said", "will", "has", "have", "amid", "against", "after", "before", "that",
+                 "how", "why", "what", "who", "his", "her", "its", "their", "not", "be", "into", "out", "new", "live",
+                 "vs", "about", "may", "can", "could", "would", "under", "up", "down", "than", "but", "or"}
 
 
-def name_keywords(frames: list[dict]) -> set[str]:
-    """The root words of the story's NAMES alone (people, bodies, places): what a loosely related video shares."""
-    out: set[str] = set()
-    for nm in entities(frames, limit=6):
-        out |= roots(nm)
-    return out
+def _script_letters(title: str) -> tuple[int, int, int]:
+    """(latin ascii, devanagari, other) letter counts of a title; digits and punctuation are not letters."""
+    latin = deva = other = 0
+    for ch in title:
+        if not ch.isalpha():
+            continue
+        if ch.isascii():
+            latin += 1
+        elif "\u0900" <= ch <= "\u097f":
+            deva += 1
+        else:
+            other += 1      # any other script, or an accented Latin letter (Spanish, French, Turkish...)
+    return latin, deva, other
 
 
-def loosely_relevant(title: str, names: set[str]) -> bool:
-    """A weaker bar (owner, Oct 12 2026: a slightly unrelated recent video beats none): the title shares at least
-    one root word with the story's NAMES. Titles with no name of the story (audiobooks, drama, ads) stay out."""
-    return bool(roots(title) & names)
+def _tag(*tags: str | None) -> str | None:
+    """The primary language subtag of YouTube's audio/default language, lower case ('hi-IN' -> 'hi'), or None."""
+    for t in tags:
+        t = (t or "").strip().lower()
+        if t:
+            return re.split(r"[-_]", t)[0]
+    return None
 
 
-def relevant(title: str, kw: set[str]) -> bool:
-    """A video is about this story when its title shares at least two root words with the story's keywords."""
-    return len(roots(title) & kw) >= 2
+def video_language(title: str, tag: str | None = None, channel_lang: str | None = None) -> str | None:
+    """'hi' or 'en' only when sure, else None.
+
+    Never sure: a title with any letter outside plain Latin and Devanagari (Bengali, Tamil, Urdu, accented Latin);
+    a language tag that is neither hi nor en; romanised Hindi (Hinglish).
+    Hindi: Devanagari title; the tag says hi, or there is no tag and the title has a Hindi function word and none of
+    Marathi's or Nepali's.  English: plain Latin title with no romanised-Hindi word, and the tag says en (or the
+    channel is a known English channel), or there is no tag and the title has an English function word."""
+    latin, deva, other = _script_letters(title or "")
+    if other or latin + deva == 0:
+        return None
+    tag = _tag(tag)
+    if tag is not None and tag not in ("hi", "en"):
+        return None
+    words = {w.lower().strip("'’-") for w in _words(title)}
+    if deva > latin:
+        if latin > 0.25 * (latin + deva):
+            return None
+        if tag == "en":
+            return None
+        deva_words = {w for w in words if "\u0900" <= w[0] <= "\u097f"}
+        if deva_words & OTHER_DEVA:
+            return None
+        if tag == "hi" or deva_words & HINDI_WORDS:
+            return "hi"
+        return None
+    if deva:                                # a few Devanagari letters in a Latin title: not clear
+        return None
+    if words & ROMAN_HINDI:
+        return None
+    if tag == "hi":
+        return None
+    if tag == "en" or channel_lang == "en" or words & ENGLISH_WORDS:
+        return "en"
+    return None

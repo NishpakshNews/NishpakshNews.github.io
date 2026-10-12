@@ -254,7 +254,7 @@ def main() -> None:
     from . import notify, videos
     from .categories import fill_places
     for name, step in (("placed", lambda: fill_places(store, router)),
-                       ("videos", lambda: videos.fetch_new(store)),
+                       ("videos", lambda: videos.fetch_new(store, router=router)),
                        ("notify", lambda: notify.run(store, router=router, send=False))):
         try:
             stats[name] = step()

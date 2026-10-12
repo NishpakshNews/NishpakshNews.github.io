@@ -759,24 +759,26 @@ every outlet that covered it, and colours every sentence by how well it is suppo
     "tts" model on every key (10/day each); headline + article as written + section headings; one voice; the site lights
     each sentence in its own colour while it is read (timing file per audio; owner: highlighting only). Files on the
     `audio` branch (force-pushed, live articles and 7 days of recaps), published under /audio/ by audio.yml and site.yml.
-  - **Videos** (`videos.py`, desk): once per new article, two YouTube searches (English and Hindi headline), YouTube's own
-    order (owner), max 2 per channel, uploaded after the story's first report, "Primary footage" badge, "not checked"
-    note. **Search words (owner, Oct 12 2026: videos often not found; `videoquery.py`, no database, `tests/test_videos.py`):**
-    figures are taken out of every query; the English search is the story's NAMES (people, bodies, places ranked by how
-    many statements carry them; `Defence Ministry`/`Ministry of Defence` folded; India, Delhi, police too general) plus
-    the main act; the Hindi search is the Hindi headline's own words (it used to be the same English words); a second,
-    shorter search only when fewer than `MIN_USABLE` (2) videos were kept; a story that found nothing is tried once more
-    about 3 h later (`videos._due`, only if the first try came within 2 h of publishing). **Tiers (owner, Oct 12 2026: showing something beats an empty card):** videos are ranked (0) closely related and recent,
-    (1) closely related but OLDER (a search with no date limit, made only when fewer than `MIN_USABLE` tier-0 videos were found
-    after the shorter search), (2) recent but loosely related (title shares one of the story's NAMES, `videoquery.loosely_relevant`);
-    best tier first, credible channels first within a tier, `tier` is not stored. Titles sharing no name and under two words
-    (audiobooks, drama, ads) are still dropped. Up to 6 searches (600 units) for a poorly covered story. Before: tier 0 only. A video is kept as tier 0 only if its
-    title shares two root words with the story's keywords (names + English headline + Hindi headline, `videoquery.relevant`;
-    not the headline alone: headlines are now written to be read, so they share fewer words with a video's title;
-    Oct 10 2026, first run: YouTube filled empty searches with audiobooks, Chinese dramas and Medicare ads). A video's
-    language is read from its TITLE (`videos.title_lang`, site `vlang`: Devanagari or two romanised Hindi words = Hindi),
-    not from the search that found it. The audio and video cards open complete: their data is fetched when the
-    article opens (`prefetch`) and a tap waits for it before the card slides up (owner, Oct 10 2026). Needs the `YOUTUBE_API_KEY` secret (owner adds it after the design pass); without it nothing runs.
+  - **Videos** (`videos.py` + `videoquery.py`, desk; REBUILT Oct 12 2026, owner: the names-based search "did not work at
+    all"; the old logic and its tiers were scrapped). Once per new article: (1) SEARCH VAGUE: the kind of event, no names or
+    figures ("Delhi Police releases detained CJP leader Abhijit after conditional bond" -> "release of detained leader";
+    "...opposition march to Supreme Court..." -> "opposition march"). One `page`-tier model call writes the English and the
+    Hindi phrase (`videoquery.phrases`, prompt with the owner's examples), every answer checked by code (`clean_phrase`: 1-5
+    words, no figure, right script, no name of the headline, shares a word start with it); what the model did not give
+    usably, `code_phrase` writes (the headline's plain content words, capitalised words dropped). Two searches (en, hi), 50
+    results each, from 30 days before the story's first report; fewer than `MIN_SHOW` (3) videos kept -> the same two
+    searches with no date limit. (2) LANGUAGE ONLY WHEN SURE (`videoquery.video_language`, owner: a Bengali video was shown
+    as English): title script plus YouTube's language tag (one `videos.list` call, 1 unit). Never shown: any letter outside
+    plain Latin/Devanagari (Bengali, accented Latin...), a tag that is not hi/en, romanised Hindi, Marathi/Nepali words in
+    Devanagari. Hindi = Devanagari + (tag hi, or a Hindi function word); English = plain Latin + (tag en, or an English
+    channel, or an English function word). (3) RANK BY SIMILARITY (`videoquery.scores`, code only, no embedding quota):
+    the title (and a third of the description) against the story's words in the SAME language (headline weight 3 + half a
+    point per mention in the article, max 4; inverse document frequency over the found titles), credible channels x1.1,
+    newer wins ties; `PER_LANG` (5) each, max 2 per channel. Fewer than 3 kept -> filled with the best remaining
+    sure-language videos even at zero similarity, so the card is empty only when nothing sure was found. Stored items carry
+    `lang`; the site trusts it (`vlang`). Cost 200 units a story (400 with the older search) of 10,000/day (`DAY_UNITS`
+    9,000), `limit` 6 stories a run. A story that found nothing is tried once more about 3 h later (`videos._due`). Needs
+    `YOUTUBE_API_KEY`. Not run against the live API (no network or key in the sandbox).
   - **On the site: trial_version_2.1 (owner, Oct 9 2026; designed on the canvas, approved, built into site/index.html).**
     A plain interface published earlier without his asking was taken back the same night: never publish site/UI changes
     he has not approved. 2.1: a 30px menu button (the reader's initial once signed in) at the LEFT of the wordmark; the
