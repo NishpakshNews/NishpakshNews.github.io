@@ -1,0 +1,376 @@
+# The express lane (owner, Oct 12 2026): stories on a short POSITIVE list of topics ("lanes") may be written from
+# ONE independent outlet's readable page, instead of 3. Everything else keeps the strict rule.
+#
+# The lane is strict at the door and honest in the colours:
+#   - a story enters a lane only if its headline names one of the lanes below (asked of a small model twice, order
+#     swapped, "unsure" = not express) AND none of the exclusions below matches (code, `express.excluded`);
+#   - express articles are purple ("one outlet only") and are NEVER green: green needs 3 independent outlets,
+#     2 origins and 6 hours, so an express story cannot reach it. No colour rule was changed for it;
+#   - a main fact must trace to a NAMED origin (the company, the league, an official), not "sources said".
+#
+# Every number below is a dial. Raise or lower it after reading ledger/LEDGER.md for a few days.
+# To switch the whole lane off: `enabled: false`.
+
+enabled: true
+
+# Round one. Left out on purpose: economy and markets (government figures, interference), health and general life
+# (one wrong medical claim does real harm). Add a lane here only after reading the first batch it produced.
+lanes:
+  companies:
+    label: Companies
+    describe: "a company announces or reports something about itself: results, launches of a business line, deals it signs, hires, plans, openings, awards"
+  sport:
+    label: Sport
+    describe: "the result, score, schedule, squad or record of a match, tournament or athlete"
+  entertainment:
+    label: Entertainment
+    describe: "a film, series, song, show or artist: a release, trailer, cast, award or festival announcement"
+  tech:
+    label: Tech launches
+    describe: "a company launches or announces a phone, gadget, app, software or service, with its price and features"
+
+# Daily and per-run caps (the quota day is Pacific, as Google's own). Express shares the embedding quota with
+# politics (3,000 texts a day over three keys), so it gets a slice, not the whole.
+embed_daily_cap: 400        # embedding texts an express article may use per quota day (spread by the day's pacing curve)
+filter_batch: 20            # headlines per cheap model question
+filter_calls_per_run: 6     # first-asking calls per run (a headline is asked about once; undecided ones wait for the next run)
+intake_per_run: 80          # new express-feed links taken per run, apart from the 400 the main feeds share
+intake_per_feed: 12         # ... and at most this many from one express feed
+reads_per_run: 3            # express stories read (Flash-Lite) per run
+seats_per_hour: 2           # the beat seat: Domains/Sport stories and express stories share it
+wait_for_second_hours: 1    # after the first outlet, wait this long for another before writing
+
+# Worked examples for the headline question (a small model: show the traps). "headline -> lane" or "-> none (why)".
+filter_examples:
+  - '"Tata Motors opens new EV plant in Sanand" -> companies'
+  - '"Infosys appoints new head of its cloud business" -> companies'
+  - '"Reliance Retail to open 500 new stores this year, company says" -> companies'
+  - '"India beat Australia by six wickets in the second ODI" -> sport'
+  - '"Sindhu enters semi-final of Japan Open" -> sport'
+  - '"Rohit Sharma named captain for the Test series" -> sport'
+  - '"Netflix announces release date of new Hindi series" -> entertainment'
+  - '"Trailer of the Diwali release is out" -> entertainment'
+  - '"Samsung launches Galaxy phone at Rs 49,999" -> tech'
+  - '"Apple releases iOS update with new features" -> tech'
+  - '"Government announces new PLI scheme for electronics makers" -> none (the government acting)'
+  - '"Founder booked in fraud case" -> none (a crime case)'
+  - '"Sensex ends 400 points higher on bank stocks" -> none (markets)'
+  - '"Actor spotted at the airport with her new friend" -> none (gossip)'
+  - '"Why Indian start-ups are struggling to hire" -> none (analysis)'
+  - '"10 best phones under Rs 20,000" -> none (a list)'
+
+# --- Exclusions (code, applied BEFORE any model sees the headline) ----------------------------------------------
+# A match on the headline or the feed's summary keeps the story out of the express lane, whatever the model says.
+# These are case-insensitive whole words (or, for Hindi, plain fragments). One reason name per list: the ledger
+# counts them, so you can see which ones do the work and which are too strict.
+# Writing rule for these lists: an entry in lower case matches the whole word (or phrase) in any case; an entry
+# written in UPPER CASE (ED, RBI, FIR) matches only as written, so "ED" is the agency and "Ed Sheeran" is not.
+# Hindi entries match as fragments. Which lanes each list applies to is the `apply` map below the lists.
+exclude:
+  # crime, harm and accusation: where one source is dangerous. Applies to every lane.
+  harm:
+    - arrest
+    - arrested
+    - arrests
+    - detained
+    - custody
+    - bail
+    - jail
+    - jailed
+    - FIR
+    - chargesheet
+    - charge sheet
+    - lawsuit
+    - sued
+    - sues
+    - court
+    - tribunal
+    - verdict
+    - judge
+    - murder
+    - murdered
+    - killed
+    - kills
+    - dead
+    - dies
+    - died
+    - death
+    - deaths
+    - dies at
+    - suicide
+    - accident
+    - crash
+    - crashed
+    - injured
+    - rape
+    - assault
+    - molest
+    - harassment
+    - abuse
+    - fraud
+    - scam
+    - scandal
+    - cheating
+    - raid
+    - raids
+    - probe
+    - accused
+    - accuses
+    - accusation
+    - alleged
+    - allegedly
+    - alleges
+    - allegation
+    - allegations
+    - doping
+    - dope
+    - match-fixing
+    - banned
+    - suspended
+    - terror
+    - riot
+    - violence
+    - hate
+    - communal
+    - boycott
+    - fake
+    - hoax
+    - defamation
+    - "गिरफ्तार"
+    - "हत्या"
+    - "मौत"
+    - "मृत"
+    - "दुर्घटना"
+    - "हादसा"
+    - "अदालत"
+    - "कोर्ट"
+    - "आरोप"
+    - "एफआईआर"
+    - "धोखाधड़ी"
+    - "घोटाला"
+    - "छापा"
+    - "बलात्कार"
+    - "आत्महत्या"
+  # a government, ministry or regulator acts on or speaks about the story (the same interference problem as markets)
+  government:
+    - government
+    - govt
+    - ministry
+    - minister
+    - ministers
+    - parliament
+    - lok sabha
+    - rajya sabha
+    - budget
+    - policy
+    - regulator
+    - RBI
+    - SEBI
+    - CCI
+    - CBI
+    - ED
+    - DGCA
+    - TRAI
+    - NCLT
+    - IRDAI
+    - tax
+    - taxes
+    - GST
+    - customs
+    - duty
+    - tariff
+    - tariffs
+    - subsidy
+    - subsidies
+    - PLI
+    - licence
+    - license
+    - penalty
+    - fined
+    - fines
+    - ban
+    - bans
+    - notice
+    - election
+    - elections
+    - BJP
+    - congress party
+    - congress leader
+    - congress mp
+    - congress mla
+    - modi
+    - "सरकार"
+    - "मंत्री"
+    - "मंत्रालय"
+  # economy and markets (government figures, share prices, tips): left out of round one by the owner
+  market:
+    - GDP
+    - inflation
+    - sensex
+    - nifty
+    - stock
+    - stocks
+    - share price
+    - shares
+    - rally
+    - plunge
+    - surge
+    - slump
+    - crash
+    - IPO
+    - rupee
+    - forex
+    - crypto
+    - bitcoin
+    - gold rate
+    - petrol price
+    - diesel price
+    - mutual fund
+    - target price
+    - buy rating
+  # something said only by unnamed people, or that has not happened
+  speculation:
+    - reportedly
+    - rumour
+    - rumours
+    - rumor
+    - rumors
+    - leak
+    - leaks
+    - leaked
+    - tipped
+    - tipster
+    - speculation
+    - speculated
+    - sources
+    - insiders
+    - in talks
+    - mulls
+    - mulling
+    - eyes
+    - likely
+    - may
+    - could
+    - might
+    - predicted
+    - prediction
+    - predictions
+    - predicts
+    - odds
+    - dream11
+    - fantasy
+    - betting
+    - "अफवाह"
+    - "कथित"
+    - "संभावना"
+  # film and celebrity gossip, and the numbers producers inflate
+  gossip:
+    - dating
+    - affair
+    - divorce
+    - breakup
+    - pregnant
+    - pregnancy
+    - spotted
+    - trolled
+    - slams
+    - slammed
+    - controversy
+    - feud
+    - clash
+    - "box office"
+    - collection
+    - collections
+    - crore club
+    - worldwide gross
+    - opening day
+  # service pieces, live blogs and filler: nothing to check, nothing worth the seat
+  service:
+    - live
+    - live updates
+    - live score
+    - live streaming
+    - where to watch
+    - how to watch
+    - horoscope
+    - panchang
+    - wordle
+    - quiz
+    - "price today"
+    - "rate today"
+    - explained
+    - "what is"
+    - "all you need to know"
+    - "things to know"
+    - "how to"
+    - review
+    - preview
+    - sponsored
+    - advertorial
+    - "brand studio"
+    - "partner content"
+    - "presented by"
+    - opinion
+    - editorial
+    - column
+    - analysis
+
+# Which lanes each list applies to. A word that is ordinary in one lane is a warning in another: "clash" is a
+# match in sport and a feud in film gossip; "rally" is a tennis term and a share-price move.
+apply:
+  harm: all
+  government: all
+  speculation: all
+  service: all
+  market: [companies, tech]
+  gossip: [entertainment]
+
+# Regular expressions (case-insensitive) for pieces that are lists, not reports
+patterns:
+  listicle:
+    - '^\s*\d+\s+(best|top|things|ways|reasons|tips|tricks|facts|movies|shows|phones|apps|stocks|songs|players|films)\b'
+    - '\btop\s+\d+\b'
+    - '\bbest\b.{0,40}\b(under|for|of the year|in india)\b'
+    - '\b(vs|versus)\b.{0,40}\b(which|should you)\b'
+
+# URL path pieces that mark a page that is not a news report (opinion, photos, video, web stories, sponsored)
+exclude_url:
+  - /opinion/
+  - /opinions/
+  - /editorial/
+  - /columns/
+  - /column/
+  - /blogs/
+  - /photos/
+  - /photogallery/
+  - /photo-gallery/
+  - /videos/
+  - /video/
+  - /web-stories/
+  - /webstories/
+  - /brand-studio/
+  - /sponsored/
+  - /advertorial/
+  - /podcast/
+  - /quiz/
+  - /horoscope/
+  - /live-blog/
+  - /live-updates/
+  - /liveblog/
+
+# Phrases that look like an exclusion word but are the ordinary thing (removed before the check):
+# a sport's "court", a month named May.
+allow_phrases:
+  - on court
+  - off court
+  - tennis court
+  - badminton court
+  - basketball court
+  - squash court
+  - volleyball court
+  - centre court
+  - clay court
+  - grass court
+  - hard court
+  - indoor court
+  - may day

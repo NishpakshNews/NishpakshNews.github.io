@@ -122,6 +122,13 @@ jobs:
         if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
         continue-on-error: true
         run: bash .github/scripts/learn_synonyms.sh
+      - name: Write the ledger
+        # one record of this run (embedding use, outlet yield, the express lane's funnel) into ledger/, committed to
+        # the branch (nishpaksh/ledger.py). Reads only; before the newsroom is saved so it sees this hour's data.
+        # Never stops the hour.
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
+        continue-on-error: true
+        run: bash .github/scripts/ledger.sh
       - name: Save the newsroom
         # always, once a copy was loaded: whatever this hour did is kept, even after a failed step
         id: save

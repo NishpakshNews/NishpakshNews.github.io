@@ -12,9 +12,11 @@ def main() -> None:
             entries = fetch_feed(f)
             sample = fetch_article(entries[0]["url"]) if entries else None
             body = len((sample or {}).get("text") or "")
-            print(f"OK   {f['name']:22s} {len(entries):3d} items; first article text {body} chars")
+            tag = f" [{f['lane']}]" if f.get("lane") else ""
+            print(f"OK   {f['name'] + tag:34s} {len(entries):3d} items; first article text {body} chars  {f['url']}")
         except Exception as e:  # noqa: BLE001
-            print(f"FAIL {f['name']:22s} {str(e)[:90]}")
+            tag = f" [{f['lane']}]" if f.get("lane") else ""
+            print(f"FAIL {f['name'] + tag:34s} {str(e)[:90]}  {f['url']}")
 
 
 if __name__ == "__main__":

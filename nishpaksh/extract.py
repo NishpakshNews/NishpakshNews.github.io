@@ -276,8 +276,12 @@ def _extract_one(store: Store, router: Router, a: dict) -> str:
                    .values(extract_failures=(a["extract_failures"] or 0) + 1))
         return "failed"
     store_extraction(store, a["id"], a.get("story_id"), ex)
+    meta = {"model": res.model}
+    prev = store.one(select(articles.c.extraction).where(articles.c.id == a["id"]))
+    if isinstance((prev or {}).get("extraction"), dict) and prev["extraction"].get("express"):
+        meta["express"] = prev["extraction"]["express"]       # the express verdict (express.py) stays with the article
     store.exec(update(articles).where(articles.c.id == a["id"]).values(
-        extraction={"model": res.model}, extracted_at=utcnow(), signature=ex["signature"]))
+        extraction=meta, extracted_at=utcnow(), signature=ex["signature"]))
     if a.get("story_id"):
         story = store.one(select(stories.c.signature).where(stories.c.id == a["story_id"]))
         values = {"dirty": True, "updated_at": utcnow()}

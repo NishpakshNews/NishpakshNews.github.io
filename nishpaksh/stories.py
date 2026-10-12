@@ -42,6 +42,10 @@ from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
 
+# What this run did with the embedding quota (owner, Oct 12 2026: "embedding is a lot of confusion"). Filled by
+# group_stories / _embed_missing, saved by run.py as stats["embedding"], written to ledger/ by ledger.py. Plain numbers.
+EMBED_STATS: dict = {}
+
 SAME_EVENT_PROMPT = """Each numbered line shows two news reports, A and B, each with its publication date (IST),
 headline and opening words. Do A and B report the SAME specific event: the same incident, announcement,
 decision or statement (a later report on that exact incident counts)?
@@ -147,12 +151,16 @@ def _yields(arts: list[dict]) -> dict[str, float]:
     return {o: (h / n if n >= 20 else 0.5) for o, (h, n) in tot.items()}
 
 
-def _embed_missing(store: Store, router: Router | None, arts: list[dict], yields: dict[str, float] | None = None) -> int:
+def _embed_missing(store: Store, router: Router | None, arts: list[dict], yields: dict[str, float] | None = None,
+                   first: set[int] = frozenset()) -> int:
+    """`first`: express articles that passed the headline filter and may use today's slice (express.gate); they are
+    embedded ahead of the others (the slice is a cap AND a reserved place), then the usual order."""
     model = embed_model(router)
     for a in arts:
         if a["embedding"] and model and a.get("embed_model") != model:
             a["embedding"] = None  # made by another model (or before tagging): not comparable, re-embed
     missing = [a for a in arts if not a["embedding"]]
+    EMBED_STATS.update(waiting_before=len(missing), embedded=0, by_outlet={})
     if not missing or router is None or not model:
         return 0
     # articles already read come first (their stories cannot be published until regrouped), then
@@ -174,11 +182,16 @@ def _embed_missing(store: Store, router: Router | None, arts: list[dict], yields
     # newest first within
     yields = yields or {}
     new = sorted([a for a in missing if a["extracted_at"] is None],
-                 key=lambda a: (round(yields.get(a.get("outlet"), 0.5), 1), a["published_at"]), reverse=True)
+                 key=lambda a: (a["id"] in first, round(yields.get(a.get("outlet"), 0.5), 1), a["published_at"]),
+                 reverse=True)
     old = sorted([a for a in missing if a["extracted_at"] is not None], key=lambda a: a["published_at"], reverse=True)
     half = budget // 2
     take_old = old[:max(half, budget - len(new))]
     missing = new[:budget - len(take_old)] + take_old
+    EMBED_STATS.update(left_today=left, runs_left=runs_left, budget=budget, pace_now=router.remaining_now("embed"),
+                       waiting_new=len(new), waiting_old=len(old), chosen_new=len(missing) - len(take_old),
+                       chosen_old=len(take_old))
+    by_outlet: dict[str, int] = {}
     done = 0
     for start in range(0, len(missing), 25):
         chunk = missing[start:start + 25][:max(0, budget)]
@@ -196,6 +209,12 @@ def _embed_missing(store: Store, router: Router | None, arts: list[dict], yields
                       .values(embedding=bindparam("emb"), embed_model=bindparam("m")),
                       [{"aid": a["id"], "emb": a["embedding"], "m": model} for a in chunk])
         done += len(chunk)
+        if first:
+            from . import express
+            express.book_embedded(store, sum(1 for a in chunk if a["id"] in first))
+        for a in chunk:
+            by_outlet[a.get("outlet") or "?"] = by_outlet.get(a.get("outlet") or "?", 0) + 1
+    EMBED_STATS.update(embedded=done, by_outlet=by_outlet, waiting_after=EMBED_STATS.get("waiting_before", 0) - done)
     if len(missing) > done:
         log.info("stories: %d articles wait for embedding (next run)", len(missing) - done)
     return done
@@ -353,12 +372,14 @@ def _split_story(store: Store, sid: int, idx: list[int], arts: list[dict], X: np
 
 
 def group_stories(store: Store, router: Router | None, embed_seconds: float = 360) -> int:
+    EMBED_STATS.clear()
     since = utcnow() - dt.timedelta(hours=SETTINGS.story_window_hours)
     healed = _heal_copied_vectors(store, since, limit=SETTINGS.heal_per_run)
     arts = heavy.fill(store, store.rows(
         select(articles.c.id, articles.c.title, *heavy.columns(store, "text", "embedding"), articles.c.embed_model,
                articles.c.story_id, articles.c.published_at, articles.c.extracted_at, articles.c.outlet,
-               articles.c.url, articles.c.lang, articles.c.feed_id, articles.c.agency, articles.c.wire_group)
+               articles.c.url, articles.c.lang, articles.c.feed_id, articles.c.agency, articles.c.wire_group,
+               articles.c.text_source, articles.c.extraction)
         .where(articles.c.text.is_not(None), articles.c.published_at >= since)
         .order_by(articles.c.published_at)
     ), "text", "embedding")
@@ -383,7 +404,23 @@ def group_stories(store: Store, router: Router | None, embed_seconds: float = 36
     held = worldgate.hold(arts, utcnow())
     if held:
         log.info("stories: %d world-outlet articles wait (no Indian or wide world coverage yet)", len(held))
-    embedded = _embed_missing(store, router, [a for a in arts if a["id"] not in held], _yields(arts))
+    # express feeds (express.py): only a headline that passed its lane's filter is embedded, within the day's slice
+    from . import express
+    n_world = len(held)
+    try:
+        xheld, xfirst = express.gate(store, router, arts, utcnow())
+    except Exception:  # noqa: BLE001  a failing express gate must never stop politics grouping
+        log.exception("express gate failed; express articles wait")
+        try:
+            lane_ids = set(express.lane_feeds(store))
+        except Exception:  # noqa: BLE001
+            lane_ids = set()
+        xheld, xfirst = {a["id"] for a in arts if a.get("feed_id") in lane_ids}, set()
+    held |= xheld
+    yields = _yields(arts)
+    EMBED_STATS.update(held_world=n_world, held_express=len(xheld),
+                       yields={o: round(y, 3) for o, y in yields.items()})
+    embedded = _embed_missing(store, router, [a for a in arts if a["id"] not in held], yields, first=xfirst)
     # an article whose story was decided on another model's vector is grouped again from scratch
     regroup = [a["id"] for a in arts if a["id"] in stale and a.get("embed_model") == model and a["story_id"] is not None]
     if regroup:

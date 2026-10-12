@@ -110,6 +110,15 @@ class FakeBackend:
 
     def generate(self, model, prompt, json_mode, grounded):
         self.calls.append((model, prompt[:40]))
+        if "say which topic it belongs to" in prompt:
+            # the express lane's headline question (express.py): by keyword, so a test can steer it
+            res = []
+            for n, t in re.findall(r"^(\d+)\. (.*)$", prompt.split("Examples:")[1].split("If you are not sure")[1], re.M):
+                low = t.lower()
+                lane = ("sport" if "wickets" in low else "companies" if "plant" in low else
+                        "tech" if "launches" in low else "none")
+                res.append({"n": int(n), "lane": lane})
+            return json.dumps({"results": res}), [], 100
         if "A news page often carries OTHER" in prompt:
             # connected when the line shares a word of 5+ letters with the story, else other news
             story = prompt.split("THE STORY:")[1].split("LINES:")[0].lower()

@@ -683,6 +683,104 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   a primary does: Domains slides to the left as the back button (‹ Domains) and its five take the other places;
   a domain filters, tapped again = all of Domains; ‹ Domains = back to Business (`sub`, `ter` in index.html).
   Trade-press exclusives (one outlet) are not published: the same rule a niche political story faces.
+  **Reversed in part by the express lane, below (owner, Oct 12 2026).**
+- **Express lane: topic lanes written from ONE independent outlet (owner, Oct 12 2026; `express.py`, `config/express.yaml`).**
+  Why: only political stories were published for hours. All 61 feeds are national / world section feeds (no business, sport,
+  health or life feed; `beat:` was defined but unused); the 3-outlet rule sat at every stage (candidate, rating, reading,
+  qualifying) so a company announcement with one or two outlets was never read; and the importance rubric rates
+  Parliament / courts / security high and product launches as filler. This PARTLY REVERSES the Oct 9 decision above
+  ("one standard everywhere"): that rejected a cheap lane with no embeddings and no checks; this one keeps admission strict
+  and the colours honest. Decisions (all approved by the owner):
+  - **Positive list of lanes, not "all non-political"** (non-political would let in crime, accidents, deaths and
+    allegations, where one source is dangerous). Round one: **Companies, Sport, Entertainment, Tech launches.** NOT Economy
+    or Markets (government figures and interference; the owner named GDP disputes), NOT Health or general Life (one wrong
+    medical claim does harm) until the first batch has been read. Each lane has its own dial in `config/express.yaml`.
+  - **Admission test, strict.** One independent outlet (wire copies and same-owner outlets are ONE group, so many outlets may
+    carry it) with a fully readable page (headline-only pages are never used: Option B stands); a small model names the lane
+    from the HEADLINE, asked twice in swapped order, unsure = not express; code exclusions (`express.excluded`, run before any
+    model): crime / arrests / deaths / accidents / courts / accusations (`harm`), a government, ministry or regulator acting
+    on or speaking about it (`government`: the same interference problem as markets), share prices and tips (`market`,
+    Companies and Tech), speculation (`speculation`: reportedly, leaked, in talks, may / could, predictions), film gossip and
+    box-office numbers (`gossip`, Entertainment only: producers inflate them), service pieces / live blogs / listicles /
+    opinion / sponsored (`service`, listicle patterns, `exclude_url`). Lists written in lower case match whole words in any
+    case; ALL-CAPS entries (ED, RBI, FIR) match exactly as written. Which lanes a list applies to is `apply:` in the yaml.
+  - **Honest colours, no new colour rule.** An express article has one independent outlet, so it reads purple ("one outlet
+    only") and can never be green (green: 3 outlets, 2 origins, 6 h). The owner asked whether to allow green to keep the code
+    simple: it needs no code, green simply cannot happen. A company announcement reads "X said it will ..." (named speaker).
+  - **A named origin is required** (the company, the league, an official; not "sources said"). With one outlet a dispute
+    cannot be seen, so (a) the main fact must trace to a named origin; (b) during the one-hour wait for a second outlet, if one
+    turns up the existing dispute and denial checks run on it (today they run only at 3+ outlets: lowered for express only).
+    No lower bar for later corrections (a lie found after publication stays in a closed article).
+  - **Seats:** the beat seat (Domains / Sport, `desk_beat_seat`) goes from 1 to 2 an hour and express stories share it; the
+    general seats stay at 2; a seat stays EMPTY if nothing passes the test (quality is kept in admission, not by starving).
+  - **Intake:** a separate express intake: section feeds (business, sport, entertainment, tech) of outlets already in the app,
+    tagged `lane:` in `feeds.yaml` (matched by URL like `beat:`, no schema change). Verify each with
+    `python -m nishpaksh.tools.check_feeds` on GitHub's runner (the sandbox has no network); paywalled papers stay out.
+  - **Embedding budget:** the tightest quota (3,000 texts a day over 3 keys, all used). Express gets a DAILY slice
+    (`embed_daily_cap` = 400, about 13%), spread by the existing pacing; every article must be embedded to find out it is
+    alone, so the saving comes only from the headline filter: one cheap model question per 20 headlines, and only a
+    headline that passes a lane is embedded. Re-read the real use after a few runs (the ledger) and adjust the cap.
+  - **Settling:** wait about an hour for a second outlet, then write. A fixed number of express READS per run
+    (`reads_per_run`) so the Flash-Lite quota is not drained.
+  **Build status (4 parts, each fits one session):**
+  1. DONE (Oct 12 2026): `config/express.yaml` (lanes, exclusions, dials); `express.py` (config, `lane_feeds`,
+     `excluded`); the ledger (below); tests `tests/test_express.py`, `tests/test_ledger.py`.
+  2. DONE (Oct 12 2026, Part 2; NOT RUN ON REAL DATA, the sandbox has no network, sqlalchemy or pytest): the express intake,
+     the headline question and the embedding slice.
+     - **Feeds** (`config/feeds.yaml`, tagged `lane:`; matched by URL like `beat:`, no schema change): 24 ENGLISH section feeds,
+       6 outlets (Hindustan Times, Times of India, Indian Express, News18, Firstpost, The Hindu) x 4 lanes (business ->
+       `companies`, sports, entertainment, tech). The URLs are from memory and UNVERIFIED: first thing to do is run
+       `python -m nishpaksh.tools.check_feeds` on the runner (workflow `probe`, part feeds; it now prints the lane and URL) and
+       delete the ones that fail (a feed failing 24 runs in a row is switched off by itself). Hindi section feeds and
+       specialist feeds (ESPNcricinfo, Moneycontrol; paywalled ET / Business Standard / Mint stay out, option B) are NOT
+       added: wait for the ledger. Network18 owns News18 + Firstpost (one independence group), so round one has 5 groups.
+     - **Intake** (`express.take_intake`, called by `ingest.ingest`): express links have their own caps (`intake_per_feed` 12,
+       `intake_per_run` 80; the main feeds keep their 400 and 30) and the code exclusions run on the headline and the feed's
+       blurb BEFORE the page is fetched (no download, nothing stored). A lane feed while `enabled: false` (or an unknown lane)
+       is not read at all (`express.skip_feed`), so section feeds never reach the strict politics grouping by accident.
+       Intake diagnostics are keyed "Outlet [lane]" (`ingest._dk`; several feeds share an outlet name).
+     - **The gate** (`express.gate`, called in `stories.group_stories` next to `worldgate.hold`; a failure there only holds the
+       express articles, never stops politics grouping): for an UNREAD express-feed article with no vector: page not readable
+       (`text_source == summary`) -> no (Option B); code exclusions with its lane's own lists -> excluded; else the headline
+       question (`express.lanes_agreed`: `page` tier, batches of `filter_batch` 20, at most `filter_calls_per_run` 6 first-asking
+       calls a run, newest first; the second ask only for headlines that got a lane, in REVERSE order; a lane counts only if both
+       answers name the same lane, else "none"; a headline the model did not answer, no quota or a failed call stays UNDECIDED and
+       is asked next run); the lane's own exclusions run again on the lane the model named. Worked examples for the small model
+       are `filter_examples` in `express.yaml`. Only a "yes" is embedded.
+     - **The verdict is kept with the article** in `articles.extraction["express"]` = `{v: 1, verdict: yes|no|excluded, lane, why,
+       at}` (an unread article's `extraction` was unused; `extract._extract_one` now carries the key over when it writes
+       `{model}`; a `VERDICT_VERSION` bump re-judges everything). A headline is therefore judged once.
+     - **The slice**: express articles that passed are embedded FIRST in `_embed_missing(first=...)` (a reserved place and a
+       cap), within `embed_allowance` = `int(cap * router.pace_fraction(now)) - used today` (the same pacing curve as the other
+       quotas), counted in `quota_usage` as model `express:embed` per Pacific day (`express.book_embedded`; the same table
+       `carry:*` uses). A passed headline beyond the allowance waits (verdict stays "yes", found again next run). Nothing is
+       asked once the day's `embed_daily_cap` is used. Express articles are NOT taken out of the politics budget in advance:
+       they take their (capped) share first, politics gets the rest of the run's budget.
+     - **Funnel** (`express.STATS`, saved as `runs.stats["express"]`, printed by the ledger): `taken`, `intake_excluded`,
+       `intake_over_cap`, `unreadable`, `asked`, `not_lane`, `passed`, `passed_<lane>`, `embedded`, `calls`, `excluded` {list: n},
+       `excluded_terms` {"list:word": n} (the ledger prints the top 25 words: loosen the ones that keep out good stories),
+       `now` {cap_left, allowance, passed_waiting, undecided}. `EMBED_STATS` also has `held_express`.
+     - Tests: `tests/test_express_gate.py` (plain logic, 22 tests, ran in the sandbox with a stand-in runner; mutation-checked)
+       and `tests/test_express_db.py` (through the database; NOT RUN: needs sqlalchemy / pytest). `_embed_missing`'s new order
+       was run alone against fakes.
+     - **Already useful before Part 3:** an express-feed article that passed is embedded and grouped like any other, so a sport
+       or company story that three independent outlets carry now reaches the normal strict route (rating, reading, writing) and
+       the beat seat; what Part 3 adds is one-outlet stories.
+  3. TODO (next): qualify an express story from one independent outlet with a named origin (`origins.py`, `priority.py`,
+     `stories`/`editions` settle of one hour, reading cap); dispute check at 2 outlets for express stories only; find every
+     place that still assumes 3 outlets (`qualify_min_outlets`, `min_sources_to_read`, `established_*` stay for green; the
+     essay checks, perspectives, `follow_up_ok`).
+  4. TODO: seats (`desk_beat_seat` 2, shared with express), the writer's attribution wording for company claims, final
+     CLAUDE.md pass, replay on stored data (`tools/replay.py`).
+- **The ledger (owner, Oct 12 2026: "embedding is a lot of confusion ... store them in detail, so we can use them to fine tune";
+  `ledger.py`, folder `ledger/`, `.github/scripts/ledger.sh`).** One record per hourly run, committed to the repository (so the
+  zip carries it) by a step after the desk (`continue-on-error`; reads only, no model, no quota). `ledger/runs-YYYY-MM.jsonl`
+  holds the detail (120 days), `ledger/LEDGER.md` the readable summary of the last 8 days (embedding by quota day, last 24
+  runs, per-outlet yield, the express funnel, problems), `ledger/README.md` the field meanings. Embedding detail comes from
+  `stories.EMBED_STATS` (saved as `runs.stats["embedding"]`): the budget and how it was computed (left today, runs left, pace),
+  waiting new / read articles, what was embedded per outlet, world-held, the yield used for the order; plus the quota counter
+  today in total and per key, and per outlet [articles in the 72 h window, embedded, in a 3+ outlet story]. FIRST THING TO DO
+  when a zip arrives with `ledger/`: read `LEDGER.md` before changing any budget.
 - **Outlets outside India (owner, Oct 9 2026; `worldgate.py`, `priority.py`, `config/ownership.yaml`).** Two jobs:
   India's stories seen from outside (independent origins, real cross-border disputes) and world stories of global
   impact. Indian coverage decides relevance: (1) a world outlet's article joins stories Indian outlets cover;

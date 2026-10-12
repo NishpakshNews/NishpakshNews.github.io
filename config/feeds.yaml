@@ -12,6 +12,12 @@
 #                   articles come half or more from such feeds gets the reserved reading places and the
 #                   desk's Domains/Sport seat (priority.py, desk.py).
 
+# lane: companies | sport | entertainment | tech -> an EXPRESS-LANE feed (owner, Oct 12 2026; express.py,
+#                   config/express.yaml): a section feed whose stories may be written from ONE independent outlet. It has
+#                   its own intake caps, the code exclusions run before the page is fetched, and an article is embedded
+#                   only after its headline passed the lane question, within a daily slice. Never mix a lane tag with a
+#                   `beat:` or put a politics feed under a lane.
+
 feeds:
   # ---------- English ----------
   - {name: The Hindu, lang: en, url: "https://www.thehindu.com/news/national/feeder/default.rss"}
@@ -87,6 +93,42 @@ feeds:
   - {name: CGTN, lang: en, url: "https://www.cgtn.com/subscribe/rss/section/world.xml"}
   - {name: TASS, lang: en, url: "https://tass.com/rss/v2.xml"}
   - {name: Anadolu Agency, lang: en, url: "https://www.aa.com.tr/en/rss/default?cat=guncel"}
+
+  # ---------- Express-lane feeds (owner, Oct 12 2026) ----------
+  # Round one: English only, section feeds of outlets already in the app (their ownership groups are known). Hindi
+  # section feeds wait until the ledger shows how the exclusions and the headline question behave (the exclusion
+  # lists are thinner in Hindi). Paywalled business papers (Economic Times, Business Standard, Mint) are not here:
+  # option B, a page we cannot read is never used. NOT CHECKED FROM THE SANDBOX (no network): run
+  # `python -m nishpaksh.tools.check_feeds` on GitHub's runner (workflow probe, part feeds) and delete any that fail;
+  # a feed that fails 24 runs in a row is switched off by itself.
+  # companies (business section)
+  - {name: Hindustan Times, lang: en, lane: companies, url: "https://www.hindustantimes.com/feeds/rss/business/rssfeed.xml"}
+  - {name: Times of India, lang: en, lane: companies, url: "https://timesofindia.indiatimes.com/rssfeeds/1898055.cms"}
+  - {name: The Indian Express, lang: en, lane: companies, url: "https://indianexpress.com/section/business/feed/"}
+  - {name: News18, lang: en, lane: companies, url: "https://www.news18.com/commonfeeds/v1/eng/rss/business.xml"}
+  - {name: Firstpost, lang: en, lane: companies, url: "https://www.firstpost.com/commonfeeds/v1/mfp/rss/business.xml"}
+  - {name: The Hindu, lang: en, lane: companies, url: "https://www.thehindu.com/business/feeder/default.rss"}
+  # sport
+  - {name: Hindustan Times, lang: en, lane: sport, url: "https://www.hindustantimes.com/feeds/rss/sports/rssfeed.xml"}
+  - {name: Times of India, lang: en, lane: sport, url: "https://timesofindia.indiatimes.com/rssfeeds/4719148.cms"}
+  - {name: The Indian Express, lang: en, lane: sport, url: "https://indianexpress.com/section/sports/feed/"}
+  - {name: News18, lang: en, lane: sport, url: "https://www.news18.com/commonfeeds/v1/eng/rss/sports.xml"}
+  - {name: Firstpost, lang: en, lane: sport, url: "https://www.firstpost.com/commonfeeds/v1/mfp/rss/sports.xml"}
+  - {name: The Hindu, lang: en, lane: sport, url: "https://www.thehindu.com/sport/feeder/default.rss"}
+  # entertainment
+  - {name: Hindustan Times, lang: en, lane: entertainment, url: "https://www.hindustantimes.com/feeds/rss/entertainment/rssfeed.xml"}
+  - {name: Times of India, lang: en, lane: entertainment, url: "https://timesofindia.indiatimes.com/rssfeeds/1081479906.cms"}
+  - {name: The Indian Express, lang: en, lane: entertainment, url: "https://indianexpress.com/section/entertainment/feed/"}
+  - {name: News18, lang: en, lane: entertainment, url: "https://www.news18.com/commonfeeds/v1/eng/rss/movies.xml"}
+  - {name: Firstpost, lang: en, lane: entertainment, url: "https://www.firstpost.com/commonfeeds/v1/mfp/rss/entertainment.xml"}
+  - {name: The Hindu, lang: en, lane: entertainment, url: "https://www.thehindu.com/entertainment/feeder/default.rss"}
+  # tech launches
+  - {name: Hindustan Times, lang: en, lane: tech, url: "https://www.hindustantimes.com/feeds/rss/technology/rssfeed.xml"}
+  - {name: Times of India, lang: en, lane: tech, url: "https://timesofindia.indiatimes.com/rssfeeds/5880659.cms"}
+  - {name: The Indian Express, lang: en, lane: tech, url: "https://indianexpress.com/section/technology/feed/"}
+  - {name: News18, lang: en, lane: tech, url: "https://www.news18.com/commonfeeds/v1/eng/rss/tech.xml"}
+  - {name: Firstpost, lang: en, lane: tech, url: "https://www.firstpost.com/commonfeeds/v1/mfp/rss/tech.xml"}
+  - {name: The Hindu, lang: en, lane: tech, url: "https://www.thehindu.com/sci-tech/feeder/default.rss"}
 
   # ---------- Official ----------
   - {name: PIB, lang: en, role: official, url: "https://pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=3"}

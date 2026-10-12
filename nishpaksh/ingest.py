@@ -239,7 +239,16 @@ def fill_images(store: Store, limit: int = 120) -> int:
     return found
 
 
+def _dk(feed: dict) -> str:
+    """The key of a feed in the intake diagnostics: an express feed has its lane in it (one outlet, many section feeds)."""
+    from . import express
+    lane = express.lane_of_url(feed["url"])
+    return f"{feed['name']} [{lane}]" if lane else feed["name"]
+
+
 def ingest(store: Store) -> int:
+    from . import express
+    express.reset()          # the express funnel of this run starts here (stats["express"])
     now = utcnow()
     oldest = now - dt.timedelta(hours=SETTINGS.max_article_age_hours)
     candidates: list[tuple[dict, dict]] = []
@@ -247,6 +256,8 @@ def ingest(store: Store) -> int:
     diag: dict[str, dict] = {}
 
     for feed in store.rows(select(feeds).where(feeds.c.disabled.is_(False))):
+        if express.skip_feed(feed["url"]):
+            continue         # an express feed while its lane is off: never mixed into the politics intake
         try:
             entries = fetch_feed(feed)
             store.exec(update(feeds).where(feeds.c.id == feed["id"]).values(fail_count=0, last_ok=now))
@@ -256,14 +267,14 @@ def ingest(store: Store) -> int:
             store.exec(update(feeds).where(feeds.c.id == feed["id"]).values(fail_count=fails, disabled=disabled))
             log.warning("feed %s failed (%d)%s: %s", feed["name"], fails, " -> DISABLED" if disabled else "", e)
             continue
-        diag[feed["name"]] = {"entries": len(entries), "fresh": 0, "new": 0, "added": 0, "too_short": 0}
+        diag[_dk(feed)] = {"entries": len(entries), "fresh": 0, "new": 0, "added": 0, "too_short": 0}
         for en in entries:
             pub = en["published_at"] or now
             if pub < oldest or en["url"] in seen:
                 continue
             seen.add(en["url"])
             candidates.append((feed, en))
-            diag[feed["name"]]["fresh"] += 1
+            diag[_dk(feed)]["fresh"] += 1
 
     if not candidates:
         log.info("ingest: no fresh links; per feed %s", diag)
@@ -274,16 +285,19 @@ def ingest(store: Store) -> int:
         known |= {r["url"] for r in store.rows(select(articles.c.url).where(articles.c.url.in_(urls[i:i + 500])))}
     todo = [(f, en) for f, en in candidates if en["url"] not in known]
     for f, _ in todo:
-        diag[f["name"]]["new"] += 1
+        diag[_dk(f)]["new"] += 1
     todo.sort(key=lambda fe: fe[1]["published_at"] or now, reverse=True)
+    # express feeds have their own door and caps (express.py): the code exclusions run before any page is fetched
+    todo, express_todo = express.take_intake(todo)
     per_feed: dict[int, int] = {}
     fair = []
     for f, en in todo:
         if per_feed.get(f["id"], 0) < SETTINGS.max_new_per_feed:
             per_feed[f["id"]] = per_feed.get(f["id"], 0) + 1
             fair.append((f, en))
-    todo = fair[: SETTINGS.max_new_articles_per_run]
-    log.info("ingest: %d new links across %d feeds", len(todo), len({f['id'] for f, _ in todo}))
+    todo = fair[: SETTINGS.max_new_articles_per_run] + express_todo
+    log.info("ingest: %d new links across %d feeds (%d from express feeds)", len(todo),
+             len({f['id'] for f, _ in todo}), len(express_todo))
 
     with ThreadPoolExecutor(max_workers=8) as pool:
         pages = list(pool.map(lambda fe: fetch_article(fe[1]["url"]), todo))
@@ -295,7 +309,7 @@ def ingest(store: Store) -> int:
             # page blocked or unreadable: fall back to what the feed itself says
             text, source = ". ".join(x for x in (en["title"], en["summary"]) if x), "summary"
         if len(text) < 60:
-            diag[feed["name"]]["too_short"] += 1
+            diag[_dk(feed)]["too_short"] += 1
             continue
         author = (page or {}).get("author") or en["author"]
         values = dict(
@@ -309,7 +323,7 @@ def ingest(store: Store) -> int:
             store.exec(insert(articles).values(**values))
             added += 1
             IMAGE_STATS["with" if values["image"] else "without"] += 1
-            diag[feed["name"]]["added"] += 1
+            diag[_dk(feed)]["added"] += 1
         except Exception as e:  # unique race etc.
             log.debug("insert skipped %s: %s", en["url"], e)
     # a feed with new links that still added nothing has a real problem (blocked pages, empty text)

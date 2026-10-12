@@ -104,6 +104,10 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
             store, tavily, SETTINGS.tavily_extract_pages_per_run, focus=set(priority.queue(store)), bank=bank))
     stats["wire_assigned"] = wire.assign_wire_groups(store)
     stats["grouped"] = step("grouping", lambda: story_mod.group_stories(store, router))   # a failure must not stop reading and writing
+    from . import express as _express
+    if _express.STATS:
+        stats["express"] = {k: (dict(v) if isinstance(v, dict) else v) for k, v in _express.STATS.items()}
+    stats["embedding"] = dict(story_mod.EMBED_STATS)     # what grouping did with the embedding quota (ledger.py records it)
     # only the stories worth writing are read and analysed (priority.py, owner Oct 6 2026): each story
     # with 3+ sources is rated from its headlines; the best `prep_queue` of them are prepared
     stats["rated"] = step("priority", lambda: priority.rank_new(store, router))
