@@ -1,6 +1,6 @@
 """Headlines that make the reader want the article (owner, Oct 12 2026): weak, old-sounding, and a bare name of a
 person nobody knows. Checks by code on what the model writes; the model is only asked for three candidates."""
-from nishpaksh.news import (HEADLINE_PROMPT, _opening_name_problem, headline_problem, headline_score, known_names,
+from nishpaksh.news import (HEADLINE_PROMPT, repeats, _opening_name_problem, headline_problem, headline_score, known_names,
                             write_headline)
 
 FACTS = ("The Supreme Court ordered actor Rajpal Yadav to pay Rs 5 crore. Rajpal Yadav said he would "
@@ -95,6 +95,36 @@ def test_write_headline_asks_again_with_the_reasons_when_all_three_fail():
 
 
 def test_the_prompt_is_still_found_by_the_fake_backend_and_fills_in():
-    assert HEADLINE_PROMPT.startswith("Write THREE different headlines")
-    text = HEADLINE_PROMPT.format(dispute="", thread="", news="N", newest="THE NEWS", latest="", lead="L", others="- o")
+    assert "Write THREE different headlines" in HEADLINE_PROMPT[:40]
+    text = HEADLINE_PROMPT.format(now="", taken="", news_when="", dispute="", thread="", news="N", newest="THE NEWS", latest="", lead="L", others="- o")
     assert "THE NEWS: N" in text and "{" not in text.replace("{{", "").replace("}}", "").split("Reply with JSON only")[0]
+
+
+def test_repeats_catches_a_reworded_earlier_headline_but_not_a_new_development():
+    taken = ["PM Modi inaugurates 15-kilometre Chennai Metro stretch", "Authorities shut down 45 metro stations for over 21 hours"]
+    assert repeats("PM Modi opens 15-kilometre Chennai Metro stretch for public use", taken) == taken[0]
+    assert repeats("Delhi shuts 45 metro stations as police detain thousands during election protests", taken) == taken[1]
+    assert repeats("PM Modi urges Chennai students to promote Tamil culture globally", taken) is None
+    assert repeats("Delhi metro reopens after 21-hour shutdown", taken) is None
+
+
+def test_write_headline_skips_a_repeat_and_shows_the_model_the_published_ones():
+    news, latest, items = _items()
+    old = "Supreme Court orders actor Rajpal Yadav to pay Rs 5 crore"
+    router = _Router([{"headlines": ["Supreme Court directs actor Rajpal Yadav to pay Rs 5 crore",   # same words: out
+                                     "Lawyers for Yadav seek a stay on the verdict",
+                                     "What we know about Rajpal Yadav"]}])
+    h = write_headline(router, news, items, "The Supreme Court ordered actor Rajpal Yadav to pay Rs 5 crore.", set(),
+                       latest=latest, taken=[old], parents=[])
+    assert h == "Lawyers for Yadav seek a stay on the verdict"
+    assert "HEADLINES ALREADY PUBLISHED" in router.prompts[0] and old in router.prompts[0]
+
+
+def test_write_headline_uses_the_least_repeated_one_rather_than_holding_the_article_back():
+    news, _, items = _items()
+    old = "Supreme Court orders actor Rajpal Yadav to pay Rs 5 crore"
+    same = {"headlines": ["Supreme Court directs actor Rajpal Yadav to pay Rs 5 crore"]}
+    router = _Router([same, same])
+    h = write_headline(router, news, items, "x", set(), taken=[old])
+    assert h == "Supreme Court directs actor Rajpal Yadav to pay Rs 5 crore"
+    assert "it repeats the published headline" in router.prompts[1]

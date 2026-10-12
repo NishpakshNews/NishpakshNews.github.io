@@ -212,7 +212,7 @@ Weak -> strong:
   -> "Defence Ministry signs Rs 661.50 crore deal for BrahMos launchers"
 - police put a toll at 40 and families at 50: "Building collapse kills 40" (takes a side)
   -> "Seemapuri collapse: police count 40 dead, families say 50"
-{thread}
+{thread}{taken}
 THE NEWS: {news}{news_when}
 {latest}The article opens: {lead}
 Other statements (for one detail, if needed):
@@ -224,6 +224,57 @@ LATEST_NOTE = "LATEST (the newest development, headline THIS one): {latest}\n"
 
 DISPUTE_NOTE = """6. THE NEWS is disputed: {versions}. Do not state either version as fact: say whose it is ("police
    say ..."), or leave the disputed detail out."""
+
+TAKEN_NOTE = """
+HEADLINES ALREADY PUBLISHED (owner, Oct 13 2026: follow-ups and later stories repeated them). Yours must NOT repeat
+or reword any of them, not even with another verb (\"opens\" for \"inaugurates\"). Say what THIS article adds that they
+do not: the new step, figure, person, place, reaction or consequence. Take it from the statements above.
+{lines}
+"""
+
+TAKEN_MAX = 6          # headlines shown to the model (the closest ones; the story's parents always)
+REPEAT_SHARED = 4      # a headline repeats an earlier one when it shares this many content words and half of the
+REPEAT_RATIO = 0.5     # shorter headline's, or 3 words and three quarters (REPEAT_CLOSE) of them
+REPEAT_CLOSE = 0.75
+_FILLER = {"that", "this", "than", "who", "will", "not", "are", "was", "were", "has", "have", "been", "says", "said"}
+
+
+def _sig(text: str) -> frozenset[str]:
+    """The content words of a headline, stemmed (so 'shuts' and 'shut' match); numbers count."""
+    from .frames import _stem
+    return frozenset(_stem(w) for w in re.findall(r"[a-z]+|\d+", (text or "").lower())
+                     if (len(w) > 2 or w.isdigit()) and w not in STOP and w not in _FILLER)
+
+
+def overlap(a: str, b: str) -> tuple[int, float]:
+    """(content words shared, their share of the shorter headline) for two headlines."""
+    sa, sb = _sig(a), _sig(b)
+    if not sa or not sb:
+        return 0, 0.0
+    shared = len(sa & sb)
+    return shared, shared / min(len(sa), len(sb))
+
+
+def repeats(h: str, taken: list[str]) -> str | None:
+    """The earlier headline `h` repeats (same words, maybe another verb), or None."""
+    best, best_ratio = None, 0.0
+    for t in taken:
+        shared, ratio = overlap(h, t)
+        close = (shared >= REPEAT_SHARED and ratio >= REPEAT_RATIO) or (shared >= 3 and ratio >= REPEAT_CLOSE)
+        if close and ratio > best_ratio:
+            best, best_ratio = t, ratio
+    return best
+
+
+def closest_taken(taken: list[str], text: str, parents: list[str] = ()) -> list[str]:
+    """The headlines worth showing the model: the story's parents, then the published ones that share the most
+    words with this article's news. Duplicates dropped."""
+    out: list[str] = []
+    for t in list(parents) + sorted((t for t in taken if overlap(t, text)[0] >= 2), key=lambda t: -overlap(t, text)[0]):
+        if t and t not in out:
+            out.append(t)
+    return out[:TAKEN_MAX]
+
 
 LINKS = ("due to", "amid", "because", "as a result", "triggered", "led to")
 HEDGE = re.compile(r"(?i)\b(reportedly|reports? (?:say|says|said|emerge|suggest|indicate|claim)|according to reports?|"
@@ -426,9 +477,12 @@ def _disputed_answers(news: dict, items: dict[int, dict]) -> tuple[set[str], str
 
 
 def write_headline(router: Router | None, news: dict, items: dict[int, dict], lead: str, banned: set[str],
-                   thread: str = "", latest: dict | None = None) -> str | None:
+                   thread: str = "", latest: dict | None = None, taken: list[str] = (),
+                   parents: list[str] = ()) -> str | None:
     """The best correct headline of three, or None (the article waits as a kept draft). `latest`: the fact of the
-    day when the lead carries a second one (`lead_news`); the headline is then about it."""
+    day when the lead carries a second one (`lead_news`); the headline is then about it.
+    `taken`: headlines already published (a headline too close to one is not used while a fresh one exists);
+    `parents`: the headlines of the stories this one develops (always shown to the model)."""
     if router is None or not news:
         return None
     if latest is not None and latest.get("id") == news.get("id"):
@@ -441,14 +495,18 @@ def write_headline(router: Router | None, news: dict, items: dict[int, dict], le
     source = facts.lower()
     latest_text = latest["text"] if latest else ""
     disputed, versions = _disputed_answers(news, items)
+    taken = [t for t in dict.fromkeys(list(parents) + list(taken)) if t]
+    shown = closest_taken(taken, f"{news['text']} {lead}", parents)
+    taken_note = TAKEN_NOTE.format(lines="\n".join(f"- {t}" for t in shown)) if shown else ""
     ctx = f"\nThis is a new development in an ongoing story ({thread}): headline the NEW development.\n" if thread else ""
     ago = clock.relative(((latest or news).get("time") or {}).get("start"))
     prompt = HEADLINE_PROMPT.format(
         now=clock.now_line().split("\n", 1)[0] + "\n\n", news_when=f" (dated: {ago})" if ago else "",
-        dispute=DISPUTE_NOTE.format(versions=versions) if versions else "", thread=ctx, news=news["text"],
+        dispute=DISPUTE_NOTE.format(versions=versions) if versions else "", thread=ctx, taken=taken_note, news=news["text"],
         newest="the one marked LATEST" if latest else "THE NEWS", latest=LATEST_NOTE.format(latest=latest_text) if latest else "",
         lead=lead or news["text"], others="\n".join(f"- {i['text']}" for i in others) or "- (none)")
     tried: list[str] = []
+    repeated: list[tuple[float, str]] = []     # correct headlines that repeat an earlier one
     for attempt in range(2):          # a second call only when all three fail
         try:
             res = router.call("page", prompt, json_out=True, max_output_tokens=300)
@@ -464,11 +522,20 @@ def write_headline(router: Router | None, news: dict, items: dict[int, dict], le
             problem = headline_problem(h, source, banned, disputed, facts)
             if problem:
                 why.append(f'"{h}": {problem}')
+                continue
+            twin = repeats(h, taken)
+            if twin:       # correct, but it says what an earlier headline already said
+                repeated.append((overlap(h, twin)[1], h))
+                why.append(f'"{h}": it repeats the published headline "{twin}"; say what is NEW in this article')
             else:
                 good.append(h)
         if good:
             return max(good, key=lambda h: headline_score(h, news["text"], latest_text))   # ties: the model's first
         tried += why
         prompt += "\n\nThese were rejected:\n" + "\n".join(f"- {w}" for w in why[:3]) + "\nWrite three new ones."
+    if repeated:       # nothing fresh in two tries: the least repeated one beats holding the article back
+        h = min(repeated, key=lambda r: (r[0], -headline_score(r[1], news["text"], latest_text)))[1]
+        log.info("headline repeats an earlier one, used anyway: %s", h)
+        return h
     log.info("no headline passed: %s", "; ".join(tried)[:400])
     return None

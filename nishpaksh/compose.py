@@ -641,6 +641,19 @@ def _all_items_of(payload: dict) -> list[dict]:
 LAST_OUTCOME: dict[str, str] = {}
 
 
+RECENT_HEADLINE_DAYS = 7     # published headlines a new one must not repeat (owner, Oct 13 2026)
+RECENT_HEADLINE_MAX = 400
+
+
+def recent_headlines(store: Store, story_id: int, days: int = RECENT_HEADLINE_DAYS) -> list[str]:
+    """English headlines published in the last `days` days (not this story's own), newest first."""
+    since = utcnow() - dt.timedelta(days=days)
+    rows = store.rows(select(published.c.headline_en).where(published.c.story_id != story_id,
+                                                           published.c.updated_at >= since)
+                      .order_by(published.c.updated_at.desc()).limit(RECENT_HEADLINE_MAX))
+    return [r["headline_en"] for r in rows if r.get("headline_en")]
+
+
 def _outcome(story_id: int, what: str, detail: dict | None = None) -> bool:
     LAST_OUTCOME.clear()
     LAST_OUTCOME.update(story=str(story_id), outcome=what, detail=detail)
@@ -700,7 +713,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         lead_ids = payload.get("lead") or []                     # the news, and the fact of the day if another
         latest = items_.get(lead_ids[1]) if len(lead_ids) > 1 else None
         payload["headline"] = write_headline(router, news, items_, lead, banned, payload.get("_thread_ctx") or "",
-                                             latest=latest)
+                                             latest=latest, taken=recent_headlines(store, story_id),
+                                             parents=[x["headline"] for x in payload.get("parents") or []])
     headline_missing = essay_good and not payload.get("headline")
     if not essay_good or headline_missing:
         # which check failed, with the numbers (owner, Oct 11 2026, story 16981): kept with the failure and in the log
