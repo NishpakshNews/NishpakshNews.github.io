@@ -213,7 +213,7 @@ def extras(store: Store, manifest: dict) -> dict[str, dict]:
     try:
         for r in store.rows(select(audio_files.c.story_id, audio_files.c.lang).where(audio_files.c.story_id.in_(ids))):
             out.setdefault(str(r["story_id"]), {}).setdefault("au", []).append(r["lang"])
-        for r in store.rows(select(videos.c.story_id, videos.c.items).where(videos.c.story_id.in_(ids))):
+        for r in store.rows(select(videos.c.story_id, videos.c["items"]).where(videos.c.story_id.in_(ids))):
             if r["items"]:
                 out.setdefault(str(r["story_id"]), {})["vd"] = len(r["items"])
     except Exception as e:  # noqa: BLE001 - the reader tables are optional for the feed

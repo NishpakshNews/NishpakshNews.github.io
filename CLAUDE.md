@@ -811,7 +811,7 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   quota_usage) lives in a Postgres 17 SERVICE inside the hourly job (hourly.yml), loaded from the saved copy and
   saved again at the end (`.github/scripts/newsroom.sh`): pg_dump, checked (articles/stories never empty, the
   main tables present), AES-256 encrypted with the `NEWSROOM_KEY` secret (public repo, outlets' text), kept in the
-  Actions cache (`newsroom-<run>`) AND force-pushed to the `newsroom` branch (90 MB parts); restore takes the copy
+  Actions cache (`newsroom-<run>`) AND force-pushed to the `newsroom` branch (40 MB parts, `NEWSROOM_PART_MB`); restore takes the copy
   with the newer stamp and REFUSES to start with none (never an empty newsroom saved over the real one); save
   refuses unless this job loaded a copy. Supabase keeps the READER tables and the run logs (`db.READER_TABLES`:
   profiles, follows, push_subscriptions, notifications, audio_requests, audio_files, recaps, videos, saved,

@@ -293,7 +293,7 @@ def fetch_new(store: Store, limit: int = 6, key: str | None = None, get=None, ro
 
     now = utcnow()
     since = now - dt.timedelta(hours=NEW_HOURS)
-    have = {r["story_id"]: r for r in store.rows(select(videos.c.story_id, videos.c.fetched_at, videos.c.items))}
+    have = {r["story_id"]: r for r in store.rows(select(videos.c.story_id, videos.c.fetched_at, videos.c["items"]))}
     rows = [r for r in store.rows(select(published.c.story_id, published.c.headline_en, published.c.headline_hi,
                                          published.c.payload_en, published.c.payload_hi, published.c.updated_at)
                                   .where(published.c.updated_at >= since).order_by(published.c.updated_at.desc()))

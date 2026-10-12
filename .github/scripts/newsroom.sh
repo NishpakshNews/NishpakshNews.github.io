@@ -7,7 +7,7 @@
 #
 # The copy is kept twice, ENCRYPTED (the repo is public and the copy holds outlets' article text):
 #   1. the Actions cache (fast), key newsroom-<run>-<attempt>, at .newsroom/cache/
-#   2. the `newsroom` branch (backup), one commit force-pushed, in parts of 90 MB
+#   2. the `newsroom` branch (backup), one commit force-pushed, in parts of PART_MB (40) MB, under GitHub's 50 MB warning
 # Each copy carries a stamp (UTC time of the save + run id); restore takes the newer of the two.
 #
 #   newsroom.sh restore     load the newest copy into the local Postgres (fails if there is none: the job
@@ -24,6 +24,7 @@ CACHE="$DIR/cache"
 DB="newsroom"
 LOCAL="postgresql://postgres:postgres@localhost:5432"
 BRANCH="newsroom"
+PART_MB="${NEWSROOM_PART_MB:-40}"   # GitHub warns on files over 50 MB and refuses over 100 MB
 REMOTE="${NEWSROOM_REMOTE:-https://x-access-token:${GH_TOKEN:-}@github.com/${GITHUB_REPOSITORY:-}.git}"
 # the newsroom tables (everything in public except READER_TABLES in nishpaksh/db.py)
 TABLES=(feeds articles stories claims canonical story_pairs source_clusters published translations story_links quota_usage)
@@ -133,6 +134,9 @@ save() {
   need_key
   if [ ! -f "$DIR/restored" ]; then fail "this job never loaded a newsroom copy: not saving"; fi
   check_counts
+  # where the space goes (MB, biggest first): shows what to prune if the copy ever needs to shrink; never fails the save
+  echo "table sizes (MB):"
+  sql "select relname || ' ' || round(pg_total_relation_size(c.oid) / 1e6) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'r' order by pg_total_relation_size(c.oid) desc limit 8" | sed 's/^/  /' || true
   local tabs=()
   for t in "${TABLES[@]}"; do tabs+=(-t "public.$t"); done      # the newsroom tables only (with their sequences)
   pg pg_dump --no-owner --no-acl -Fc -Z 6 "${tabs[@]}" -f $W/out.dump "$LOCAL/$DB"
@@ -152,7 +156,7 @@ save() {
   echo "$stamp" > "$CACHE/stamp"
   # 2. the branch copy: one commit, force-pushed, so the branch never grows
   rm -rf "$DIR/push"; mkdir -p "$DIR/push"
-  split -b 90m -d -a 3 "$CACHE/newsroom.dump.enc" "$DIR/push/newsroom.dump.enc.part-"
+  split -b "${PART_MB}m" -d -a 3 "$CACHE/newsroom.dump.enc" "$DIR/push/newsroom.dump.enc.part-"
   echo "$stamp" > "$DIR/push/stamp"
   cat > "$DIR/push/README.md" <<'EOF'
 Encrypted copy of the Nishpaksh newsroom database (.github/scripts/newsroom.sh). Not for reading.
