@@ -1202,7 +1202,7 @@ function keyHtml(t, nar) {
   for (const para of nar.paragraphs || []) for (const x of para) {
     for (const c of (x.parts && x.parts.length > 1 ? x.parts.map(p => p.class) : [x.class])) present.add(cls(c));
   }
-  return ["established", "developing", "unverified", "partial", "single", "disputed", "false"].filter(k => present.has(k))
+  return ["established", "developing", "partial", "single", "disputed", "false", "unverified"].filter(k => present.has(k))   // the bar's order (BARKEY)
     .map(k => `<span style="color:${KEYCOLOR[k]}">● ${esc(t.k[k])}</span>`).join("");
 }
 function whoHtml(p, t) {

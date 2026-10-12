@@ -4172,3 +4172,27 @@ def test_an_office_without_its_scope_gets_it_in_brackets_once():
     P = [[{"text": "x", "ids": [1], "parts": [{"text": "The police spokesperson said"}, {"text": "the road is shut."}]}]]
     assert gloss(P, lambda s: ["Delhi Police spokesperson"], [], {}) == 1
     assert P[0][0]["text"] == "The police spokesperson (Delhi Police spokesperson) said the road is shut."
+
+
+def test_a_title_with_of_is_removed_whole_or_not_at_all_when_a_person_is_named_again():
+    """Owner, Oct 12 2026: "Lok Sabha Leader of Gandhi", "Rajya Sabha Leader of Kharge", "Chief Justice of Kant":
+    only "Opposition Rahul" / "India Surya" was cut, the start of the title stayed."""
+    from nishpaksh import style, titles
+    text = ("Lok Sabha Leader of Opposition Rahul Gandhi and Rajya Sabha Leader of Opposition Mallikarjun Kharge sought "
+            "a meeting with Chief Justice of India Surya Kant. Lok Sabha Leader of Opposition Rahul Gandhi said the poll "
+            "was unfair. Rajya Sabha Leader of Opposition Mallikarjun Kharge spoke to reporters in Bengaluru. Leader of "
+            "the Opposition Rahul Gandhi sought a meeting with Chief Justice of India Surya Kant. Assam Chief Minister "
+            "Himanta Biswa Sarma said it. The Chief Minister Himanta Biswa Sarma added more.")
+    paras = [[{"text": t.strip() if t.strip().endswith(".") else t.strip() + "."} for t in text.split(". ")]]
+    style.shorten_names(paras)
+    got = [x["text"] for x in paras[0]]
+    assert got[0].startswith("Lok Sabha Leader of Opposition Rahul Gandhi and Rajya Sabha Leader of Opposition Mallikarjun Kharge")
+    assert got[0].endswith("Chief Justice of India Surya Kant.")           # the introductions are left as written
+    assert got[1:] == ["Gandhi said the poll was unfair.", "Kharge spoke to reporters in Bengaluru.",
+                       "Gandhi sought a meeting with Kant.", "Assam Chief Minister Himanta Biswa Sarma said it.",
+                       "Sarma added more."]
+    assert not any(" of Gandhi" in t or " of Kharge" in t or " of Kant" in t for t in got)
+    # the phrase finder: "of" and "the" bridge title words, a clause end stops it
+    assert titles.title_before("Rajya Sabha Leader of the Opposition Mallikarjun Kharge", "Mallikarjun Kharge") \
+        == "Rajya Sabha Leader of the Opposition"
+    assert titles.title_before("said in Delhi. Chief Minister Atishi", "Atishi") == "Chief Minister"

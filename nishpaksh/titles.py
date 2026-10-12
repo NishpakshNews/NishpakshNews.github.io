@@ -193,33 +193,50 @@ def ref_for(role_id: str | None) -> str | None:
 _CAP = re.compile(r"^[A-Z0-9]")
 
 
-def title_before(text: str, name: str, max_words: int = 5) -> str:
-    """The title phrase written directly before `name` in `text` (\"Assam Chief Minister\" before \"Himanta Biswa
-    Sarma\"), or \"\". Words are taken backwards while they are title words, or capitalised qualifiers that sit right
-    before a title word (\"Assam\", \"AAP Delhi\"); the phrase must hold at least one title word, and never starts with
-    a sentence opener (\"The\", \"While\")."""
-    m = re.search(rf"((?:[\w.&'()-]+\s+){{1,{max_words}}}){re.escape(name)}(?![\w-])", text)
-    if not m:
-        return ""
-    words = m.group(1).split()
-    tw = title_words()
-    take: list[str] = []
-    for w in reversed(words):
+def title_start(prefix: str, max_words: int = 7, extra: frozenset | set = frozenset(),
+                extra_person: frozenset | set = frozenset()) -> int:
+    """Where the title phrase that ENDS `prefix` begins (an index into `prefix`; len(prefix) when there is none).
+    `prefix` is the text right before a name. Words are taken backwards while they are title words, or capitalised
+    qualifiers that sit right before a title word ("Assam", "Lok Sabha", "AAP Delhi"); "of" and "the" bridge title
+    words ("Leader of Opposition", "Chief Justice of India", "Leader of the Opposition") so a title is taken whole or
+    not at all (owner, Oct 12 2026: \"Lok Sabha Leader of Gandhi\", because only \"Opposition Rahul\" was cut). The
+    phrase must hold at least one person-title word and never starts with a sentence opener (\"The\", \"While\").
+    `extra` / `extra_person` add words the caller also knows as title words."""
+    toks = [(m.group(0), m.start(), m.end()) for m in re.finditer(r"[\w.&'()-]+", prefix)]
+    if prefix[len(prefix.rstrip()):] == "" and toks:
+        return len(prefix)                      # no space before the name: it is a part of a word, not a title
+    toks = toks[-max_words:]
+    tw = title_words() | set(extra)
+    pw = person_title_words() | set(extra_person) | set(extra)
+    take: list[tuple[str, int, int]] = []
+    for tok in reversed(toks):
+        w = tok[0]
         bare = w.strip(".,;:")
         if bare in tw or bare.lower() in ("of", "the") and take:
-            take.append(w)
-        elif (_CAP.match(bare) and any(t.strip(".,;:") in tw for t in take) and bare.lower() not in _OPENERS
+            take.append(tok)
+        elif (_CAP.match(bare) and any(t[0].strip(".,;:") in tw for t in take) and bare.lower() not in _OPENERS
               and not re.search(r"[.,;:!?]$", w)):      # a word ending a sentence or clause is not part of the title
-            take.append(w)
+            take.append(tok)
         else:
             break
     take.reverse()
-    while take and (take[0].strip(".,;:").lower() in _OPENERS | {"of", "the"}):
+    while take and (take[0][0].strip(".,;:").lower() in _OPENERS | {"of", "the"}):
         take = take[1:]
-    # a trailing qualifier-only phrase ("Union", "Deputy") is no title
-    if not any(w.strip(".,;:") in person_title_words() for w in take):
+    # "of" at the end can not happen (a name follows the title), and a qualifier-only phrase ("Union") is no title
+    if not any(t[0].strip(".,;:") in pw for t in take):
+        return len(prefix)
+    return take[0][1]
+
+
+def title_before(text: str, name: str, max_words: int = 7) -> str:
+    """The title phrase written directly before `name` in `text` ("Assam Chief Minister" before "Himanta Biswa
+    Sarma"), or "". See `title_start` for how the phrase is found."""
+    m = re.search(rf"((?:[\w.&'()-]+\s+){{1,{max_words}}}){re.escape(name)}(?![\w-])", text)
+    if not m:
         return ""
-    return " ".join(take)
+    prefix = m.group(1)
+    start = title_start(prefix, max_words)
+    return prefix[start:].strip()
 
 
 _OPENERS = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "january", "february",

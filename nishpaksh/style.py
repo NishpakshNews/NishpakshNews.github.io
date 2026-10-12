@@ -119,24 +119,38 @@ def shorten_names(paragraphs: list[list[dict]], speakers: list[str] | tuple = ()
     if not names:
         return
     intro = intro_forms(names, [text, *sources])
-    title = rf"(?:(?:the\s+)?(?:[A-Z][a-z]+\s+)?(?:(?:{'|'.join(map(re.escape, TITLES))})\s+)+)?"
     seen: set[str] = set()
-    pats = {full: re.compile(rf"{title}(?<![\w-])(?:(?P<full>{re.escape(full)})|(?P<sur>{re.escape(short)}))(?![\w-])")
+    pats = {full: re.compile(rf"(?<![\w-])(?:(?P<full>{re.escape(full)})|(?P<sur>{re.escape(short)}))(?![\w-])")
             for full, short in names.items()}
 
     def shorten(t: str) -> str:
         for full, short in names.items():
-            def sub(m, full=full, short=short):
+            out, last = [], 0
+            for m in pats[full].finditer(t):
+                if m.start() < last:
+                    continue
+                # the title written in front of the name, taken WHOLE or not at all (owner, Oct 12 2026: a title of
+                # the form \"Leader of Opposition\" lost only its end and read \"Lok Sabha Leader of Gandhi\")
+                prefix = t[:m.start()]
+                at = _titles.title_start(prefix, extra=TITLES, extra_person=PERSON_TITLES)
+                if at < len(prefix) and re.search(r"(?i)\bthe\s+$", prefix[:at]):
+                    at = re.search(r"(?i)\bthe\s+$", prefix[:at]).start()
+                at = max(at, last)
+                written = t[at:m.end()]                  # the title as written, and the name
                 if m.group("full"):
-                    if full not in seen:
+                    if full not in seen:               # the introduction stays as the writer wrote it
                         seen.add(full)
-                        return m.group(0)
-                    return short
-                if full not in seen:               # a surname before the person was introduced
+                        new = written
+                    else:
+                        new = short
+                elif full not in seen:                 # a surname before the person was introduced
                     seen.add(full)
-                    return intro[full]
-                return short                        # \"Chief Minister Sarma\" after the introduction
-            t = pats[full].sub(sub, t)
+                    new = intro[full]
+                else:
+                    new = short                        # \"Chief Minister Sarma\" after the introduction
+                out += [t[last:at], new]
+                last = m.end()
+            t = "".join(out) + t[last:] if out else t
         return t
 
     for para in paragraphs:

@@ -80,6 +80,13 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   - After 3 days the article moves to the `archive` branch (`pagearchive.py`, step in hourly.yml:
     `pages/<id>.json.gz`, `index/<YYYY-MM>.jsonl`) and is deleted from Supabase only after the push.
     The site and follow-ups read archived parents from the branch (raw.githubusercontent.com).
+- **Titles of later mentions are cut whole (owner, Oct 12 2026).** `style.shorten_names` used a regex that took any run of
+  title words in front of a name, so for a repeated "Lok Sabha Leader of Opposition Rahul Gandhi" it cut "Opposition Rahul"
+  and left "Lok Sabha Leader of Gandhi" (also "Chief Justice of Kant"; only on later mentions, which is why it was
+  intermittent). It now asks `titles.title_start`, the one phrase finder (`title_before` uses it too): "of" and "the" bridge
+  title words, capitalised qualifiers ("Lok Sabha") join, a clause end stops it, and the title goes whole or not at all.
+  The introduction stays as written. Site: the colour key under the headline is now in the bar's order (established,
+  developing, partial, one outlet, disputed, false, not cross-checked).
 - **Aim 85%, publish from 80% (owner, Oct 12 2026).** The writer is still told to carry 85% of every statement
   (`narrative.COMPLETE`: prompts and fill passes work towards it), but the final check (`essay_ok`, `essay_shortfall`)
   requires only `narrative.PUBLISH_MIN` = 80%. Stories were refused for missing one or two statements of the aim. Under
