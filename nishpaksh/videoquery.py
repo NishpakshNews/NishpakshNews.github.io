@@ -177,6 +177,20 @@ def keywords(frames: list[dict], headline_en: str, headline_hi: str) -> set[str]
     return out
 
 
+def name_keywords(frames: list[dict]) -> set[str]:
+    """The root words of the story's NAMES alone (people, bodies, places): what a loosely related video shares."""
+    out: set[str] = set()
+    for nm in entities(frames, limit=6):
+        out |= roots(nm)
+    return out
+
+
+def loosely_relevant(title: str, names: set[str]) -> bool:
+    """A weaker bar (owner, Oct 12 2026: a slightly unrelated recent video beats none): the title shares at least
+    one root word with the story's NAMES. Titles with no name of the story (audiobooks, drama, ads) stay out."""
+    return bool(roots(title) & names)
+
+
 def relevant(title: str, kw: set[str]) -> bool:
     """A video is about this story when its title shares at least two root words with the story's keywords."""
     return len(roots(title) & kw) >= 2

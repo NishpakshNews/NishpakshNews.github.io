@@ -13,7 +13,12 @@ Design:
   * Curated credible lists for Hindi and English (analytical outlets, UPSC/IAS desks, established national newsrooms).
   * Exact language tagging: channels in the Hindi list are tagged 'hi', channels in the English list are tagged 'en'.
     Channels absent from both lists leave 'lang' as None so the frontend displays no language badge.
-  * Credible channels are prioritized to the top of the selection queue.
+  * Showing something beats showing nothing (owner, Oct 12 2026): the rules above gave empty video cards. Videos are
+    ranked in three tiers, best first: (0) closely related (two shared root words) and uploaded after the story's
+    first report; (1) closely related but OLDER (a search with no date limit, made only when tier 0 gave fewer than
+    MIN_USABLE); (2) recent but loosely related (the title shares one of the story's NAMES). The reader can scroll
+    YouTube for the rest. Titles that share no name or two words with the story (audiobooks, drama, ads) are still
+    left out. Within a tier, credible channels come first.
   * At most 2 videos from one channel, keeping diversity across sources.
 
 Needs YOUTUBE_API_KEY (YouTube Data API v3, free: 10,000 units a day; a search costs 100).
@@ -148,8 +153,8 @@ def pick(lists: list[list[dict]], keep: int = KEEP, per_channel: int = PER_CHANN
     for lst in lists:
         combined.extend(lst)
 
-    # Sort credible channels ahead of unlisted ones, preserving relative discovery order
-    combined.sort(key=lambda v: 0 if v.get("credible") else 1)
+    # best tier first, then credible channels ahead of unlisted ones, preserving relative discovery order
+    combined.sort(key=lambda v: (v.get("tier", 0), 0 if v.get("credible") else 1))
 
     out: list[dict] = []
     seen: set[str] = set()
@@ -169,24 +174,23 @@ def pick(lists: list[list[dict]], keep: int = KEEP, per_channel: int = PER_CHANN
     return out
 
 
-def _search(key: str, q: str, after: dt.datetime, lang: str, get=None) -> list[dict]:
+def _search(key: str, q: str, after: dt.datetime | None, lang: str, get=None) -> list[dict]:
+    """`after` None: no date limit (the search for older, closely related videos)."""
     import requests
     get = get or requests.get
-    r = get(
-        API,
-        params={
-            "part": "snippet",
-            "type": "video",
-            "q": q[:200],
-            "maxResults": PER_SEARCH,
-            "key": key,
-            "regionCode": "IN",
-            "relevanceLanguage": lang,
-            "safeSearch": "moderate",
-            "publishedAfter": after.replace(microsecond=0).isoformat() + "Z",
-        },
-        timeout=20,
-    )
+    params = {
+        "part": "snippet",
+        "type": "video",
+        "q": q[:200],
+        "maxResults": PER_SEARCH,
+        "key": key,
+        "regionCode": "IN",
+        "relevanceLanguage": lang,
+        "safeSearch": "moderate",
+    }
+    if after is not None:
+        params["publishedAfter"] = after.replace(microsecond=0).isoformat() + "Z"
+    r = get(API, params=params, timeout=20)
     r.raise_for_status()
     out = []
     for it in r.json().get("items") or []:
@@ -230,8 +234,11 @@ def _due(updated_at: dt.datetime | None, have: dict | None, now: dt.datetime) ->
     return now - fetched >= RETRY_AFTER and fetched - updated_at <= FIRST_WINDOW
 
 
-def _run(store: Store, key: str, qs: list[tuple[str, str]], after: dt.datetime, kw: set[str], get=None) -> list | None:
-    """Search each (query, language), keep the relevant videos. None when a search failed (try again next run)."""
+def _run(store: Store, key: str, qs: list[tuple[str, str]], after: dt.datetime | None, kw: set[str], get=None,
+         names: set[str] | None = None) -> list | None:
+    """Search each (query, language) and tier the videos (see the module note). None when a search failed (try
+    again next run). With `after` (recent search): two shared words = tier 0; when `names` are given, one shared
+    name = tier 2. Without `after` (older search): two shared words = tier 1; nothing weaker."""
     from .router import quota_day
     lists: list[list[dict]] = []
     for q, lang in qs:
@@ -241,8 +248,19 @@ def _run(store: Store, key: str, qs: list[tuple[str, str]], after: dt.datetime, 
             log.info("youtube search failed for %r: %s", q, e)
             return None
         store.quota_add("youtube-search", quota_day(), 100, 0)
-        lists.append([v for v in results if videoquery.relevant(v["title"], kw)])
+        kept = []
+        for v in results:
+            if videoquery.relevant(v["title"], kw):
+                kept.append(dict(v, tier=0 if after is not None else 1))
+            elif after is not None and names and videoquery.loosely_relevant(v["title"], names):
+                kept.append(dict(v, tier=2))
+        lists.append(kept)
     return lists
+
+
+def _strong(lists: list[list[dict]]) -> int:
+    """How many distinct tier-0 videos (closely related and recent) the searches found."""
+    return len(pick([[v for v in lst if v.get("tier", 0) == 0] for lst in lists], keep=KEEP))
 
 
 def fetch_new(store: Store, limit: int = 6, key: str | None = None, get=None) -> list[int]:
@@ -270,17 +288,22 @@ def fetch_new(store: Store, limit: int = 6, key: str | None = None, get=None) ->
                           .where(articles.c.story_id == r["story_id"]))
         after = ((first or {}).get("t") or since) - dt.timedelta(hours=1)
 
+        names = videoquery.name_keywords(frames)
         qs = videoquery.queries(frames, r["headline_en"], r["headline_hi"])
-        lists = _run(store, key, qs, after, kw, get) if qs else []
+        lists = _run(store, key, qs, after, kw, get, names) if qs else []
         if lists is None:
             continue
-        # too few usable videos: a shorter search (the names alone, the first words of the Hindi headline)
-        if len(pick(lists)) < MIN_USABLE and _units_today(store) + 100 * 2 <= DAY_UNITS:
+        # too few closely related recent videos: a shorter search (the names alone, the first words of the Hindi headline)
+        if _strong(lists) < MIN_USABLE and _units_today(store) + 100 * 2 <= DAY_UNITS:
             again = [q for q in videoquery.queries(frames, r["headline_en"], r["headline_hi"], short=True)
                      if q not in qs]
-            more = _run(store, key, again, after, kw, get) if again else []
+            more = _run(store, key, again, after, kw, get, names) if again else []
             lists += more or []          # a failed second try keeps what the first found
-        items = pick(lists)
+        # still too few: older videos that ARE about the story (no date limit); better than an empty card
+        if _strong(lists) < MIN_USABLE and qs and _units_today(store) + 100 * len(qs) <= DAY_UNITS:
+            older = _run(store, key, qs, None, kw, get)
+            lists += older or []
+        items = [{k: v for k, v in x.items() if k != "tier"} for x in pick(lists)]
         log.info("videos for story %s: %s -> %d kept", r["story_id"], [q for q, _ in qs], len(items))
 
         if r["story_id"] in have:        # the one second try replaces the empty row

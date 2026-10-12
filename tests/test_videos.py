@@ -113,3 +113,38 @@ def test_run_returns_none_when_a_search_fails():
     def get(url, params, timeout):
         raise RuntimeError("quota")
     assert _run(_Store(), "KEY", [("x y", "en")], dt.datetime(2026, 10, 12), set(), get) is None
+
+
+def test_a_loosely_related_recent_video_is_kept_as_the_weakest_tier_and_junk_still_is_not():
+    from nishpaksh.videos import _run, pick
+    names = vq.name_keywords(FRAMES)
+    kw = vq.keywords(FRAMES, HEAD_EN, HEAD_HI)
+
+    def get(url, params, timeout):
+        return _response([_video("a", "BrahMos missile test footage"),                       # one name only
+                          _video("b", "BrahMos launchers deal signed by Defence Ministry"),  # close
+                          _video("c", "Chinese drama episode 12")])                          # junk
+    lists = _run(_Store(), "KEY", [("brahmos", "en")], dt.datetime(2026, 10, 12), kw, get, names)
+    assert {v["id"]: v["tier"] for v in lists[0]} == {"a": 2, "b": 0}
+    assert [v["id"] for v in pick(lists)] == ["b", "a"]                                       # close first
+
+
+def test_the_older_search_has_no_date_limit_and_keeps_only_closely_related_videos_as_tier_one():
+    from nishpaksh.videos import _run
+    seen = []
+
+    def get(url, params, timeout):
+        seen.append(params)
+        return _response([_video("a", "BrahMos missile test footage"),
+                          _video("b", "BrahMos launchers deal signed by Defence Ministry")])
+    kw = vq.keywords(FRAMES, HEAD_EN, HEAD_HI)
+    lists = _run(_Store(), "KEY", [("brahmos", "en")], None, kw, get, vq.name_keywords(FRAMES))
+    assert "publishedAfter" not in seen[0]
+    assert [(v["id"], v["tier"]) for v in lists[0]] == [("b", 1)]          # the weaker tier only for recent videos
+
+
+def test_pick_ranks_by_tier_before_credibility():
+    from nishpaksh.videos import pick
+    vids = [{"id": "w", "tier": 2, "credible": True, "channel": "x"}, {"id": "o", "tier": 1, "credible": False, "channel": "y"},
+            {"id": "c", "tier": 0, "credible": False, "channel": "z"}]
+    assert [v["id"] for v in pick([vids])] == ["c", "o", "w"]

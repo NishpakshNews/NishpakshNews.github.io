@@ -80,6 +80,10 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   - After 3 days the article moves to the `archive` branch (`pagearchive.py`, step in hourly.yml:
     `pages/<id>.json.gz`, `index/<YYYY-MM>.jsonl`) and is deleted from Supabase only after the push.
     The site and follow-ups read archived parents from the branch (raw.githubusercontent.com).
+- **Aim 85%, publish from 80% (owner, Oct 12 2026).** The writer is still told to carry 85% of every statement
+  (`narrative.COMPLETE`: prompts and fill passes work towards it), but the final check (`essay_ok`, `essay_shortfall`)
+  requires only `narrative.PUBLISH_MIN` = 80%. Stories were refused for missing one or two statements of the aim. Under
+  80% nothing changes: the draft is kept and continued on the next try.
 - **Writing desk and preparation queue (owner, Oct 6 2026).** Target: at least one article an hour,
   at most two. The writer is its own step (`desk.py`; since Oct 10 2026 in hourly.yml right after the
   pipeline, which starts :05 UTC = :35 IST; before, workflow `writer.yml` at :45 UTC): it writes the
@@ -762,7 +766,11 @@ every outlet that covered it, and colours every sentence by how well it is suppo
     many statements carry them; `Defence Ministry`/`Ministry of Defence` folded; India, Delhi, police too general) plus
     the main act; the Hindi search is the Hindi headline's own words (it used to be the same English words); a second,
     shorter search only when fewer than `MIN_USABLE` (2) videos were kept; a story that found nothing is tried once more
-    about 3 h later (`videos._due`, only if the first try came within 2 h of publishing). A video is kept only if its
+    about 3 h later (`videos._due`, only if the first try came within 2 h of publishing). **Tiers (owner, Oct 12 2026: showing something beats an empty card):** videos are ranked (0) closely related and recent,
+    (1) closely related but OLDER (a search with no date limit, made only when fewer than `MIN_USABLE` tier-0 videos were found
+    after the shorter search), (2) recent but loosely related (title shares one of the story's NAMES, `videoquery.loosely_relevant`);
+    best tier first, credible channels first within a tier, `tier` is not stored. Titles sharing no name and under two words
+    (audiobooks, drama, ads) are still dropped. Up to 6 searches (600 units) for a poorly covered story. Before: tier 0 only. A video is kept as tier 0 only if its
     title shares two root words with the story's keywords (names + English headline + Hindi headline, `videoquery.relevant`;
     not the headline alone: headlines are now written to be read, so they share fewer words with a video's title;
     Oct 10 2026, first run: YouTube filled empty searches with audiobooks, Chinese dramas and Medicare ads). A video's

@@ -1188,7 +1188,8 @@ def _finish(payload: dict, paragraphs: list, also: list, by_id: dict, meta: dict
 
 def essay_ok(nar: dict, payload: dict) -> bool:
     """Good enough to publish: written by the writer, not badly off task (no more than half its
-    sentences left the essay), and carrying at least 85% of EVERY statement known about the story:
+    sentences left the essay), and carrying at least PUBLISH_MIN (80%) of EVERY statement known about the story
+    (the writer still AIMS for COMPLETE, 85%; owner, Oct 12 2026: stories were refused for missing one or two):
     the event, who says what, one-outlet lines, background, related events, what next (owner, Oct 7
     2026: the middle way between "complete or nothing" and short articles)."""
     if not nar.get("model") or not nar.get("paragraphs"):
@@ -1199,19 +1200,19 @@ def essay_ok(nar: dict, payload: dict) -> bool:
     every = [i["id"] for i in ordered_items(payload)]
     if not every:
         return True
-    return len(set(every) & set(nar.get("covers") or [])) >= COMPLETE * len(every)
+    return len(set(every) & set(nar.get("covers") or [])) >= PUBLISH_MIN * len(every)
 
 
 def essay_shortfall(nar: dict, payload: dict) -> dict:
     """The numbers behind `essay_ok` and why it said no (owner, Oct 11 2026, story 16981: \"carries 36 statements,
     short of the bar\" did not say which of the checks failed, nor how many statements the story had). Returns
     {why, model, covered, total, need, sentences, rejected}; `why` is None when the essay passes: \"no essay\"
-    (no writer model, or no paragraphs), \"most sentences rejected\", or \"coverage\" (under COMPLETE of every
+    (no writer model, or no paragraphs), \"most sentences rejected\", or \"coverage\" (under PUBLISH_MIN of every
     statement). The same tests as `essay_ok`, which stays the judge."""
     every = {i["id"] for i in ordered_items(payload)}
     covered = len(every & set(nar.get("covers") or []))
     sents = sum(len(p) for p in nar.get("paragraphs") or [])
-    need = next(k for k in range(len(every) + 1) if k >= COMPLETE * len(every))     # the same comparison as essay_ok
+    need = next(k for k in range(len(every) + 1) if k >= PUBLISH_MIN * len(every))     # the same comparison as essay_ok
     out = {"why": None, "model": nar.get("model"), "covered": covered, "total": len(every), "need": need,
            "sentences": sents, "rejected": nar.get("rejected", 0)}
     if not nar.get("model") or not nar.get("paragraphs"):
@@ -1511,7 +1512,9 @@ def _check_sections(drafted, by_id, banned, outlets):
     return paragraphs, keys, failed, rejected
 
 
-COMPLETE = 0.85     # owner, Oct 7 2026: an article must carry 85% of everything known (the middle way)
+COMPLETE = 0.85     # what the writer AIMS for (owner, Oct 7 2026): the fill passes and the prompts work towards 85%
+PUBLISH_MIN = 0.80  # what the final check REQUIRES (owner, Oct 12 2026): an article short by one or two statements
+                    # of the 85% aim is still published; below 80% it is kept as a draft and rewritten, as before
 
 
 def write_narrative(router: Router | None, payload: dict, banned: set[str], draft: dict | None = None) -> dict:

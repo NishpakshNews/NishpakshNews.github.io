@@ -1473,7 +1473,7 @@ def test_context_is_kept_apart_from_the_story_event_and_written_after_it():
     p = {"timeline": [], "undated": [], "established": core, "contested": [], "context": ctx}
     assert [i["id"] for i in ordered_items(p)] == [1, 2]
     nar = {"model": "gemini-3.8-flash", "paragraphs": [[{"ids": [1]}]], "covers": [1], "rejected": 0}
-    # owner, Oct 7 2026: everything known goes in, context included (85% of all statements)
+    # owner, Oct 7 2026: everything known goes in, context included (aim 85%, publish from 80% of all statements)
     assert not essay_ok(nar, p)
     assert essay_ok(dict(nar, covers=[1, 2]), p)
 
@@ -3987,10 +3987,12 @@ def test_the_shortfall_says_which_check_failed_with_the_numbers_and_agrees_with_
         "model": model, "paragraphs": [[{"text": "x"}] * 10] * paras, "covers": list(range(covered)), "rejected": rejected}
     p = _essay_payload(50)
     s = essay_shortfall(nar(36), p)                               # story 16981: 36 covered, of how many?
-    assert (s["why"], s["covered"], s["total"], s["need"]) == ("coverage", 36, 50, 43)
+    assert (s["why"], s["covered"], s["total"], s["need"]) == ("coverage", 36, 50, 40)
     assert s["model"] == "gemini-3.8-flash" and s["sentences"] == 10 and s["rejected"] == 0
-    assert essay_shortfall(nar(43), p)["why"] is None and essay_ok(nar(43), p)          # exactly the bar passes
-    assert essay_shortfall(nar(42), p)["why"] == "coverage" and not essay_ok(nar(42), p)
+    # owner, Oct 12 2026: the writer aims for 85% (COMPLETE) but the final check requires 80% (PUBLISH_MIN)
+    assert essay_shortfall(nar(40), p)["why"] is None and essay_ok(nar(40), p)          # exactly the bar passes
+    assert essay_shortfall(nar(39), p)["why"] == "coverage" and not essay_ok(nar(39), p)
+    assert essay_ok(nar(42), p)                                                         # short of the 85% aim, still published
     assert essay_shortfall(nar(50, model=None), p)["why"] == "no essay"
     assert essay_shortfall({"model": "m", "paragraphs": [], "covers": []}, p)["why"] == "no essay"
     assert essay_shortfall(nar(50, rejected=11), p)["why"] == "most sentences rejected"
