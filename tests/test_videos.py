@@ -146,6 +146,28 @@ def test_due_retries_an_empty_row_once_and_never_a_filled_one():
     assert not _due(old_story, {"items": [], "fetched_at": now - dt.timedelta(hours=3)}, now)  # that WAS the second try
 
 
+
+def test_due_handles_mixed_naive_and_timezone_aware_timestamps():
+    from nishpaksh.videos import _due
+
+    # Production combines naive UTC newsroom timestamps with aware Supabase timestamptz values.
+    now_naive = dt.datetime(2026, 10, 12, 12, 0)
+    published_naive = now_naive - dt.timedelta(hours=4)
+    fetched_aware = dt.datetime(2026, 10, 12, 9, 0, tzinfo=dt.timezone.utc)
+    assert _due(published_naive, {"items": [], "fetched_at": fetched_aware}, now_naive)
+
+    # Also handle aware `now` / publication values, including a non-UTC offset.
+    ist = dt.timezone(dt.timedelta(hours=5, minutes=30))
+    now_aware = dt.datetime(2026, 10, 12, 17, 30, tzinfo=ist)
+    published_aware = dt.datetime(2026, 10, 12, 13, 30, tzinfo=ist)
+    fetched_naive = dt.datetime(2026, 10, 12, 9, 0)
+    assert _due(published_aware, {"items": [], "fetched_at": fetched_naive}, now_aware)
+
+    # A missing timestamp is not retryable, and filled results are never retried.
+    assert not _due(None, {"items": [], "fetched_at": fetched_aware}, now_naive)
+    assert not _due(published_naive, {"items": [{"id": "existing"}], "fetched_at": fetched_aware}, now_naive)
+
+
 class _Store:
     def __init__(self):
         self.units = 0

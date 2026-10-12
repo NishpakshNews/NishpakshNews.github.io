@@ -142,20 +142,37 @@ def _units_today(store: Store) -> int:
     return (r or {}).get("requests") or 0
 
 
+def _naive_utc(value: dt.datetime | None) -> dt.datetime | None:
+    """Return a UTC-naive datetime for consistent comparisons across the two databases.
+
+    The newsroom timestamps use ``utcnow()`` and are naive UTC, while Supabase ``timestamptz``
+    values may arrive as timezone-aware datetimes. Naive values are already UTC by convention.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is not None and value.utcoffset() is not None:
+        return value.astimezone(dt.timezone.utc).replace(tzinfo=None)
+    return value.replace(tzinfo=None)
+
+
 def _due(updated_at: dt.datetime | None, have: dict | None, now: dt.datetime) -> bool:
-    """A story has no videos row yet, or its only row is empty from a first try made soon after publishing and
-    is now old enough for the one second try (owner, Oct 12 2026: \"they fail to fetch\", and an empty row was final)."""
+    """A story has no videos row yet, or its empty first try is ready for one retry.
+
+    Normalize timestamps at this boundary: newsroom values are naive UTC, but Supabase
+    ``timestamptz`` values are commonly timezone-aware.
+    """
     if have is None:
         return True
     if have.get("items"):
         return False
-    fetched = have.get("fetched_at")
-    if not fetched or not updated_at:
+
+    now = _naive_utc(now)
+    updated_at = _naive_utc(updated_at)
+    fetched = _naive_utc(have.get("fetched_at"))
+    if now is None or fetched is None or updated_at is None:
         return False
+
     return now - fetched >= RETRY_AFTER and fetched - updated_at <= FIRST_WINDOW
-
-
-
 
 def _search(key: str, q: str, after: dt.datetime | None, lang: str, get=None) -> list[dict]:
     """One search. `after` None: no date limit."""
