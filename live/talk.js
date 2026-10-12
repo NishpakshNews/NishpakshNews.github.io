@@ -185,7 +185,7 @@ export class LiveProtocol {
     this.ids = new Set(sentenceIds || []);
     this.send = send;
     this.on = on || {};
-    this.lines = [];            // the conversation so far: {role: "you" | "guide", text, open}
+    this.lines = [];            // the conversation so far: {role: "you" | "guide", text, open, segments?}
   }
 
   validId(id) {
@@ -193,12 +193,28 @@ export class LiveProtocol {
     return this.ids.has(s) || this.ids.has(s.split(".")[0]) ? s : null;
   }
 
-  _said(role, text) {
+  _said(role, text, timing = null) {
     if (!text) return;
     const last = this.lines[this.lines.length - 1];
-    if (last && last.role === role && last.open) last.text += text;
-    else this.lines.push({ role, text, open: true });
-    this.on.transcript?.(this.lines.map((l) => ({ role: l.role, text: l.text })));
+    let line, startIndex;
+    if (last && last.role === role && last.open) {
+      line = last; startIndex = last.text.length; last.text += text;
+    } else {
+      line = { role, text, open: true, id: this.lines.length }; startIndex = 0; this.lines.push(line);
+    }
+    if (role === "guide") {
+      line.segments ||= [];
+      line.segments.push({
+        text, startIndex, endIndex: startIndex + text.length,
+        startOffset: timing?.startOffset ?? null, endOffset: timing?.endOffset ?? null,
+      });
+    }
+    const latestGuide = [...this.lines].reverse().find((l) => l.role === "guide");
+    // Keep the long-standing public transcript shape unchanged; timings travel as a second callback argument.
+    this.on.transcript?.(
+      this.lines.map((l) => ({ role: l.role, text: l.text })),
+      { lineId: latestGuide?.id ?? null, segments: latestGuide?.segments ? latestGuide.segments.map((seg) => ({ ...seg })) : [] },
+    );
   }
 
   _closeLines() { for (const l of this.lines) l.open = false; }
@@ -213,7 +229,7 @@ export class LiveProtocol {
         if (d?.data && String(d.mimeType || "audio/pcm").startsWith("audio/")) this.on.audio?.(base64ToInt16(d.data));
       }
       if (sc.inputTranscription?.text) this._said("you", sc.inputTranscription.text);
-      if (sc.outputTranscription?.text) this._said("guide", sc.outputTranscription.text);
+      if (sc.outputTranscription?.text) this._said("guide", sc.outputTranscription.text, sc.outputTranscription);
       if (sc.interrupted) { this._closeLines(); this.on.interrupted?.(); }
       if (sc.turnComplete) { this._closeLines(); this.on.turnComplete?.(); }
     }
@@ -263,14 +279,15 @@ export class TalkError extends Error {
 // -- the controller (needs a browser) -------------------------------------------------------------------------
 
 export function createTalk(opts) {
-  const o = { introBase: "./", onState() {}, onHighlight() {}, onTranscript() {}, onLevel() {}, onEnd() {}, onError() {}, ...opts };
+  const o = { introBase: "./", onState() {}, onHighlight() {}, onTranscript() {}, onTurnComplete() {}, onLevel() {}, onEnd() {}, onError() {}, ...opts };
   let state = "idle", ctx = null, stream = null, ws = null, proto = null, grant = null, outRs = null;
   let tapNode = null, tapSource = null, silent = null, muted = false, micOn = false, ending = false;
   let thinkTimer = null, voiced = false, lastVoice = 0, thinkSince = 0, pingTimer = null, introDone = false, ready = false, introStop = null, introWake = null, readyWake = null;
   let wsOpenAt = 0;
   let toolReplyAt = 0, silentAt = 0, nudged = false;   // the watchdog: when a function call was last answered, when the guide last ended a turn without a sound, and whether this question was already pushed once
   let askEnd = 0, firstTool = 0, toolCount = 0;      // timing of one answer: when the reader stopped, when the guide first called a function, when its voice began
-  let turnStart = 0, turnTotal = 0;   // the guide's current stretch of speech: when it began playing (audio clock) and how many seconds of it have been queued; the captions follow this
+  let turnStart = 0, turnTotal = 0, turnOffset = 0, turnId = 0, turnClockActive = false, turnCompleteSeen = false;
+  // The audio clock is continuous across short gaps in one answer, and gets a new id for the next answer.
   let nextAt = 0, quietTimer = null, idleTimer = null, maxTimer = null, wrapTimer = null, lastActive = 0, slow = false;
   const playing = new Set();
   const clipBytes = new Map();   // intro recordings already asked for: name -> Promise of its bytes (or null)
@@ -288,6 +305,9 @@ export function createTalk(opts) {
   function playPcm(int16) {
     if (!ctx || ending) return;
     touch();
+    if (askEnd || turnCompleteSeen) {
+      turnStart = 0; turnTotal = 0; turnOffset = 0; turnClockActive = false; turnCompleteSeen = false;
+    }
     if (askEnd) {           // the first sound of an answer: how long after the reader stopped (this includes the ~1 s of waiting for the end of their turn)
       const now = Date.now();
       o.onMetric?.({ firstAudioMs: now - askEnd, firstToolMs: firstTool ? firstTool - askEnd : null, tools: toolCount });
@@ -297,7 +317,8 @@ export function createTalk(opts) {
     const f = outRs.process(pcm16ToFloat32(int16));
     if (!f.length) return;
     const at = Math.max(ctx.currentTime + 0.02, nextAt);
-    if (!playing.size && at > nextAt + 1e-4) { turnStart = at; turnTotal = 0; }     // a new stretch of speech
+    if (!turnClockActive) { turnId++; turnClockActive = true; turnStart = at; turnTotal = 0; turnOffset = 0; }
+    if (!playing.size && at > nextAt + 1e-4) { turnOffset += turnTotal; turnStart = at; turnTotal = 0; } // preserve the answer timeline across short playback gaps
     if (at > nextAt + 1e-4) {                                // a new stretch of speech (not the next chunk of one): 3 ms fade-in, so it does not start with a click
       const m = Math.min(f.length, Math.floor(ctx.sampleRate * 0.003));
       for (let i = 0; i < m; i++) f[i] *= i / m;
@@ -324,7 +345,7 @@ export function createTalk(opts) {
   function interrupt() {            // the reader started talking over the guide: stop at once
     for (const s of playing) { try { s.onended = null; s.stop(); } catch { /* already stopped */ } }
     playing.clear();
-    nextAt = 0; turnStart = 0; turnTotal = 0;
+    nextAt = 0; turnStart = 0; turnTotal = 0; turnOffset = 0; turnClockActive = false; turnCompleteSeen = false;
     outRs?.reset();
     if (micOn && !ending) set("listening");
   }
@@ -489,10 +510,10 @@ export function createTalk(opts) {
         audio: playPcm,
         interrupted: interrupt,
         toolReplied: () => { toolReplyAt = Date.now(); },
-        turnComplete: () => { touch(); if (askEnd) silentAt = Date.now(); introWake?.(); if (state === "thinking" && !playing.size) set("listening"); },
+        turnComplete: () => { touch(); turnCompleteSeen = true; if (askEnd) silentAt = Date.now(); introWake?.(); if (state === "thinking" && !playing.size) set("listening"); o.onTurnComplete(); },
         tool: () => { if (askEnd && !firstTool) firstTool = Date.now(); toolCount++; },
         highlight: (id) => { touch(); o.onHighlight(id); },
-        transcript: (lines) => { touch(); o.onTranscript(lines); },
+        transcript: (lines, meta) => { touch(); o.onTranscript(lines, meta); },
         goAway: () => end("goaway"),
       },
     });
@@ -608,8 +629,11 @@ export function createTalk(opts) {
     // where the guide's voice is, in seconds of its current speech: `at` heard so far, `total` queued so far (null when nothing is playing);
     // the captions give every word its moment on this clock, so the text follows what is HEARD
     clock: () => {
-      if (!ctx || !playing.size) return null;
-      return { at: Math.max(0, ctx.currentTime - turnStart), total: turnTotal };
+      // Local intro recordings share `playing` but do not have a generated-transcript audio clock.
+      // Return a stable position during gaps so captions hold, rather than fast-forwarding or resetting.
+      if (!ctx || !turnClockActive || !turnTotal) return null;
+      const localAt = Math.max(0, Math.min(turnTotal, ctx.currentTime - turnStart));
+      return { at: turnOffset + localAt, total: turnOffset + turnTotal, turnId, playing: playing.size > 0 };
     },
     get state() { return state; },
   };

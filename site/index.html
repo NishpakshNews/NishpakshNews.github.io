@@ -649,20 +649,17 @@
   .tkhint { margin: 2px 4px 0; min-height: 44px; font-size: 14.5px; line-height: 1.5; color: var(--muted); }
   /* one slot under the voice: the guide's words while talking, the button when not (so the card never changes height) */
   .tkslot { min-height: 72px; display: flex; align-items: center; justify-content: center; margin-top: 4px; }
-  /* a live transcript (owner, Oct 12 2026): three lines high, no scrollbar, follows the guide by itself. New words fade in as they
-     arrive; the older lines fade out at the top as they move up (and softly at the bottom edge). It used to be clamped to the first
-     3 lines, so a long answer showed only its beginning while the guide kept talking. */
+  /* Talkbot captions are complete display units, not individually animated words. The active unit sits in the middle;
+     one previous unit fades above it and one upcoming unit waits below it. */
   .tkcap { margin: 0 6px; font-size: 14px; line-height: 1.5; color: var(--ink-soft); height: calc(4.5em + .6em); padding-bottom: .6em; overflow: hidden; position: relative;
            -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - .6em), transparent 100%); mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - .6em), transparent 100%); }
-  /* no fade at the top edge: the top line is fully clear until it moves out, and then fades by itself (.old) as it goes up */
-  .tkcap .tkin { transition: transform .6s cubic-bezier(.22,.7,.2,1); will-change: transform; }
-  /* a whole line at a time (owner, Oct 12 2026): the line comes up from below while it fades in; the top line fades out as it moves up.
-     The line is shown when the voice reaches its first word (talk.js clock(): every word has its own moment on the voice's timeline), and the line being spoken sits in the middle of the three. */
-  .tkcap .tkw { opacity: 0; transition: opacity .6s ease; }
-  .tkcap .tkw.on { opacity: 1; }
-  .tkcap .tkw.on.prev { opacity: 0.42; }          /* the line just before the one being spoken */
-  .tkcap .tkw.old { opacity: 0; }
-  @media (prefers-reduced-motion: reduce) { .tkcap .tkin, .tkcap .tkw { transition: none; } }
+  .tkcap .tkin { transition: transform .48s cubic-bezier(.22,.7,.2,1); will-change: transform; }
+  .tkcap .tkunit { display: block; height: 1.5em; line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: clip;
+                   opacity: 0; transform: scale(.96); transform-origin: center; transition: opacity .42s ease, transform .48s cubic-bezier(.22,.7,.2,1); }
+  .tkcap .tkunit.is-prev { opacity: .34; transform: scale(.96); }
+  .tkcap .tkunit.is-active { opacity: 1; transform: scale(1); }
+  .tkcap .tkunit.is-next { opacity: .58; transform: scale(.985); }
+  @media (prefers-reduced-motion: reduce) { .tkcap .tkin, .tkcap .tkunit { transition: none; } }
   .tkcard .tkgo { width: 100%; }
   .tkcard[data-ph="ready"] .tkcap, .tkcard[data-ph="ended"] .tkcap, .tkcard[data-ph="connecting"] .tkcap, .tkcard[data-think] .tkcap { display: none; }          /* the guide's last words belong to the last answer */
   .tkcard[data-ph="speaking"] .tkgo, .tkcard[data-ph="listening"] .tkgo, .tkcard[data-ph="connecting"] .tkgo, .tkcard[data-ph="thinking"] .tkgo { display: none; }
@@ -2667,7 +2664,7 @@ const TK = {
   ui: "closed",        // closed | card | mini
   phase: "ready",      // ready (not started) | live | ended
   st: "idle",          // live/talk.js's own state: connecting, intro, listening, speaking, ended
-  reason: "", cap: "", storyId: null, lang: null,
+  reason: "", cap: "", capLineId: null, capSegments: [], capFinal: false, storyId: null, lang: null,
   recap: null,         // the day of the recap when the conversation is about the Daily recap (owner, Oct 12 2026), else null (one article)
   mod: null, modP: null, talk: null, card: null, veil: null, wrap: null, lit: null,
 };
@@ -2698,7 +2695,13 @@ function talkInstance() {
     introBase: "live/",
     onState: s => { TK.st = s; if (TK.phase === "live") { tkPaint(); tkFlushNudges(); } },
     onHighlight: tkLight,
-    onTranscript: lines => { const g = [...lines].reverse().find(l => l.role === "guide"); TK.cap = g ? g.text : ""; tkCaption(); },
+    onTranscript: (lines, meta) => {
+      const g = [...lines].reverse().find(l => l.role === "guide"), next = g ? g.text : "";
+      const nextLineId = meta?.lineId ?? null;
+      if (next !== TK.cap || (nextLineId != null && nextLineId !== TK.capLineId)) TK.capFinal = false;
+      TK.cap = next; TK.capLineId = nextLineId; TK.capSegments = meta?.segments || []; tkCaption();
+    },
+    onTurnComplete: () => { TK.capFinal = true; tkCaption(); },
     onLevel: v => { if (TK.card && (TK.st === "listening" || TK.st === "thinking")) TK.card.style.setProperty("--lv", Math.min(1, v * 7).toFixed(2)); },
     onMetric: m => console.info("talk timing (ms after you stopped talking; about 1000 of it is waiting for the end of your turn):", m),
     onSlow: v => { TK.slow = !!v; if (TK.phase === "live") tkPaint(); },     // the guide is taking long: say so, so nobody wonders whether it heard
@@ -2802,77 +2805,214 @@ function tkPhase() {
   if (TK.phase !== "live") return TK.phase;
   return TK.st === "speaking" || TK.st === "intro" ? "speaking" : TK.st === "listening" ? "listening" : TK.st === "thinking" ? "thinking" : "connecting";
 }
+
+// Gemini Live transcription offsets are Durations relative to the generated audio. Accept both wire-format strings
+// ("1.25s") and SDK-shaped {seconds, nanos} values, while remaining safe when an offset is absent.
+function tkOffsetSeconds(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const m = value.trim().match(/^(-?\d+(?:\.\d+)?)(?:s)?$/i);
+    return m ? Number(m[1]) : null;
+  }
+  if (value && typeof value === "object") {
+    const seconds = Number(value.seconds || 0), nanos = Number(value.nanos || 0);
+    return Number.isFinite(seconds) && Number.isFinite(nanos) ? seconds + nanos / 1e9 : null;
+  }
+  return null;
+}
+function tkSentenceEnd(word) { return /[.!?。！？।॥]["'’”)}\]]*$/.test(word || ""); }
+function tkWordWeight(word) {
+  const clean = String(word || "").replace(/[^\p{L}\p{N}]/gu, "");
+  const punctuation = /[.!?。！？।॥]["'’”)}\]]*$/.test(word || "") ? .48 : /[,;:]["'’”)}\]]*$/.test(word || "") ? .2 : 0;
+  return 1 + Math.min(clean.length, 14) * .025 + punctuation;
+}
+function tkTranscriptWordTimes(text, segments) {
+  const matches = [...text.matchAll(/\S+/g)], times = matches.map(() => ({start: null, end: null}));
+  // Character ranges let a word be split across two transcript deltas without shifting later timestamps.
+  let fallbackStart = 0;
+  for (const segment of Array.isArray(segments) ? segments : []) {
+    const part = String(segment?.text || "");
+    if (!part) continue;
+    const startIndex = Number.isFinite(Number(segment.startIndex)) ? Number(segment.startIndex) : fallbackStart;
+    const endIndex = Number.isFinite(Number(segment.endIndex)) ? Number(segment.endIndex) : startIndex + part.length;
+    fallbackStart = endIndex;
+    const start = tkOffsetSeconds(segment.startOffset), end = tkOffsetSeconds(segment.endOffset);
+    if (start == null || end == null || end < start || endIndex <= startIndex) continue;
+    for (let i = 0; i < matches.length; i++) {
+      const m = matches[i], wordStart = m.index, wordEnd = wordStart + m[0].length;
+      const overlapStart = Math.max(wordStart, startIndex), overlapEnd = Math.min(wordEnd, endIndex);
+      if (overlapEnd <= overlapStart) continue;
+      const segmentSpan = endIndex - startIndex;
+      const a = start + (end - start) * (overlapStart - startIndex) / segmentSpan;
+      const b = start + (end - start) * (overlapEnd - startIndex) / segmentSpan;
+      times[i].start = times[i].start == null ? a : Math.min(times[i].start, a);
+      times[i].end = times[i].end == null ? b : Math.max(times[i].end, b);
+    }
+  }
+  return times;
+}
+function tkFitWordCount(words, start, maxCount, width, font) {
+  if (!width || maxCount < 2) return maxCount;
+  try {
+    const canvas = tkFitWordCount.canvas || (tkFitWordCount.canvas = document.createElement("canvas"));
+    const context = canvas.getContext("2d");
+    if (!context) return maxCount;
+    context.font = font || "14px sans-serif";
+    let fit = 1;
+    for (let count = 1; count <= maxCount; count++) {
+      if (context.measureText(words.slice(start, start + count).join(" ")).width <= width - 8) fit = count;
+      else break;
+    }
+    return fit;
+  } catch { return maxCount; }
+}
+function tkEstimatedWordTimes(words, duration) {
+  if (!words.length) return [];
+  const weights = words.map(tkWordWeight), sum = weights.reduce((a, b) => a + b, 0);
+  const total = Number.isFinite(duration) && duration > 0 ? duration : sum * .32;
+  let cursor = 0;
+  return weights.map(weight => {
+    const start = cursor; cursor += total * weight / sum;
+    return {start, end: cursor};
+  });
+}
+function tkBuildCaptionUnits(text, segments, final, duration, width, font) {
+  const rawWords = text.match(/\S+/g) || [];
+  const wordTimes = tkTranscriptWordTimes(text, segments);
+  let count = rawWords.length;
+  // A segment timestamp does not prove that its final token is complete. Unless whitespace/punctuation
+  // establishes the boundary or the turn is complete, keep the trailing token pending.
+  if (!final && count && !/\s$/.test(text) && !/[.!?。！？।॥,;:…]["'’”)}\]]*$/.test(rawWords[count - 1])) count--;
+  const words = rawWords.slice(0, Math.max(0, count));
+  let times = wordTimes.slice(0, words.length);
+  const allTimed = times.length > 0 && times.every(t => Number.isFinite(t.start) && Number.isFinite(t.end) && t.end > t.start && t.start >= 0);
+  if (!allTimed) {
+    // Without segment offsets, calibrate against the actual queued audio duration after generation completes.
+    times = final ? tkEstimatedWordTimes(words, duration) : tkEstimatedWordTimes(words, words.length * .32);
+  }
+  const units = [];
+  for (let i = 0; i < words.length;) {
+    const remaining = words.length - i;
+    let size = 0;
+    // Four words is the target. Prefer sentence boundaries at 3–5 words; avoid leaving a short
+    // function word dangling at the end when a fifth word can complete the phrase.
+    for (let j = i + 2; j < Math.min(i + 5, words.length); j++) {
+      if (tkSentenceEnd(words[j])) { size = j - i + 1; break; }
+    }
+    const weakEnding = /^(?:a|an|the|to|of|and|or|but|in|on|at|by|for|from|with|as|into|over|under|that|which|who|is|are|was|were|be|been|being|has|have|had|it|its|this|these|those)[,;:]*$/i.test(words[i + 3] || "");
+    if (!size && remaining >= 4) {
+      size = 4;
+      if (remaining >= 5 && (weakEnding || tkSentenceEnd(words[i + 4]))) size = 5;
+      else if (remaining === 4 && weakEnding && !final) size = 0; // wait for a word that completes the phrase
+    }
+    if (!size && final) size = Math.min(remaining, 4);  // final line may naturally contain one to three words
+    if (!size) break;                      // keep an unfinished short tail buffered
+    size = Math.min(size, tkFitWordCount(words, i, size, width, font));
+    const slice = words.slice(i, i + size), sliceTimes = times.slice(i, i + size);
+    units.push({
+      text: slice.join(" "),
+      start: sliceTimes.length ? sliceTimes[0].start : 0,
+      end: sliceTimes.length ? sliceTimes[sliceTimes.length - 1].end : 0,
+    });
+    i += size;
+  }
+  return {units, allTimed};
+}
+function tkSyncCaptionUnits(inn, c, units) {
+  while (c._unitEls.length > units.length) c._unitEls.pop().remove();
+  units.forEach((unit, i) => {
+    let el = c._unitEls[i];
+    if (!el) {
+      el = document.createElement("div"); el.className = "tkunit"; el.setAttribute("aria-hidden", "true");
+      c._unitEls[i] = el; inn.appendChild(el);
+    }
+    if (el.textContent !== unit.text) el.textContent = unit.text;
+  });
+}
 function tkCaption() {
   const c = TK.card && TK.card.querySelector(".tkcap"); if (!c) return;
   const now = TK.cap || "";
   let inn = c.querySelector(".tkin");
-  if (!inn) { inn = document.createElement("div"); inn.className = "tkin"; c.appendChild(inn); c._words = []; c._shown = ""; c._tPrev = null; c._tLast = -1; }
-  if (now !== c._shown) {
-    if (c._shown && now.startsWith(c._shown) && c._words.length) {      // the guide is still talking: the new words are added (hidden until the voice gets there)
-      tkAddWords(inn, c, now.slice(c._shown.length));
-    } else {                                                            // a new answer
-      inn.textContent = ""; inn.style.transform = ""; c._words = []; c._tPrev = null; c._tLast = -1;
-      tkAddWords(inn, c, now);
-    }
-    c._shown = now;
+  if (!inn) {
+    inn = document.createElement("div"); inn.className = "tkin"; c.appendChild(inn);
+    c._shown = ""; c._units = []; c._unitEls = []; c._active = -1; c._heard = 0; c._lastTotal = 0;
+    c._segmentsKey = ""; c._lastFinal = false; c._hasRealTimings = false; c._responseComplete = false; c._clockTurnId = null; c._timelineDuration = 0;
+  }
+  const lineChanged = c._lineId != null && TK.capLineId != null && c._lineId !== TK.capLineId;
+  const replacement = lineChanged || ((c._shown && now && !now.startsWith(c._shown)) || (!now && c._shown));
+  if (replacement) {
+    cancelAnimationFrame(c._raf); inn.textContent = ""; inn.style.transform = "";
+    c._shown = ""; c._units = []; c._unitEls = []; c._active = -1; c._heard = 0; c._lastTotal = 0;
+    c._segmentsKey = ""; c._lastFinal = false; c._hasRealTimings = false; c._responseComplete = false;
+  }
+  c._lineId = TK.capLineId;
+  const segments = Array.isArray(TK.capSegments) ? TK.capSegments : [];
+  const segmentsKey = segments.map(s => `${s.text || ""}\u0000${s.startIndex ?? ""}\u0000${s.endIndex ?? ""}\u0000${s.startOffset ?? ""}\u0000${s.endOffset ?? ""}`).join("\u0001");
+  if (now !== c._shown || segmentsKey !== c._segmentsKey || TK.capFinal !== c._lastFinal) {
+    tkObserveClock(c, tkClock());
+    const style = getComputedStyle(c), width = Math.max(0, c.clientWidth - 12);
+    const built = tkBuildCaptionUnits(now, segments, !!TK.capFinal, c._lastTotal, width, style.font);
+    tkSyncCaptionUnits(inn, c, built.units);
+    c._units = built.units; c._hasRealTimings = built.allTimed; c._responseComplete = !!TK.capFinal;
+    c._timelineDuration = c._responseComplete ? c._lastTotal : 0;
+    c._shown = now; c._segmentsKey = segmentsKey; c._lastFinal = !!TK.capFinal;
   }
   tkCapStep(c);
 }
-/* where the voice is, in seconds of the guide's current speech: {at: heard so far, total: queued so far}; null when nothing is being spoken
-   (then every word has been said) */
+
+// A missing/paused clock is not "the entire transcript has been spoken". talk.js holds its position during gaps.
 function tkClock() {
-  if (TK.st !== "speaking" && TK.st !== "intro") return null;
   let k = null; try { k = TK.talk && TK.talk.clock ? TK.talk.clock() : null; } catch (e) { k = null; }
-  return k || {at: 0, total: 0};
+  return k && Number.isFinite(k.at) ? k : null;
 }
-/* Every word gets the moment (in the voice's own timeline) when it is spoken. The transcript arrives in pieces together with the audio, so a
-   piece that arrives when T seconds of audio are queued was spoken in the stretch between the last piece's end and T: its words are spread over
-   that stretch (never faster than ~5 words a second). The text then follows the voice, not the speed at which the transcript happens to arrive. */
-function tkAddWords(inn, c, text) {
-  const fresh = [];
-  for (const part of text.split(/(\s+)/)) {
-    if (!part) continue;
-    if (/^\s+$/.test(part)) { inn.appendChild(document.createTextNode(" ")); c._tail = " "; continue; }
-    const last = c._words[c._words.length - 1];
-    if (last && !/\s$/.test(c._tail || " ")) { last.textContent += part; c._tail = part; continue; }   // a word split between two pieces
-    const w = document.createElement("span"); w.className = "tkw"; w.textContent = part; inn.appendChild(w); c._words.push(w); c._tail = part; fresh.push(w);
+function tkObserveClock(c, ck) {
+  if (!ck) return;
+  if (ck.turnId != null && c._clockTurnId != null && ck.turnId !== c._clockTurnId) {
+    c._heard = 0; c._lastTotal = 0; // a new answer must not inherit the prior answer's duration
   }
-  if (!fresh.length) return;
-  const ck = tkClock(), tq = ck ? ck.total : 0, m = fresh.length;
-  if (c._tPrev == null) c._tPrev = Math.max(0, tq - m * 0.4);
-  const t0 = c._tPrev, t1 = Math.max(tq, t0);
-  fresh.forEach((w, j) => { w._t = Math.max(t0 + (t1 - t0) * j / m, c._tLast + 0.2); c._tLast = w._t; });
-  c._tPrev = Math.max(tq, c._tLast);
+  if (ck.turnId != null) c._clockTurnId = ck.turnId;
+  c._heard = Math.max(c._heard || 0, ck.at);
+  if (Number.isFinite(ck.total)) c._lastTotal = Math.max(c._lastTotal || 0, ck.total);
 }
-/* A line is shown whole, once: when the voice reaches its first word, and only when the line is complete (the next line has begun, or the
-   voice has gone past its last word). The line being spoken always sits in the MIDDLE of the three; the one before it is dimmed above. */
 function tkCapStep(c) {
-  const ws = c._words; if (!ws || !ws.length) { cancelAnimationFrame(c._raf); return; }
-  const inn = c.querySelector(".tkin");
-  const ck = tkClock(), heard = ck ? ck.at : Infinity;
+  const units = c._units || [], inn = c.querySelector(".tkin");
+  if (!units.length) {
+    cancelAnimationFrame(c._raf); if (inn) inn.style.transform = "translateY(1.5em)"; return;
+  }
+  const ck = tkClock();
+  tkObserveClock(c, ck);
+  // If audio duration becomes available after the transcript was finalized, recalibrate fallback times without
+  // rebuilding/revealing words individually. The active index is monotonic, so this can slow future transitions only.
+  if (c._responseComplete && !c._hasRealTimings && c._lastTotal > (c._timelineDuration || 0) + .1) {
+    const style = getComputedStyle(c), width = Math.max(0, c.clientWidth - 12);
+    const built = tkBuildCaptionUnits(TK.cap || "", TK.capSegments || [], true, c._lastTotal, width, style.font);
+    tkSyncCaptionUnits(inn, c, built.units); c._units = built.units; c._timelineDuration = c._lastTotal;
+  }
+  const activeUnits = c._units || [];
+  const heard = c._heard || 0;
+  let target = -1;
+  if (c._hasRealTimings || c._responseComplete) {
+    activeUnits.forEach((unit, i) => { if (unit.start <= heard) target = i; });
+  } else {
+    // Do not let a guessed pace run the captions ahead while audio generation is still providing timing information.
+    target = c._active < 0 ? 0 : c._active;
+  }
+  if (c._active >= 0) target = Math.max(target, c._active); // never scroll backward when timing is refined
+  target = Math.max(0, Math.min(target, activeUnits.length - 1));
+  c._active = target;
   const lh = parseFloat(getComputedStyle(c).lineHeight) || 21;
-  const lines = [];                                        // lines are found by the words' heights (all words are laid out, only the ones reached are visible)
-  ws.forEach((w, i) => {
-    const r = Math.round(w.offsetTop / lh), L = lines[lines.length - 1];
-    if (L && L.row === r) L.last = i; else lines.push({row: r, first: i, last: i});
+  c._unitEls.forEach((el, i) => {
+    el.classList.toggle("is-prev", i === target - 1);
+    el.classList.toggle("is-active", i === target);
+    el.classList.toggle("is-next", i === target + 1);
   });
-  let cur = -1;
-  lines.forEach((L, n) => {
-    const reached = ws[L.first]._t <= heard;
-    const complete = n < lines.length - 1 || !ck || heard >= ws[L.last]._t + 0.6;
-    if (reached && complete) cur = n;
-    L.n = n;
-  });
-  lines.forEach(L => {
-    for (let i = L.first; i <= L.last; i++) {
-      ws[i].classList.toggle("on", L.n <= cur && L.n >= cur - 1);
-      ws[i].classList.toggle("prev", L.n === cur - 1);
-      ws[i].classList.toggle("old", L.n < cur - 1);
-    }
-  });
-  inn.style.transform = `translateY(${(1 - Math.max(cur, 0)) * lh}px)`;
+  inn.style.transform = `translateY(${lh * (1 - target)}px)`;
   cancelAnimationFrame(c._raf);
-  if (ck || cur < lines.length - 1) c._raf = requestAnimationFrame(() => tkCapStep(c));
+  // Sample the audio queue during playback even if timing offsets are absent; this captures the final response
+  // duration used to calibrate fallback line timing when the model signals turnComplete.
+  if (ck?.playing && (target < activeUnits.length - 1 || (!c._hasRealTimings && !c._responseComplete))) {
+    c._raf = requestAnimationFrame(() => tkCapStep(c));
+  }
 }
 function tkPaint() {
   if (!TK.card) return;
@@ -2937,7 +3077,7 @@ function tkBegin() {
   if (!TK.mod || TK.phase === "live") return;
   const t = talkInstance();
   if (player.el && !player.el.paused) player.el.pause();       // two voices at once would be noise
-  TK.phase = "live"; TK.st = "connecting"; TK.reason = ""; TK.cap = ""; TK.nudges = {}; TK.view = "main";
+  TK.phase = "live"; TK.st = "connecting"; TK.reason = ""; TK.cap = ""; TK.capLineId = null; TK.capSegments = []; TK.capFinal = false; TK.nudges = {}; TK.view = "main";
   tkPaint();
   t.start(TK.recap ? {recap: TK.recap, lang: TK.lang, style: tkStyle()} : {storyId: Number(TK.storyId), lang: TK.lang, style: tkStyle()});
 }
@@ -2951,7 +3091,7 @@ function tkLimitText(t) {
 }
 function tkEnded({reason, resetsAt, scope}) {
   if (TK.ui === "closed" || reason === "stopped") return;      // we stopped it ourselves
-  TK.phase = "ended"; TK.reason = reason; TK.cap = ""; TK.resetsAt = reason === "limit" ? resetsAt || null : null; TK.limitScope = scope || "hour";
+  TK.phase = "ended"; TK.reason = reason; TK.cap = ""; TK.capLineId = null; TK.capSegments = []; TK.capFinal = false; TK.resetsAt = reason === "limit" ? resetsAt || null : null; TK.limitScope = scope || "hour";
   tkUnlight();
   if (!me && !TK.recap && (reason === "network" || reason === "login")) {   // the session was ended elsewhere: sign in again (the recap needs sign-in to open at all)
     tkEndAll({noHistory: true});
@@ -3001,7 +3141,7 @@ function tkShowCard({ready, recap}) {
   TK.recap = recap || null;
   TK.storyId = recap ? "recap" : String(openId); TK.lang = lang;
   htmlEl.classList.toggle("talk-recap", !!recap);
-  if (TK.ui === "closed") { TK.view = "main"; TK.phase = "ready"; TK.st = "idle"; TK.reason = ""; TK.cap = ""; }     // tkBegin makes it live
+  if (TK.ui === "closed") { TK.view = "main"; TK.phase = "ready"; TK.st = "idle"; TK.reason = ""; TK.cap = ""; TK.capLineId = null; TK.capSegments = []; TK.capFinal = false; }     // tkBegin makes it live
   const a = $("rise").querySelector(".acts"); if (a) a.classList.remove("peek");
   const fromEl = recap ? bsheet.querySelector(".rtalk") : $("rise").querySelector(".acts .talkbtn");      // always the button itself, even when the banner was tapped
   const r = fromEl ? fromEl.getBoundingClientRect() : {left: innerWidth - 70, top: innerHeight - 70, width: FL, height: FL};
@@ -3044,7 +3184,7 @@ function tkEndAll(o = {}) {
   const was = TK.ui;
   if (was === "closed") return;
   const live = TK.phase === "live", wasRecap = !!TK.recap;
-  TK.ui = "closed"; TK.phase = "ready"; TK.st = "idle"; TK.cap = ""; TK.view = "main"; TK.nudges = {};
+  TK.ui = "closed"; TK.phase = "ready"; TK.st = "idle"; TK.cap = ""; TK.capLineId = null; TK.capSegments = []; TK.capFinal = false; TK.view = "main"; TK.nudges = {};
   if (live && TK.talk) { try { TK.talk.stop(); } catch (e) { /* already over */ } }
   tkUnlight();
   if (was === "card") {

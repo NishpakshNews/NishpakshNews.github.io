@@ -98,6 +98,22 @@ test("transcripts join into lines per speaker and close at the end of a turn", (
   assert.ok(log.events.includes("turn"));
 });
 
+test("guide transcript segments preserve their audio offsets and cumulative text ranges", () => {
+  let latest = null;
+  const p = new LiveProtocol({
+    sentenceIds: [], send() {},
+    on: { transcript: (lines, meta) => { latest = { lines, meta }; }, turnComplete() {} },
+  });
+  p.handle({ serverContent: { outputTranscription: { text: "The guide", startOffset: "0s", endOffset: "0.8s" } } });
+  p.handle({ serverContent: { outputTranscription: { text: " speaks", startOffset: "0.8s", endOffset: "1.2s" }, turnComplete: true } });
+  assert.deepEqual(latest.lines, [{ role: "guide", text: "The guide speaks" }]);
+  assert.equal(latest.meta.lineId, 0);
+  assert.equal(latest.meta.segments.length, 2);
+  assert.deepEqual(latest.meta.segments.map((s) => [s.text, s.startIndex, s.endIndex, s.startOffset, s.endOffset]), [
+    ["The guide", 0, 9, "0s", "0.8s"], [" speaks", 9, 16, "0.8s", "1.2s"],
+  ]);
+});
+
 test("interrupted is passed on and closes the guide's line, so the next words start a new one", () => {
   const { p, log } = proto();
   p.handle({ serverContent: { outputTranscription: { text: "The bridge" } } });
