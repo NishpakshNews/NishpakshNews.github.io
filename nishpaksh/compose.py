@@ -270,6 +270,7 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
         "has_established": bool(est_events or established),
         "perspective_mode": analysis.get("mode"),
         "qualified_by": analysis.get("qualified_by"),
+        "express_lane": analysis.get("express_lane"),      # express.py: the lane of an express story
         "perspectives": {k: sorted(v) for k, v in sorted(persp.items())},
         "timeline": [[items[n] for n in tier] for tier in tl["tiers"]],
         "undated": [items[n] for n in tl["undated"]],

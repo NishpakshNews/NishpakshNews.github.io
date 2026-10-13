@@ -55,6 +55,31 @@ def _beats(store: Store, ids: list[int]) -> set[int]:
             or (r["analysis"] or {}).get("qualified_by") == "express"}
 
 
+def _beat_order(store: Store, queue: list[int], beats: set[int]) -> list[int]:
+    """`queue` with its beat stories put in the strict order (express.order: companies and tech express, then the
+    Domains desk, then Sport (the Sport desk and express sport are one place), then entertainment express; an India
+    story before a "world" one inside a place; same place: the queue's own order). Non-beat stories keep their
+    positions, so only the beat seats follow this order (owner, Oct 13 2026)."""
+    from . import express
+    from .priority import _feed_beat, beat_feeds
+    ids = [s for s in queue if s in beats]
+    if len(ids) < 2:
+        return list(queue)
+    bf = beat_feeds(store)
+    tags: dict[int, list] = {}
+    if bf:
+        for r in store.rows(select(articles.c.story_id, articles.c.feed_id).where(articles.c.story_id.in_(ids))):
+            tags.setdefault(r["story_id"], []).append(bf.get(r["feed_id"]))
+    key: dict[int, tuple] = {}
+    for r in store.rows(select(stories.c.id, stories.c.analysis).where(stories.c.id.in_(ids))):
+        a = r["analysis"] or {}
+        desk = _feed_beat(tags.get(r["id"], [])) or (a.get("beat") or {}).get("desk") or (a.get("priority") or {}).get("beat")
+        lane = a.get("express_lane") if a.get("qualified_by") == "express" else None
+        key[r["id"]] = (express.tier(lane, desk), 0 if lane is None or a.get("express_sig") == "india" else 1)
+    ordered = iter(sorted(ids, key=lambda s: key.get(s, (99, 1))))     # stable: the queue's order breaks ties
+    return [next(ordered) if s in beats else s for s in queue]
+
+
 def _express_ids(store: Store, ids: list[int]) -> set[int]:
     """The express stories among `ids` (qualified by the express rule, express.py)."""
     if not ids:
@@ -201,6 +226,7 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
     max_tries = SETTINGS.desk_tries + 2 * extra
     queue = ready(store, now)
     beats = _beats(store, queue)
+    queue = _beat_order(store, queue, beats)
     express_ids = _express_ids(store, queue)
     stats["ready"] = len(queue)
     stats["ready_beat"] = len(beats)
@@ -214,6 +240,8 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
         beat = sid in beats
         if not (beat and beat_room > 0) and room <= 0:
             continue                                # only the beat seat is left: a beat story is needed
+        if sid in express_ids and beat_room <= 0:
+            continue                                # an express story has the beat seats only, never a general seat
         # written only from the current analysis: a story reviewed under older rules (Oct 8 2026, story
         # 11867: dispute marks from before the dispute gate were published) is reviewed again first;
         # when nothing changed this costs nothing (consolidate_story returns at once)

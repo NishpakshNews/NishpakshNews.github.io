@@ -805,8 +805,54 @@ every outlet that covered it, and colours every sentence by how well it is suppo
        too strict. Read `ledger/LEDGER.md` for the new "did not qualify, and why" table before changing any dial.
      - Open question for the owner: sport results on the outlet's own voice (`own_voice_lanes: [sport]`); add entertainment or
        leave it, after the first batch is read.
-  4. TODO (next): seats (`desk_beat_seat` 2, shared with express), the writer's attribution wording for company claims, final
-     CLAUDE.md pass, replay on stored data (`tools/replay.py`).
+  4. DONE (Oct 13 2026, Part 4; built from 20 runs / 21 hours of the Part 3 ledger; NOT RUN on real data; DB tests run on the runner).
+     - **What the ledger showed:** express works: 110 stories qualified (sport named 50, own voice 30, entertainment named 24,
+       companies named 6), 17 express articles were WRITTEN, no problems recorded. Failures were only `not_named` (18) and
+       `second_outlet_unread` (4); no dispute was ever found. Tech passed 10 headlines and never qualified; companies passed 10.
+       Quota is not the limit (light, page and writer tiers were mostly unspent). The seat is: 5-9 beat stories were ready each
+       hour against 3 seats, and the beat seat was full whenever stories were ready; reads were capped at 3 new stories a run with
+       about 90-110 waiting, but ready stories already outnumber seats 3 to 1, so more reading would only deepen the queue.
+     - **Seats:** `desk_beat_seat` 1 -> 2 (`config.py`), shared by Domains, Sport and express stories; Domains and Sport rank first
+       in `desk.ready` (rating), express stories after them. The unused `seats_per_hour` dial in express.yaml was removed.
+     - **Reading cap left at 3** (`reads_per_run`), for the reason above; raise it only if `ready_beat` falls below the seats.
+     - **Company wording:** `express.qualify` keeps the lane in `analysis["express_lane"]`; `compose.build_payload` passes it;
+       `narrative.write_narrative` adds `express.WRITER_NOTE` (a party's claim, plan, price, figure is written as that party's word
+       with the statement's own verb, never as established fact, no added praise) for express stories outside sport. A sport
+       result stays the reporter's own voice. No new check on the finished article: it is purple "one outlet only" anyway.
+     - **Ledger:** "did not qualify" now also by lane (`story_out_lane`), to see which lane `not_named` hits.
+     - **Replay:** `python -m nishpaksh.express_replay [word ...]` lists the stored headlines each exclusion word kept out and, for
+       named words, which would pass without it (`tests/test_express_replay.py`). The ledger names `harm:detained` (176),
+       `gossip:box office` (160), `harm:death` (150), `market:inflation` (164): read their headlines before loosening anything.
+       The exclusions were left as they are: false positives cost more than missed stories.
+     - **Not done, on purpose:** more company and tech feeds. Their starvation is supply (business feeds are mostly economy and
+       markets, excluded by design), and a feed cannot be checked from the sandbox (no network). Add outlets already in the app
+       with `tools/check_feeds.py` run on the runner. `own_voice_lanes` stays `[sport]`; entertainment qualified only on named origins.
+     - **Still unread by me:** the published express pages themselves (the ledger holds numbers, not text): open a few and check the
+       wording for company stories; and `stories_awaiting_regroup` (167 in the last run) holds stories whose vectors came from another
+       embedding model, which delays express stories as it does the others.
+  5. DONE (Oct 13 2026, owner read the first published express stories: "less impactful ... day to day unimportant"; NOT RUN on real data).
+     - **The bar (`express.significance_agreed`, `SIG_PROMPT`, `significance_*` in express.yaml):** after the lane, a second small question
+       per headline: `india` (India, an Indian person, team or company is the subject, and it is a real achievement, event or row),
+       `world` (the sport / industry / event as a whole moves, or a global figure's national sensation), `none` (a foreign player's
+       injury or squad unless against India, private life, cast / crew / signing / sequel details, a minor celebrity, a small company,
+       a leak or rumour). Asked twice (second time reversed, only for passes), both must give the SAME class, unsure = none. Per-lane
+       notes and the owner's ten headlines with his verdicts are in the prompt as examples. Only india / world are embedded and read.
+       The verdict is `{verdict: pending}` while the question is unanswered (a failed call is asked again; the lane is not), then `yes`
+       with `sig`, or `no` / `not_significant`. A "yes" from before this question (no `sig`) is asked again and never counts for a story.
+       A member `not_significant` keeps its whole story out. Counters: `lane_ok`, `sig_calls`, `not_significant`, `not_significant_<lane>`,
+       `sig_india`, `sig_world`, `now.sig_waiting`. Switch off: `significance_enabled: false`.
+     - **The strict order (`express.order`, `express.tier`, `desk._beat_order`):** express companies, tech, then the Domains desk, then
+       Sport (the Sport desk and express sport are ONE place: merged), then express entertainment; inside a place an India story before a
+       "world" one, then the queue's own order. Only the beat stories are re-ordered among their own positions (general stories keep
+       theirs), and an express story has the beat seats only, never a general seat. Strict means entertainment gets a seat only in an
+       hour nothing above it is ready.
+     - **Reading in the same spirit (`express._reading_order`):** `reads_per_run` stories, one per lane in turn in that order, India first
+       inside a lane, newest first, so quiet lanes (companies, tech) are not crowded out by busy ones. The story's lane and `sig` are saved in
+       `analysis.express_lane` / `express_sig` by `express.qualify`. Counters `started_<lane>`.
+     - **Tech:** not proven why it never qualified (the by-lane table was new). Suspects: supply (10 of 421 links), the 3-read cap going to
+       sport and entertainment (fixed by the lane rotation), and speculation words (leaks, "likely"). Read `story_out_lane` and
+       `started_tech` in the next ledger before adding feeds.
+     - Tests: `test_express_gate.py` (significance, pending, off switch), `test_express_story.py` (order, reading order, sig), `test_express_story_db.py` (`_beat_order`).
 - **The ledger (owner, Oct 12 2026: "embedding is a lot of confusion ... store them in detail, so we can use them to fine tune";
   `ledger.py`, folder `ledger/`, `.github/scripts/ledger.sh`).** One record per hourly run, committed to the repository (so the
   zip carries it) by a step after the desk (`continue-on-error`; reads only, no model, no quota). `ledger/runs-YYYY-MM.jsonl`

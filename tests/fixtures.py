@@ -119,6 +119,13 @@ class FakeBackend:
                         "tech" if "launches" in low else "none")
                 res.append({"n": int(n), "lane": lane})
             return json.dumps({"results": res}), [], 100
+        if "decide\nwhether an Indian reader NEEDS" in prompt:
+            # the express lane's significance question (express.py): India unless the headline says injury or cast
+            res = []
+            for n, t in re.findall(r"^(\d+)\. \[\w+\] (.*)$", prompt.split("If you are not sure")[1], re.M):
+                low = t.lower()
+                res.append({"n": int(n), "class": "none" if ("injur" in low or "cast" in low) else "india"})
+            return json.dumps({"results": res}), [], 100
         if "A news page often carries OTHER" in prompt:
             # connected when the line shares a word of 5+ letters with the story, else other news
             story = prompt.split("THE STORY:")[1].split("LINES:")[0].lower()

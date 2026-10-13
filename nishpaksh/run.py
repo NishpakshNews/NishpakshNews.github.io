@@ -165,8 +165,8 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         if origins.assess_story(store, router, sid):
             # interim rule while perspectives are unknown: 3+ independent outlets, 2+ origins
             perspectives.mark_qualified(store, sid, "interim")
-        elif sid in express_ids and _express.assess(store, sid):
-            perspectives.mark_qualified(store, sid, "express")     # one or two outlets, a named origin (express.py)
+        elif sid in express_ids and _express.qualify(store, sid):     # one or two outlets, a named origin (express.py)
+            pass
     analysed = _parallel(dirty, analyse, deadline - 12 * 60, workers)
     stats["global_clusters"] = perspectives.recompute_global(store)
     # labels may have changed (or the clusters gone): re-label analysed stories (code only). A
@@ -175,8 +175,8 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         perspectives.analyze_story(store, sid)
         if origins.assess_story(store, None, sid):
             perspectives.mark_qualified(store, sid, "interim")
-        elif sid in express_ids and _express.assess(store, sid):
-            perspectives.mark_qualified(store, sid, "express")
+        elif sid in express_ids and _express.qualify(store, sid):
+            pass
 
     # a story whose read articles were grouped on another embedding model's vectors cannot be
     # trusted to be one event (real data: one such "story" mixed GST, a temple and a phone launch);

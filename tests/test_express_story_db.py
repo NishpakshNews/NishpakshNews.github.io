@@ -29,7 +29,7 @@ def _feed(store):
 def _story(store, feed, title="Tata Motors opens plant in Sanand", verdict="yes", read=False, minutes_ago=60,
            outlet="Hindustan Times"):
     sid = store.insert_returning_id(stories, dict(signature=title, dirty=True, qualifies=False, analysis={}))
-    ex = {"express": {"v": 1, "verdict": verdict, "lane": "companies", "at": "x"}} if verdict else None
+    ex = {"express": {"v": 1, "verdict": verdict, "lane": "companies", "sig": "india", "at": "x"}} if verdict else None
     aid = store.insert_returning_id(articles, dict(
         url=f"https://x/{sid}", feed_id=feed, outlet=outlet, lang="en", role="news", title=title, story_id=sid,
         published_at=NOW - dt.timedelta(minutes=minutes_ago), fetched_at=NOW, text=(title + ". More of the report. ") * 20,
@@ -104,3 +104,21 @@ def test_a_second_outlet_not_yet_read_holds_the_story(store):
         extract_failures=0, extracted_at=None))
     assert express.assess(store, sid) is False
     assert express.STATS["story_out"]["second_outlet_unread"] == 1
+
+
+def test_the_beat_seats_follow_the_strict_order(store):
+    from nishpaksh.desk import _beat_order
+    def mk(analysis):
+        return store.insert_returning_id(stories, dict(signature="s", dirty=False, qualifies=True, analysis=analysis))
+    ent = mk({"qualified_by": "express", "express_lane": "entertainment", "express_sig": "india"})
+    sport = mk({"beat": {"desk": "sport"}})
+    dom = mk({"beat": {"desk": "domains"}})
+    tech = mk({"qualified_by": "express", "express_lane": "tech", "express_sig": "world"})
+    esport_world = mk({"qualified_by": "express", "express_lane": "sport", "express_sig": "world"})
+    esport_india = mk({"qualified_by": "express", "express_lane": "sport", "express_sig": "india"})
+    plain = mk({})                                                     # not a beat story: keeps its place
+    queue = [ent, sport, plain, dom, tech, esport_world, esport_india]
+    beats = set(queue) - {plain}
+    got = _beat_order(store, queue, beats)
+    assert got[2] == plain
+    assert [s for s in got if s != plain] == [tech, dom, sport, esport_india, esport_world, ent]

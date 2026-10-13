@@ -37,7 +37,7 @@ filter_calls_per_run: 6     # first-asking calls per run (a headline is asked ab
 intake_per_run: 120         # new express-feed links taken per run, apart from the 400 the main feeds share
 intake_per_feed: 12         # ... and at most this many from one express feed
 reads_per_run: 3            # express stories read (Flash-Lite) per run
-seats_per_hour: 2           # the beat seat: Domains/Sport stories and express stories share it
+# (the seats are `desk_beat_seat` in config.py: 2 an hour, shared by Domains, Sport and express stories; Domains and Sport rank first)
 
 # Worked examples for the headline question (a small model: show the traps). "headline -> lane" or "-> none (why)".
 filter_examples:
@@ -381,3 +381,30 @@ own_voice_lanes: [sport]    # lanes where the outlet's own voice may stand for a
 # an attribution containing one of these is another media house, not an origin ("Bloomberg reported", "according to Mint")
 media_words: [reuters, bloomberg, pti, ani, ians, afp, ap, bbc, cnbc, ndtv, mint, moneycontrol, livemint, "economic times",
   "times of india", "hindustan times", "hindu", "indian express", news, report, reports, reported, sources, media, tweet, post]
+
+# Part 5 (owner, Oct 13 2026): the bar of significance and the strict order.
+# After the lane, a second question: does a reader of a national app NEED this? (express.SIG_PROMPT: "india", "world" or
+# "none"; asked twice, second time reversed, both must agree, unsure = none). Only "india" and "world" are embedded and read.
+significance_enabled: true
+significance_calls_per_run: 6
+# The strict order of the beat seats, best first: express companies and tech, then the Domains desk, then Sport (the Sport
+# desk and express sport are one place), then express entertainment. Express stories use the beat seats only.
+order: [companies, tech, domains, sport, entertainment]
+significance_lane_notes:
+  companies: "pass (india) only for a large or widely known company, or a deal, investment, hiring, closure or launch that reaches many Indians; a small or little-known company, a routine appointment or a minor tie-up is none"
+  tech: "pass (india or world) a launch or change by a brand many Indians use (phones, apps, platforms, chips, AI), with what it means for users; a small brand, a leak, specs or a rumour is none"
+  sport: "pass India's teams and athletes' results, medals, titles, records, awards and public rows; and rulings, tournaments and records of a whole sport or a global sensation. One foreign player's or team's injury, squad, form or fixtures is none unless it is against India"
+  entertainment: "the hardest bar: pass only a national-level event (a national or major international award or festival win by an Indian, an Indian film or artist at a global stage, an industry-wide ruling). Casting, sequels' cast, a signing, an appearance, a personal life matter is none"
+significance_examples:
+  - '"Knee and head injuries threaten availability of Ryan Coleman-Williams for upcoming games" -> none (one foreign player)'
+  - '"Bhojpuri actor says she has been single for years" -> none (private life)'
+  - '"Injured Pathum Nissanka makes Sri Lanka squad for Pakistan Tests" -> none (a squad of two foreign teams, not India)'
+  - '"Shubman Gill wins ICC Player of the Month award for fifth time" -> india'
+  - '"Mithun Chakraborty joins Jailer 2 cast after initial refusal to play villain" -> none (cast detail)'
+  - '"Vidya Balan makes her Tamil film debut in Jailer 2" -> none (cast detail)'
+  - '"Comedian signs new show after five years away" -> none (a minor celebrity)'
+  - '"Premier League champions face title stripping as Steven Gerrard backs severe penalty" -> none (one foreign club)'
+  - '"Mizoram hockey player Lalremsiami returns home after India wins Asian Games gold" -> india'
+  - '"Sumit Nagal faces backlash after gesturing at spectators following match win" -> india (an Indian, a public row)'
+  - '"ICC changes the over-rate rules for all Test cricket" -> world (the whole sport)'
+  - '"Football icon announces retirement" -> world (a global figure)'

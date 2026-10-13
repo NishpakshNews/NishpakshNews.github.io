@@ -1583,6 +1583,8 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
         if background:
             bg = ("This story is a later development of an earlier story on the site. The section "
                   "\"background\" holds facts from the earlier story: give at most TWO sentences of them.\n\n")
+        from . import express as _express
+        bg += _express.writer_note(payload)     # a company's own claim is its claim, not a fact (express lane)
         prompt = WRITER_PROMPT.format(banned=", ".join(sorted(banned)) or "(none)", background=bg, now=clock.now_line(),
                                       statements=planning.block(pl, by_id, _statement_line, sentences.link_line),
                                       length=_target_length(items), people=_people(items))

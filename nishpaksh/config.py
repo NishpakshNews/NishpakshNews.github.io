@@ -123,7 +123,7 @@ class Settings:
     prep_queue: int = 16                 # stories read, analysed and searched for at a time (priority.py)
     prep_beat: int = 4                   # ...of which reserved for Domains and Sport stories (owner, Oct 9 2026)
     desk_per_hour: int = 2               # articles the writer publishes in one clock hour from any story (owner)
-    desk_beat_seat: int = 1              # ...plus this many for Domains or Sport stories only; empty if none is ready
+    desk_beat_seat: int = 2              # ...plus this many for Domains, Sport or express stories only (express.py: Oct 13 2026, 1 -> 2); empty if none is ready
     desk_tries: int = 5                  # stories the writer job tries per run before giving up
     desk_minutes: float = 20             # the writer job's time budget
     min_sources_to_read: int = 3          # independent sources with a readable page before a story is read

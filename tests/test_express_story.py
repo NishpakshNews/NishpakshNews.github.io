@@ -24,7 +24,7 @@ def ev(att, stance="asserts", kind="event"):
 
 
 def yes(lane="companies"):
-    return {"title": "Tata Motors opens plant", "url": "https://x/a", "extraction": {"express": {"v": 1, "verdict": "yes", "lane": lane}}}
+    return {"title": "Tata Motors opens plant", "url": "https://x/a", "extraction": {"express": {"v": 1, "verdict": "yes", "lane": lane, "sig": "india"}}}
 
 
 def test_how_an_attribution_reads():
@@ -92,3 +92,41 @@ def test_the_wait_before_writing():
     assert express.settle_decision(NOW, None, met, 72, wait_hours=1) is None
     old = NOW - dt.timedelta(hours=80)
     assert express.settle_decision(NOW, old, NOW - dt.timedelta(hours=79), 72, wait_hours=1) is None   # stale: not written
+
+
+def test_the_writer_is_told_a_companys_claim_is_its_own_claim_outside_sport():
+    assert express.writer_note({"qualified_by": "express", "express_lane": "companies"}) == express.WRITER_NOTE
+    assert express.writer_note({"qualified_by": "express", "express_lane": "tech"}) == express.WRITER_NOTE
+    assert express.writer_note({"qualified_by": "express", "express_lane": "sport"}) == ""
+    assert express.writer_note({"qualified_by": "interim", "express_lane": "companies"}) == ""
+    assert express.writer_note({}) == ""
+
+
+def test_the_strict_order_of_the_beat_seats():
+    assert express.order() == ["companies", "tech", "domains", "sport", "entertainment"]
+    t = express.tier
+    assert t("companies", None) < t(None, "domains")
+    assert t("tech", None) < t(None, "domains") < t(None, "sport") == t("sport", None) < t("entertainment", None)
+    assert t(None, "domains") < t("sport", "domains")           # an express story ranks by its lane, not its desk
+    assert t(None, None) == t(None, "other") == len(express.order())
+
+
+def test_reading_goes_one_story_per_lane_in_turn_so_a_quiet_lane_is_not_crowded_out():
+    def c(lane, minutes, sig="india"):
+        return {"lane": lane, "sig": sig, "newest": NOW - dt.timedelta(minutes=minutes)}
+    unread = {1: c("sport", 1), 2: c("sport", 2), 3: c("sport", 3), 4: c("entertainment", 4),
+              5: c("tech", 50), 6: c("companies", 90)}
+    assert express._reading_order(unread, 3) == [6, 5, 1]       # companies, tech, then the newest sport
+    assert express._reading_order(unread, 6) == [6, 5, 1, 4, 2, 3]
+    only = {1: c("entertainment", 1), 2: c("sport", 9, "world"), 3: c("sport", 8, "india")}
+    assert express._reading_order(only, 3) == [3, 1, 2]         # sport first; inside it India before "world"
+
+
+def test_a_member_judged_not_significant_keeps_the_story_out_and_the_sig_of_a_story_is_the_best_of_its_members():
+    no = {"title": "t", "url": "u", "extraction": {"express": {"v": 1, "verdict": "no", "why": "not_significant", "lane": "sport"}}}
+    assert express.story_lane([yes("sport"), no]) == (None, "member_not_significant")
+    a = {"extraction": {"express": {"v": 1, "verdict": "yes", "lane": "sport", "sig": "world"}}}
+    b = {"extraction": {"express": {"v": 1, "verdict": "yes", "lane": "sport", "sig": "india"}}}
+    assert express.story_sig([a]) == "world" and express.story_sig([a, b]) == "india"
+    old = {"title": "Tata Motors opens plant", "url": "https://x/a", "extraction": {"express": {"v": 1, "verdict": "yes", "lane": "companies"}}}
+    assert express.story_lane([old]) == (None, "no_lane")        # a "yes" from before the question never met the bar

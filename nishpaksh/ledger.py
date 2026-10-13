@@ -264,7 +264,8 @@ def render(entries: list[dict], now: dt.datetime | None = None) -> str:
                   *_table(["list:word", "count"], [[k, int(v)] for k, v in terms.most_common(25)]), ""]
         for key, title, head in (("story_in", "Express stories that qualified (lane:origin kind):", "lane:origin"),
                                  ("story_out", "Express stories that did not qualify, and why (a reason that "
-                                  "dominates is the dial to look at):", "reason")):
+                                  "dominates is the dial to look at):", "reason"),
+                                 ("story_out_lane", "...the same by lane:", "lane:reason")):
             c: Counter = Counter()
             for e in ex:
                 c.update({k: v for k, v in (e["express"].get(key) or {}).items() if _num(v)})

@@ -308,6 +308,93 @@ def lanes_agreed(router, items: list[dict], batch: int) -> dict[int, str]:
     return out
 
 
+# --- the second question: does it matter beyond its own corner? (owner, Oct 13 2026) -----------------------------------
+#
+# The lane says WHAT a story is about; this says whether a reader of a national news app needs it. The owner read the first
+# batch and found express stories "day to day, unimportant": a foreign player's knee injury, a squad list for a series
+# India is not in, a film's cast addition, a comedian's new show, an actor's relationship. What he wanted: India or an
+# Indian is the subject ("india"), or the sport, industry or event AS A WHOLE moves, or a global figure's national
+# sensation ("world"). Everything else is "none". Asked twice like the lane (second time reversed, only for headlines that
+# passed), both answers must be the same class, unsure = none. Examples are the owner's own verdicts (express.yaml).
+
+SIG_PROMPT = """You choose news for Indian readers of a national news app. For each headline below (shown with its topic), decide
+whether an Indian reader NEEDS to know it, by answering one of:
+
+"india" - India, an Indian person, team, company or achievement is the main subject, and it is a real achievement,
+          event or controversy (a medal, a title, an award, a record, a big deal, a public row).
+"world" - the sport, industry or event AS A WHOLE moves (a rule, a tournament, a governing body's ruling, an industry-wide
+          move), or something so large that people everywhere know it (a global icon retiring, a nation's sensation).
+"none"  - everything else: one foreign player's or team's injury, squad, form or fixtures (unless it is against India),
+          a private life, relationship or family matter, a film or show's cast, crew, signing or sequel details, a
+          minor or regional celebrity, a small or little-known company or launch, a leak, a rumour, an award shortlist.
+
+{lane_notes}
+Examples (the owner's own verdicts):
+{examples}
+If you are not sure, answer "none".
+
+{headlines}
+
+Reply with JSON only: {{"results": [{{"n": 1, "class": "india"}}, {{"n": 2, "class": "none"}}, ...]}}"""
+
+SIG_CLASSES = ("india", "world", "none")
+
+
+def _sig_prompt(items: list[tuple[dict, str]]) -> str:
+    notes = "\n".join(f"- {k}: {v}" for k, v in (setting("significance_lane_notes", {}) or {}).items())
+    ex = "\n".join(f"- {e}" for e in setting("significance_examples", []) or [])
+    body = "\n".join(f"{i + 1}. [{lane}] {(a.get('title') or '').strip().replace(chr(10), ' ')[:220]}"
+                     for i, (a, lane) in enumerate(items))
+    return SIG_PROMPT.format(lane_notes=("What counts, by topic:\n" + notes + "\n") if notes else "", examples=ex, headlines=body)
+
+
+def _ask_sig(router, items: list[tuple[dict, str]]) -> dict[int, str]:
+    """{article id: class} for the headlines the model answered (a missing line is undecided; an unknown class is none)."""
+    from .router import QuotaExhausted
+    out: dict[int, str] = {}
+    try:
+        res = router.call("page", _sig_prompt(items), json_out=True, max_output_tokens=800)
+    except QuotaExhausted:
+        log.info("express: no quota for the significance question")
+        return out
+    except Exception as e:  # noqa: BLE001
+        log.warning("express: significance question failed: %s", str(e)[:200])
+        return out
+    bump("sig_calls")
+    for item in (res.data or {}).get("results", []) if isinstance(res.data, dict) else []:
+        try:
+            n = int(item["n"]) - 1
+        except (KeyError, TypeError, ValueError):
+            continue
+        if 0 <= n < len(items):
+            c = str(item.get("class") or "").strip().lower()
+            out[items[n][0]["id"]] = c if c in SIG_CLASSES else "none"
+    return out
+
+
+def significance_agreed(router, items: list[tuple[dict, str]], batch: int) -> dict[int, str]:
+    """{article id: "india" | "world" | "none"} for the headlines that got a final answer. Same shape as `lanes_agreed`:
+    the second question only for those the first passed, in reverse order; both must give the same class."""
+    first: dict[int, str] = {}
+    for i in range(0, len(items), batch):
+        first.update(_ask_sig(router, items[i:i + batch]))
+    named = [it for it in items if first.get(it[0]["id"], "none") != "none"]
+    second: dict[int, str] = {}
+    rev = named[::-1]
+    for i in range(0, len(rev), batch):
+        second.update(_ask_sig(router, rev[i:i + batch]))
+    out: dict[int, str] = {}
+    for a, _lane in items:
+        i = a["id"]
+        if i not in first:
+            continue
+        if first[i] == "none":
+            out[i] = "none"
+        elif i in second:
+            out[i] = first[i] if second[i] == first[i] else "none"
+    return out
+
+
 # --- the verdict, kept with the article --------------------------------------------------------------------------
 
 def verdict_of(a: dict) -> dict | None:
@@ -317,10 +404,12 @@ def verdict_of(a: dict) -> dict | None:
     return v if isinstance(v, dict) and v.get("v") == VERDICT_VERSION else None
 
 
-def _verdict(verdict: str, lane: str | None, why: str | None, now: dt.datetime) -> dict:
+def _verdict(verdict: str, lane: str | None, why: str | None, now: dt.datetime, sig: str | None = None) -> dict:
     v = {"v": VERDICT_VERSION, "verdict": verdict, "at": now.isoformat(timespec="minutes")}
     if lane:
         v["lane"] = lane
+    if sig:
+        v["sig"] = sig
     if why:
         v["why"] = why
     return v
@@ -392,6 +481,7 @@ def gate(store, router, arts: list[dict], now: dt.datetime) -> tuple[set[int], s
         return set(), set()
     held: set[int] = set()
     passed: list[dict] = []
+    pending: list[tuple[dict, str]] = []
     undecided: list[dict] = []
     save: dict[int, dict] = {}
     for a in mine:
@@ -410,8 +500,10 @@ def gate(store, router, arts: list[dict], now: dt.datetime) -> tuple[set[int], s
                     v = save[a["id"]]
         if v is None:
             undecided.append(a)
-        elif v.get("verdict") == "yes":
+        elif v.get("verdict") == "yes" and (v.get("sig") or not setting("significance_enabled", True)):
             passed.append(a)
+        elif v.get("verdict") in ("pending", "yes") and v.get("lane"):       # a "yes" without `sig`: asked the new question
+            pending.append((a, v["lane"]))        # the lane said yes, the significance question is still to answer
         else:
             held.add(a["id"])
     # the headline question
@@ -438,12 +530,37 @@ def gate(store, router, arts: list[dict], now: dt.datetime) -> tuple[set[int], s
                 save[a["id"]] = _verdict("excluded", lane, why, now)
                 held.add(a["id"])
                 continue
-            save[a["id"]] = _verdict("yes", lane, None, now)
-            bump("passed")
-            bump(f"passed_{lane}")
-            passed.append(a)
+            save[a["id"]] = _verdict("pending", lane, None, now)
+            bump("lane_ok")
+            pending.append((a, lane))
         done = {a["id"] for a in todo if a["id"] in got}
         undecided = [a for a in undecided if a["id"] not in done]
+    if pending and router is not None and cap_left > 0:
+        if not setting("significance_enabled", True):
+            got_sig = {a["id"]: "world" for a, _ in pending}
+        else:
+            batch = int(setting("filter_batch", 20))
+            todo_sig = pending[:batch * int(setting("significance_calls_per_run", 6))]
+            got_sig = significance_agreed(router, todo_sig, batch)
+        for a, lane in pending:
+            cls = got_sig.get(a["id"])
+            if cls is None:
+                continue                               # no answer: asked again next run
+            if cls == "none":
+                save[a["id"]] = _verdict("no", lane, "not_significant", now)
+                bump("not_significant")
+                bump(f"not_significant_{lane}")
+                held.add(a["id"])
+            else:
+                save[a["id"]] = _verdict("yes", lane, None, now, sig=cls)
+                bump("passed")
+                bump(f"passed_{lane}")
+                bump(f"sig_{cls}")
+                passed.append(a)
+        decided = {a["id"] for a, _ in pending if a["id"] in got_sig}
+        pending = [(a, l) for a, l in pending if a["id"] not in decided]
+    held |= {a["id"] for a, _ in pending}              # lane agreed, significance unanswered: not embedded yet
+    _now("sig_waiting", len(pending))
     held |= {a["id"] for a in undecided}               # not yet judged: not embedded
     passed.sort(key=lambda a: a.get("published_at") or now, reverse=True)
     first = {a["id"] for a in passed[:allowance]}
@@ -524,9 +641,11 @@ def story_lane(members: list[dict], lane_of: dict[int, str] | None = None) -> tu
         if not v:
             continue
         if v.get("verdict") == "yes" and v.get("lane"):
-            lanes_yes.add(v["lane"])
-        elif v.get("verdict") == "excluded" or v.get("why") == "not_lane":
-            return None, "member_" + ("excluded" if v.get("verdict") == "excluded" else "not_lane")
+            # a "yes" from before the significance question (no `sig`) does not count: it never met the bar
+            if v.get("sig") or not setting("significance_enabled", True):
+                lanes_yes.add(v["lane"])
+        elif v.get("verdict") == "excluded" or v.get("why") in ("not_lane", "not_significant"):
+            return None, "member_" + ("excluded" if v.get("verdict") == "excluded" else v["why"])
     if not lanes_yes:
         return None, "no_lane"
     if len(lanes_yes) > 1:
@@ -537,6 +656,26 @@ def story_lane(members: list[dict], lane_of: dict[int, str] | None = None) -> tu
         if why:
             return None, "member_excluded"
     return lane, None
+
+
+def story_sig(members: list[dict]) -> str:
+    """"india" when any passed member was judged an India story, else "world" (a story from before the question counts as "world")."""
+    sigs = {(verdict_of(a) or {}).get("sig") for a in members if (verdict_of(a) or {}).get("verdict") == "yes"}
+    return "india" if "india" in sigs else "world"
+
+
+def order() -> list[str]:
+    """The strict order the desk and the reader of stories follow, best first (express.yaml `order`): express lanes
+    and the normal "domains" beat in one list. A name not listed ranks last."""
+    return [str(x) for x in (setting("order", ["companies", "tech", "domains", "sport", "entertainment"]) or [])]
+
+
+def tier(express_lane: str | None, desk: str | None) -> int:
+    """0 = first. An express story ranks by its lane; any other beat story by its desk (domains, sport). The normal
+    Sport desk and express sport share one place (owner, Oct 13 2026: merged)."""
+    o = order()
+    key = express_lane or desk
+    return o.index(key) if key in o else len(o)
 
 
 def _readable(a: dict) -> bool:
@@ -580,7 +719,7 @@ def candidates(store, now: dt.datetime | None = None) -> dict[int, dict]:
         n = len(independent({groups[a["id"]] for a in arts if _readable(a)}))
         if n < 1 or n >= int(setting("normal_route_outlets", 3)):
             continue
-        out[sid] = {"lane": lane, "groups": n, "read": any(a["extracted_at"] for a in arts),
+        out[sid] = {"lane": lane, "sig": story_sig(arts), "groups": n, "read": any(a["extracted_at"] for a in arts),
                     "newest": max((a["published_at"] for a in arts if a["published_at"]), default=now)}
     return out
 
@@ -596,13 +735,32 @@ def focus(store, now: dt.datetime | None = None) -> set[int]:
     preparation queue (priority.py)."""
     cands = candidates(store, now)
     begun = {sid for sid, c in cands.items() if c["read"]}
-    new = sorted((sid for sid, c in cands.items() if not c["read"]), key=lambda sid: cands[sid]["newest"], reverse=True)
+    new = _reading_order({sid: c for sid, c in cands.items() if not c["read"]}, int(setting("reads_per_run", 3)))
     take = new[:int(setting("reads_per_run", 3))]
     bump("story_candidates", len(cands))
     bump("story_begun", len(begun))
     bump("story_started", len(take))
-    _now("stories_waiting_to_read", len(new) - len(take))
+    _now("stories_waiting_to_read", sum(1 for c in cands.values() if not c["read"]) - len(take))
+    for sid in take:
+        bump(f"started_{cands[sid]['lane']}")
     return begun | set(take)
+
+
+def _reading_order(unread: dict[int, dict], limit: int) -> list[int]:
+    """The unread express stories in the order to read them: one story from each lane in turn, lanes in the strict
+    order (companies, tech, sport, entertainment), a lane's India stories before its "world" ones, newest first. So a
+    quiet lane (tech, companies) is never crowded out by a busy one, and the lowest tier is read only when the others
+    have nothing waiting."""
+    by_lane: dict[str, list[int]] = {}
+    for sid in sorted(unread, key=lambda s: (unread[s].get("sig") != "india", -(unread[s]["newest"].timestamp()))):
+        by_lane.setdefault(unread[sid]["lane"], []).append(sid)
+    lanes_in_order = sorted(by_lane, key=lambda l: tier(l, None))
+    out: list[int] = []
+    while len(out) < limit and any(by_lane.values()):
+        for l in lanes_in_order:
+            if by_lane[l] and len(out) < limit:
+                out.append(by_lane[l].pop(0))
+    return out
 
 
 def disputed(store, sid: int) -> bool:
@@ -612,6 +770,9 @@ def disputed(store, sid: int) -> bool:
     if any(r["stance"] == "denies" for r in store.rows(select(claims.c.stance).where(claims.c.story_id == sid))):
         return True
     return any(r["conflicts"] for r in store.rows(select(canonical.c.conflicts).where(canonical.c.story_id == sid)))
+
+
+LANE_OF_STORY: dict[int, tuple[str, str]] = {}      # the lane of a story `assess` just passed (qualify saves it with the story)
 
 
 def assess(store, sid: int) -> bool:
@@ -631,6 +792,7 @@ def assess(store, sid: int) -> bool:
     if not lane:
         if why != "no_lane":          # a normal story is not an express miss
             _count("story_out", why)
+            _count("story_out_lane", f"?:{why}")
         return False
     groups = independence_groups(arts)
     readable = {groups[a["id"]] for a in arts if _readable(a)}
@@ -639,20 +801,25 @@ def assess(store, sid: int) -> bool:
         return False                  # three outlets or more: the normal rule decides
     if not independent(read):
         _count("story_out", "not_read_yet")
+        _count("story_out_lane", f"{lane}:not_read_yet")
         return False
     if independent(readable) - independent(read):
+        _count("story_out_lane", f"{lane}:second_outlet_unread")
         _count("story_out", "second_outlet_unread")     # its page is readable but not yet read: wait, never skip it
         return False
     if len(independent(read)) >= 2 and disputed(store, sid):
+        _count("story_out_lane", f"{lane}:disputed")
         _count("story_out", "disputed")
         return False
     rows = store.rows(select(claims.c.kind, claims.c.stance, claims.c.attributed_to).where(claims.c.story_id == sid))
     ok, why = origin_verdict(rows, lane)
     if not ok:
         _count("story_out", why)
+        _count("story_out_lane", f"{lane}:{why}")
         return False
     _count("story_in", f"{lane}:{why}")
     bump("story_qualified")
+    LANE_OF_STORY[sid] = (lane, story_sig(arts))
     return True
 
 
@@ -666,3 +833,36 @@ def settle_decision(now: dt.datetime, last: dt.datetime | None, met: dt.datetime
     if met and (now - met).total_seconds() >= wait * 3600:
         return "express"
     return None
+
+
+def qualify(store, sid: int) -> bool:
+    """`assess`, and when it passes: the story qualifies by the express rule and keeps its lane in
+    `analysis["express_lane"]`, where the writer's wording rules read it (`writer_note`)."""
+    from sqlalchemy import select, update
+    from .db import stories
+    from . import perspectives
+    if not assess(store, sid):
+        return False
+    perspectives.mark_qualified(store, sid, "express")
+    lane, sig = LANE_OF_STORY.pop(sid, (None, None))
+    row = store.one(select(stories.c.analysis).where(stories.c.id == sid)) or {}
+    an = dict(row.get("analysis") or {})
+    if lane and (an.get("express_lane"), an.get("express_sig")) != (lane, sig):
+        an["express_lane"], an["express_sig"] = lane, sig
+        store.exec(update(stories).where(stories.c.id == sid).values(analysis=an))
+    return True
+
+
+WRITER_NOTE = (
+    "This story comes from ONE source and is about what a company, studio or organisation says about itself. "
+    "Write every statement that says who makes it as that party's own word, with the verb the statement uses "
+    "(\"X said\", \"X announced\", \"X plans\"). Never state a party's claim, plan, forecast, price, "
+    "figure or ranking as established fact, and add no praise or adjective the statements do not carry.\n\n")
+
+
+def writer_note(payload: dict) -> str:
+    """Extra writer instruction for an express story outside sport (a match result is the reporter's own
+    observation; a company's claim about itself is not). Empty for every other story."""
+    if payload.get("qualified_by") != "express":
+        return ""
+    return "" if payload.get("express_lane") in (setting("own_voice_lanes", ["sport"]) or []) else WRITER_NOTE

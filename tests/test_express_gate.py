@@ -4,6 +4,7 @@ No database and no model: the database touches (`lane_feeds`, `embed_allowance`,
 model by a fake router. The database-backed run through grouping is in test_express_db.py."""
 import datetime as dt
 import json
+import re
 
 from nishpaksh import express
 
@@ -22,13 +23,19 @@ class FakeRouter:
     """Answers the lane question by keyword: wickets -> sport, plant -> companies, launches -> tech, else none.
     Records every prompt; `flip` makes the answers of the SECOND question differ (a wavering model)."""
 
-    def __init__(self, flip=(), skip=(), fail=False):
+    def __init__(self, flip=(), skip=(), fail=False, sig_none=("injur",)):
         self.prompts, self.flip, self.skip, self.fail = [], set(flip), set(skip), fail
+        self.sig_prompts, self.sig_none = [], tuple(sig_none)
 
     def call(self, tier, prompt, json_out=True, max_output_tokens=0, **kw):
         if self.fail:
             from nishpaksh.router import QuotaExhausted
             raise QuotaExhausted(tier)
+        if "NEEDS to know" in prompt:               # the significance question: india unless the headline says injury
+            self.sig_prompts.append(prompt)
+            rows = re.findall(r"^(\d+)\. \[\w+\] (.*)$", prompt.split("If you are not sure")[1], re.M)
+            return Res({"results": [{"n": int(n), "class": "none" if any(w in t.lower() for w in self.sig_none) else "india"}
+                                    for n, t in rows]})
         self.prompts.append(prompt)
         asking = len(self.prompts)
         res = []
@@ -171,7 +178,7 @@ def test_the_lane_s_own_exclusions_run_after_the_model_names_the_lane(monkeypatc
 def test_a_judged_headline_is_not_asked_again(monkeypatch):
     saved = setup(monkeypatch)
     old_no = {"express": {"v": 1, "verdict": "no", "why": "not_lane"}}
-    old_yes = {"express": {"v": 1, "verdict": "yes", "lane": "sport"}}
+    old_yes = {"express": {"v": 1, "verdict": "yes", "lane": "sport", "sig": "india"}}
     r = FakeRouter()
     held, first = express.gate(None, r, [art(1, "x", extraction=old_no), art(2, "y", extraction=old_yes, feed=2)], NOW)
     assert held == {1} and first == {2} and r.prompts == [] and saved == {}
@@ -259,3 +266,39 @@ def test_funnel_numbers_are_plain_json():
     express._now("cap_left", 400)
     assert json.loads(json.dumps(express.STATS)) == {"asked": 3, "excluded": {"harm": 1},
                                                      "excluded_terms": {"harm:arrested": 1}, "now": {"cap_left": 400}}
+
+
+def test_the_significance_question_keeps_out_what_does_not_matter_beyond_its_corner(monkeypatch):
+    saved = setup(monkeypatch)
+    router = FakeRouter(sig_none=("knee",))
+    arts = [art(1, "Tata Motors opens plant in Sanand"), art(2, "India win by six wickets in Pune"),
+            art(3, "Foreign star has knee trouble as team win by six wickets elsewhere", feed=2)]
+    held, first = express.gate(None, router, arts, NOW)
+    assert first == {1, 2} and held == {3}
+    assert saved[1]["verdict"] == "yes" and saved[1]["sig"] == "india"
+    assert saved[3]["verdict"] == "no" and saved[3]["why"] == "not_significant" and saved[3]["lane"] == "sport"
+    assert express.STATS["not_significant"] == 1 and express.STATS["passed"] == 2
+    assert len(router.sig_prompts) == 2           # asked, then asked again (reversed) for the two that passed
+
+
+def test_a_model_without_an_answer_leaves_the_headline_pending_and_it_is_asked_again(monkeypatch):
+    saved = setup(monkeypatch)
+    router = FakeRouter()
+    real = express._ask_sig
+    monkeypatch.setattr(express, "_ask_sig", lambda r, items: {})         # the significance call fails
+    held, first = express.gate(None, router, [art(1, "Tata Motors opens plant in Sanand")], NOW)
+    assert first == set() and held == {1} and saved[1]["verdict"] == "pending"
+    monkeypatch.setattr(express, "_ask_sig", real)
+    stored = art(1, "Tata Motors opens plant in Sanand", extraction={"express": saved[1]})
+    saved.clear()
+    router2 = FakeRouter()
+    held, first = express.gate(None, router2, [stored], NOW)
+    assert first == {1} and saved[1]["verdict"] == "yes"
+    assert not router2.prompts                    # the lane question was not asked again, only the significance one
+
+
+def test_the_significance_check_can_be_switched_off(monkeypatch):
+    saved = setup(monkeypatch)
+    monkeypatch.setattr(express, "setting", lambda name, default: False if name == "significance_enabled" else default)
+    held, first = express.gate(None, FakeRouter(sig_none=("plant",)), [art(1, "Tata Motors opens plant in Sanand")], NOW)
+    assert first == {1}
