@@ -211,7 +211,7 @@ def title_start(prefix: str, max_words: int = 7, extra: frozenset | set = frozen
     take: list[tuple[str, int, int]] = []
     for tok in reversed(toks):
         w = tok[0]
-        bare = w.strip(".,;:")
+        bare = w.strip(".,;:\"'\u2018\u2019\u201c\u201d")   # a quote mark glued to a word ("'Prime") is not part of it
         if bare in tw or bare.lower() in ("of", "the") and take:
             take.append(tok)
         elif (_CAP.match(bare) and any(t[0].strip(".,;:") in tw for t in take) and bare.lower() not in _OPENERS

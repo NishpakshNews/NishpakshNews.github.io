@@ -136,6 +136,11 @@ def shorten_names(paragraphs: list[list[dict]], speakers: list[str] | tuple = ()
                 if at < len(prefix) and re.search(r"(?i)\bthe\s+$", prefix[:at]):
                     at = re.search(r"(?i)\bthe\s+$", prefix[:at]).start()
                 at = max(at, last)
+                if at < len(prefix) and prefix[at] in "'\"\u2018\u201c":     # a quoted nickname ('Prime Minister Ambani') is the speaker's words: never shortened
+                    out += [t[last:m.end()]]
+                    last = m.end()
+                    seen.add(full)
+                    continue
                 written = t[at:m.end()]                  # the title as written, and the name
                 if m.group("full"):
                     if full not in seen:               # the introduction stays as the writer wrote it

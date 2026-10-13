@@ -82,6 +82,15 @@ Rules:
 2. Write "text" in English even when the article is in Hindi. Keep names as written, and name people
    in full with the role or title the article gives them ("AAP Delhi chief Saurabh Bharadwaj", not
    "Bharadwaj"), in every item, so each statement can be understood on its own.
+   Translate faithfully, and keep each fact's wording tied to what the article says:
+   a) A nickname or title the article puts in quotes is translated in FULL and never shortened
+   ("प्रधानमंत्री अंबानी" is "Prime Minister Ambani", not "Prime Ambani").
+   b) "said" and the speaker's name belong in "attributed_to", never inside the fact: write
+   "Three companies have licences in India" (attributed_to "Scindia"), never "...licences in Scindia said".
+   A place stays a place and a person stays a person.
+   c) Resolve "his", "her", "their", "he", "it" to the person or body the article means, by name: when a
+   speaker talks about someone else's profit or business, write that person ("Ambani's business will not
+   close"), not the speaker, and keep the speaker in "attributed_to".
 3. Times: write the article's time words in English in "when_text" ("26 September", "Tuesday night"). Fill start/end ONLY when they follow from the
    text and the publish date (for example "Tuesday night" -> that Tuesday 18:00 to 23:59). Never guess.
    If unclear use null and precision "unknown".
