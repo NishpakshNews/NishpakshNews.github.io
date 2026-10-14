@@ -147,7 +147,15 @@
   #sheet.open .chrome { opacity: 1; }
   .wm-ink { background: linear-gradient(135deg, #46549a 0%, #2f3a72 45%, #1f2550 75%, #161a38 100%); -webkit-background-clip: text;
             background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
-  .rail { display: flex; gap: 6px; overflow-x: auto; padding: 0 0 9px; scrollbar-width: none; }
+  /* faded edges (owner, Oct 14 2026): the rail runs out to both screen ends and its names melt into the header there;
+     a side fades only while there is more to scroll to on that side (--fl / --fr, set by railFade) */
+  @property --fl { syntax: "<length>"; inherits: false; initial-value: 0px; }
+  @property --fr { syntax: "<length>"; inherits: false; initial-value: 0px; }
+  .rail { --fl: 0px; --fr: 0px; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+          margin: 0 calc(-1 * max(14px, env(safe-area-inset-left))); padding: 0 max(14px, env(safe-area-inset-right)) 9px max(14px, env(safe-area-inset-left));
+          -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--fl), #000 calc(100% - var(--fr)), transparent 100%);
+          mask-image: linear-gradient(to right, transparent 0, #000 var(--fl), #000 calc(100% - var(--fr)), transparent 100%);
+          transition: --fl 260ms ease, --fr 260ms ease; }
   .rail::-webkit-scrollbar { display: none; }
   .rail:empty { display: none; }
   .rail button { flex: none; border: 0; border-radius: 999px; padding: 6px 12px; min-height: 32px; font-size: 13px; font-weight: 600; cursor: pointer;
@@ -240,13 +248,19 @@
   /* sections as cards with numbered headings; the lead alone; figures as tiles; what they say by speaker */
   .paper.lead { font-family: var(--head); font-size: 20px; line-height: 1.5; }
   html.hi .paper.lead { font-size: 19px; line-height: 1.75; }
-  .sechead { display: flex; align-items: baseline; gap: 10px; margin: 26px 6px 0; scroll-margin-top: 150px; }
+  /* one gap above every section heading and every dropdown card (owner, Oct 14 2026: the spaces between sections and
+     dropdowns differed: 26 / 24 / 12 / 24) */
+  :root { --gap: 26px; }
+  .sechead { display: flex; align-items: baseline; gap: 10px; margin: var(--gap) 6px 0; scroll-margin-top: 150px; }
   .sechead span { font-size: 11.5px; font-weight: 700; letter-spacing: 0.08em; color: #46549a; }
   .sechead h3 { margin: 0; font-family: var(--head); font-size: 21px; font-weight: 600; }
-  details.also > summary { cursor: pointer; list-style: none; }
+  details.also > summary { cursor: pointer; list-style: none; margin: calc(var(--gap) - 6px) 0 0; padding: 6px; border-radius: 14px; }
   details.also > summary::-webkit-details-marker { display: none; }
-  details.also > summary span { display: inline-block; transition: transform .15s; }
-  details.also[open] > summary span { transform: rotate(45deg); }
+  details.also > summary span { display: inline-block; transition: transform 320ms var(--ease); }
+  details.also.dd-open > summary span { transform: rotate(45deg); }
+  /* dropdown body: its height and opacity are animated by ddSet() in script (open and close both glide) */
+  .dd-body { overflow: hidden; }
+  .paper.dd-card { margin-top: var(--gap); }
   .alsonote { font-size: 13px; opacity: 0.7; margin: 0 0 8px; }
   .alsolist { margin: 0; padding-left: 18px; }
   .alsolist li { margin: 6px 0; line-height: 1.5; }
@@ -283,7 +297,7 @@
   .essay h3 { font-family: var(--head); font-size: 19px; font-weight: 600; letter-spacing: -0.01em; margin: 20px 0 8px; color: var(--ink); }
   sup { font-size: 10.5px; line-height: 0; color: #7a7d81; margin-left: 1px; }
   sup a { text-decoration: none; color: inherit; padding: 0 1px; }
-  .sec { font-family: var(--head); font-size: 19px; font-weight: 600; letter-spacing: -0.01em; margin: 24px 4px 8px; }
+  .sec { font-family: var(--head); font-size: 19px; font-weight: 600; letter-spacing: -0.01em; margin: var(--gap) 4px 8px; }
   .note { margin: 12px 4px 0; font-size: 14.5px; line-height: 1.55; color: var(--ink-soft); }
   .helpline { background: #fff7e6; border-radius: 14px; padding: 12px 14px; color: #5a4300; }
   .thread { margin: 0; padding: 0; list-style: none; }
@@ -302,8 +316,8 @@
                           font-family: var(--head); font-size: 17px; font-weight: 600; min-height: 28px; }
   details.who > summary::-webkit-details-marker { display: none; }
   details.who > summary::after { content: ""; width: 9px; height: 9px; border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink);
-                                 transform: rotate(45deg); transition: transform 200ms ease; margin-right: 4px; flex: none; }
-  details.who[open] > summary::after { transform: rotate(-135deg); }
+                                 transform: rotate(45deg); transition: transform 320ms var(--ease); margin-right: 4px; flex: none; }
+  details.who.dd-open > summary::after { transform: rotate(-135deg); }
   .stmt { padding: 12px 0; border-top: 1px solid #efefec; font-size: 15.5px; line-height: 1.5; }
   .stmt:first-of-type { margin-top: 10px; }
   .stmt .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; }
@@ -315,6 +329,12 @@
   table.framing th, table.framing td { text-align: left; vertical-align: top; padding: 6px 6px 6px 0; border-top: 1px solid #efefec; }
   .tablebox { overflow-x: auto; }
   .persp { font-size: 15px; line-height: 1.6; }
+  /* touch wave (owner, Oct 14 2026): a soft ring spreads from the finger and fades; host is clipped only while it lives */
+  .rip-host { overflow: hidden; }
+  .rip { position: absolute; left: 0; top: 0; border-radius: 50%; pointer-events: none; z-index: 0; will-change: transform, opacity;
+         background: radial-gradient(circle, rgba(70,84,154,0.26) 0%, rgba(70,84,154,0.14) 42%, rgba(70,84,154,0) 70%); }
+  .rail button.on .rip { background: radial-gradient(circle, rgba(255,255,255,0.34) 0%, rgba(255,255,255,0.18) 42%, rgba(255,255,255,0) 70%); }
+  @media (prefers-reduced-motion: reduce) { .rip { display: none; } }
 
   @media (max-width: 360px) {
     .card h2, .hbox h1 { font-size: 24px; }
@@ -1166,8 +1186,8 @@ function alsoHtml(nar, t) {
   const link = a => `<a href="#src-${a}" data-src="${a}" title="${esc(names[a] || "")}">${a}</a>`;
   const sup = x => { const r = ranges(x.sources || []).map(([a, b]) => b === a ? link(a) : `${link(a)}–${link(b)}`).join(","); return r ? `<sup>${r}</sup>` : ""; };
   const rows = items.map(x => `<li><span class="s ${esc(cls(x.class))}">${esc(x.text)}</span>${sup(x)}</li>`).join("");
-  return `<details class="also"><summary class="sechead"><span>+</span><h3>${esc(t.also || "Also in these reports")}</h3></summary>` +
-         `<div class="paper essay"><p class="alsonote">${esc(t.alsoNote || "")}</p><ul class="alsolist">${rows}</ul></div></details>`;
+  return `<details class="also dd"><summary class="sechead"><span>+</span><h3>${esc(t.also || "Also in these reports")}</h3></summary>` +
+         `<div class="dd-body"><div class="paper essay"><p class="alsonote">${esc(t.alsoNote || "")}</p><ul class="alsolist">${rows}</ul></div></div></details>`;
 }
 function essayBody(nar, t) {
   const names = Object.fromEntries((nar.sources || []).map(s => [s.n, s.outlet]));
@@ -1243,7 +1263,7 @@ function whoHtml(p, t) {
       ${sup.length ? `<div class="by"><span class="lbl">${esc(t.reported)}:</span>${chips(sup)}</div>` : ""}
       ${den.length ? `<div class="by"><span class="lbl">${esc(t.denied)}:</span>${chips(den, true)}</div>` : ""}</div>`;
   }).join("");
-  return `<div class="paper"><details class="who"><summary>${esc(t.who)}</summary>${items}</details></div>`;
+  return `<div class="paper dd-card"><details class="who dd"><summary>${esc(t.who)}</summary><div class="dd-body"><div>${items}</div></div></details></div>`;
 }
 function articleHtml(row) {
   const t = T[lang];
@@ -1269,10 +1289,10 @@ function articleHtml(row) {
     ${essayHtml(nar, t)}
     ${p.suicide ? `<p class="note helpline">${esc(t.helpline)}</p>` : ""}
     ${thread(t.earlier, p.parents)}${thread(t.next, p.children)}
-    ${sources ? `<div class="paper"><details class="who srcs"><summary>${esc(t.sourcesTitle)} (${(nar.sources || []).length})</summary><ol class="sources">${sources}</ol></details></div>` : ""}
+    ${sources ? `<div class="paper dd-card"><details class="who srcs dd"><summary>${esc(t.sourcesTitle)} (${(nar.sources || []).length})</summary><div class="dd-body"><ol class="sources">${sources}</ol></div></details></div>` : ""}
     ${framing}
     ${persp ? `<div class="sec">${esc(t.perspectives)}</div><div class="paper persp">${persp}${p.perspective_mode === "story" ? `<br><span class="note">${esc(t.localNote)}</span>` : ""}</div>` : ""}
-    <div style="height:12px"></div>${whoHtml(p, t)}`;
+    ${whoHtml(p, t)}`;
 }
 function setSheetPicture(id) {
   const c = (pool || []).find(x => String(x.id) === String(id)) || (cards || []).find(x => String(x.id) === String(id));
@@ -1297,7 +1317,80 @@ function buildRail() {
   const heads = [...$("rise").querySelectorAll(".sechead")];
   $("rail").innerHTML = heads.length > 1 ? heads.map((h, i) => `<button type="button" data-i="${i}">${esc(h.querySelector("h3").textContent)}</button>`).join("") : "";
   onSheetScroll();
+  railFade();
 }
+// fade a side of the rail only while there is more to scroll to on that side
+function railFade() {
+  const r = $("rail"), max = r.scrollWidth - r.clientWidth;
+  r.style.setProperty("--fl", max > 2 && r.scrollLeft > 2 ? "26px" : "0px");
+  r.style.setProperty("--fr", max > 2 && r.scrollLeft < max - 2 ? "26px" : "0px");
+}
+$("rail").addEventListener("scroll", railFade, {passive: true});
+window.addEventListener("resize", railFade);
+
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)");
+// dropdowns glide open and shut: the body's height and opacity are animated, the arrow turns with the class at once
+function ddSet(d, open) {
+  const body = d.querySelector(":scope > .dd-body");
+  if (d._dd) { d._dd.cancel(); d._dd = null; }
+  d.classList.toggle("dd-open", open);
+  if (!body || REDUCED.matches) { d.open = open; return; }
+  const from = d.open ? body.getBoundingClientRect().height : 0;
+  d.open = true;
+  const to = open ? body.scrollHeight : 0;
+  const o0 = open ? (from ? Number(getComputedStyle(body).opacity) : 0) : Number(getComputedStyle(body).opacity);
+  const a = body.animate([{height: from + "px", opacity: o0}, {height: to + "px", opacity: open ? 1 : 0}],
+                         {duration: open ? 420 : 340, easing: "cubic-bezier(.2,.8,.2,1)", fill: "forwards"});
+  d._dd = a;
+  a.onfinish = () => { if (d._dd !== a) return; d._dd = null; if (!open) d.open = false; a.cancel(); };
+}
+$("sheet").addEventListener("click", e => {
+  const sm = e.target.closest("details.dd > summary");
+  if (!sm) return;
+  e.preventDefault();
+  const d = sm.parentElement;
+  ddSet(d, !d.classList.contains("dd-open"));
+});
+
+// touch wave on whatever is touched in the article: the nearest button or link, else the card; it follows the finger
+// while held and fades after release; a scroll (the finger travels, or the browser takes the touch) lets it go early
+const RIP_BTN = ".rail button, .chrome button, .back, .acts button:not(.talkbtn), .thread a, details.dd > summary, .tile, .paper";
+$("sheet").addEventListener("pointerdown", e => {
+  if (REDUCED.matches || (e.pointerType === "mouse" && e.button !== 0)) return;
+  let host = e.target.closest ? e.target.closest(RIP_BTN) : null;
+  if (!host || !$("sheet").contains(host)) return;
+  if (host.matches("details.dd > summary") && !host.matches("details.also > summary")) host = host.closest(".paper") || host;
+  const r = host.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  const d = 2 * Math.hypot(Math.max(x, r.width - x), Math.max(y, r.height - y));
+  const el = document.createElement("i");
+  el.className = "rip";
+  el.style.cssText = `width:${d}px;height:${d}px;margin:${-d / 2}px 0 0 ${-d / 2}px;left:${x}px;top:${y}px`;
+  const cs = getComputedStyle(host), setPos = cs.position === "static";
+  if (setPos) host.style.position = "relative";
+  host.classList.add("rip-host");
+  host.insertBefore(el, host.firstChild);
+  const t0 = performance.now();
+  const grow = el.animate([{transform: "scale(0)", opacity: 1}, {transform: "scale(1)", opacity: 1}],
+                          {duration: 700, easing: "cubic-bezier(.2,.7,.2,1)", fill: "forwards"});
+  let gone = false;
+  const x0 = e.clientX, y0 = e.clientY;
+  const done = (fast) => {
+    if (gone) return; gone = true;
+    removeEventListener("pointerup", up, true); removeEventListener("pointercancel", cancel, true); removeEventListener("pointermove", move, true);
+    const wait = fast ? 0 : Math.max(0, 160 - (performance.now() - t0));
+    setTimeout(() => {
+      const fade = el.animate([{opacity: Number(getComputedStyle(el).opacity) || 1}, {opacity: 0}], {duration: fast ? 260 : 520, easing: "ease-out", fill: "forwards"});
+      fade.onfinish = () => {
+        grow.cancel(); el.remove();
+        if (!host.querySelector(":scope > .rip")) { host.classList.remove("rip-host"); if (setPos) host.style.position = ""; }
+      };
+    }, wait);
+  };
+  const up = () => done(false), cancel = () => done(true);
+  const move = ev => { if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 10) done(true); };
+  addEventListener("pointerup", up, true); addEventListener("pointercancel", cancel, true); addEventListener("pointermove", move, true);
+}, {passive: true});
+
 $("rail").addEventListener("click", e => {
   const b = e.target.closest("button[data-i]");
   if (!b) return;
@@ -1321,6 +1414,7 @@ function onSheetScroll() {
     cur.dataset.shown = "1";
     const r = $("rail"), x = cur.offsetLeft - r.clientWidth / 2 + cur.offsetWidth / 2;
     r.scrollTo({left: Math.max(0, x), behavior: "smooth"});
+    railFade();
   }
 }
 function abarHtml(b) {
@@ -1492,8 +1586,9 @@ $("rise").addEventListener("click", e => {
     e.preventDefault();
     const li = $("src-" + s.dataset.src);
     const box = li && li.closest("details");
-    if (box && !box.open) box.open = true;          // the Sources list is a dropdown: open it before jumping to the line
-    if (li) { li.scrollIntoView({behavior: "smooth", block: "center"}); li.classList.add("flash"); setTimeout(() => li.classList.remove("flash"), 1400); }
+    const wasShut = !!(box && !box.classList.contains("dd-open"));
+    if (wasShut) ddSet(box, true);                  // the Sources list is a dropdown: open it before jumping to the line
+    if (li) setTimeout(() => { li.scrollIntoView({behavior: "smooth", block: "center"}); li.classList.add("flash"); setTimeout(() => li.classList.remove("flash"), 1400); }, wasShut ? 300 : 0);
     return;
   }
   const a = e.target.closest("a[data-story]");
