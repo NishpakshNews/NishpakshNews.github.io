@@ -336,11 +336,11 @@
   table.framing th, table.framing td { text-align: left; vertical-align: top; padding: 6px 6px 6px 0; border-top: 1px solid #efefec; }
   .tablebox { overflow-x: auto; }
   .persp { font-size: 15px; line-height: 1.6; }
-  /* touch wave (owner, Oct 14 2026): a soft ring spreads from the finger and fades; host is clipped only while it lives */
+  /* dropdown wave (owner, Oct 14 2026): three soft rings spread one after another from the tap point, only when a
+     dropdown opens or shuts (nothing happens on an ordinary touch); the host is clipped only while the rings live */
   .rip-host { overflow: hidden; }
   .rip { position: absolute; left: 0; top: 0; border-radius: 50%; pointer-events: none; z-index: 0; will-change: transform, opacity;
-         background: radial-gradient(circle, rgba(70,84,154,0.26) 0%, rgba(70,84,154,0.14) 42%, rgba(70,84,154,0) 70%); }
-  .rail button.on .rip { background: radial-gradient(circle, rgba(255,255,255,0.34) 0%, rgba(255,255,255,0.18) 42%, rgba(255,255,255,0) 70%); }
+         background: radial-gradient(circle, rgba(70,84,154,0) 0%, rgba(70,84,154,0) 52%, rgba(70,84,154,0.20) 62%, rgba(70,84,154,0.07) 70%, rgba(70,84,154,0) 78%); }
   @media (prefers-reduced-motion: reduce) { .rip { display: none; } }
 
   @media (max-width: 360px) {
@@ -1340,11 +1340,39 @@ window.addEventListener("resize", railFade);
 
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)");
 // dropdowns glide open and shut: the body's height and opacity are animated, the arrow turns with the class at once
-function ddSet(d, open) {
+// the wave: three rings spread from the tap point (the summary's centre when there is no tap), fading as they grow
+function ddWave(d, body, open, pt) {
+  const sm = d.querySelector(":scope > summary");
+  const host = d.matches("details.also") ? sm : (d.closest(".paper") || sm);
+  if (!host) return;
+  const r = host.getBoundingClientRect(), sr = sm.getBoundingClientRect();
+  const x = pt && pt.x != null ? pt.x - r.left : sr.left + sr.width / 2 - r.left;
+  const y = pt && pt.y != null ? pt.y - r.top : sr.top + sr.height / 2 - r.top;
+  const h = r.height + (open && body ? Math.max(0, body.scrollHeight - body.getBoundingClientRect().height) : 0);
+  const size = 2 * Math.hypot(Math.max(x, r.width - x), Math.max(y, h - y)) * 1.05;
+  const setPos = getComputedStyle(host).position === "static";
+  if (setPos) host.style.position = "relative";
+  host.classList.add("rip-host");
+  let left = 3;
+  for (let k = 0; k < 3; k++) {
+    const el = document.createElement("i");
+    el.className = "rip";
+    el.style.cssText = `width:${size}px;height:${size}px;margin:${-size / 2}px 0 0 ${-size / 2}px;left:${x}px;top:${y}px;opacity:0`;
+    host.insertBefore(el, host.firstChild);
+    const a = el.animate([{transform: "scale(0.05)", opacity: 0.95}, {transform: "scale(1)", opacity: 0}],
+                         {duration: 900, delay: k * 150, easing: "cubic-bezier(.2,.6,.3,1)", fill: "both"});
+    a.onfinish = () => {
+      el.remove();
+      if (--left === 0 && !host.querySelector(":scope > .rip")) { host.classList.remove("rip-host"); if (setPos) host.style.position = ""; }
+    };
+  }
+}
+function ddSet(d, open, pt) {
   const body = d.querySelector(":scope > .dd-body");
   if (d._dd) { d._dd.cancel(); d._dd = null; }
   d.classList.toggle("dd-open", open);
   if (!body || REDUCED.matches) { d.open = open; return; }
+  ddWave(d, body, open, pt);
   const from = d.open ? body.getBoundingClientRect().height : 0;
   d.open = true;
   const to = open ? body.scrollHeight : 0;
@@ -1359,47 +1387,8 @@ $("sheet").addEventListener("click", e => {
   if (!sm) return;
   e.preventDefault();
   const d = sm.parentElement;
-  ddSet(d, !d.classList.contains("dd-open"));
+  ddSet(d, !d.classList.contains("dd-open"), e.detail ? {x: e.clientX, y: e.clientY} : null);
 });
-
-// touch wave on whatever is touched in the article: the nearest button or link, else the card; it follows the finger
-// while held and fades after release; a scroll (the finger travels, or the browser takes the touch) lets it go early
-const RIP_BTN = ".rail button, .chrome button, .back, .acts button:not(.talkbtn), .thread a, details.dd > summary, .tile, .paper";
-$("sheet").addEventListener("pointerdown", e => {
-  if (REDUCED.matches || (e.pointerType === "mouse" && e.button !== 0)) return;
-  let host = e.target.closest ? e.target.closest(RIP_BTN) : null;
-  if (!host || !$("sheet").contains(host)) return;
-  if (host.matches("details.dd > summary") && !host.matches("details.also > summary")) host = host.closest(".paper") || host;
-  const r = host.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
-  const d = 2 * Math.hypot(Math.max(x, r.width - x), Math.max(y, r.height - y));
-  const el = document.createElement("i");
-  el.className = "rip";
-  el.style.cssText = `width:${d}px;height:${d}px;margin:${-d / 2}px 0 0 ${-d / 2}px;left:${x}px;top:${y}px`;
-  const cs = getComputedStyle(host), setPos = cs.position === "static";
-  if (setPos) host.style.position = "relative";
-  host.classList.add("rip-host");
-  host.insertBefore(el, host.firstChild);
-  const t0 = performance.now();
-  const grow = el.animate([{transform: "scale(0)", opacity: 1}, {transform: "scale(1)", opacity: 1}],
-                          {duration: 700, easing: "cubic-bezier(.2,.7,.2,1)", fill: "forwards"});
-  let gone = false;
-  const x0 = e.clientX, y0 = e.clientY;
-  const done = (fast) => {
-    if (gone) return; gone = true;
-    removeEventListener("pointerup", up, true); removeEventListener("pointercancel", cancel, true); removeEventListener("pointermove", move, true);
-    const wait = fast ? 0 : Math.max(0, 160 - (performance.now() - t0));
-    setTimeout(() => {
-      const fade = el.animate([{opacity: Number(getComputedStyle(el).opacity) || 1}, {opacity: 0}], {duration: fast ? 260 : 520, easing: "ease-out", fill: "forwards"});
-      fade.onfinish = () => {
-        grow.cancel(); el.remove();
-        if (!host.querySelector(":scope > .rip")) { host.classList.remove("rip-host"); if (setPos) host.style.position = ""; }
-      };
-    }, wait);
-  };
-  const up = () => done(false), cancel = () => done(true);
-  const move = ev => { if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 10) done(true); };
-  addEventListener("pointerup", up, true); addEventListener("pointercancel", cancel, true); addEventListener("pointermove", move, true);
-}, {passive: true});
 
 $("rail").addEventListener("click", e => {
   const b = e.target.closest("button[data-i]");
