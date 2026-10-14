@@ -795,11 +795,12 @@
       <div class="hbox" id="hbox"><div class="layer brand"></div><div class="hpic" id="hpic"></div><h1 id="sheet-h"></h1><div class="meta"><span id="sheet-meta"></span><button type="button" class="share" id="share" aria-label="Share"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button></div></div>
 <div class="abar" id="abar" aria-hidden="true"></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<div class="rtip" id="rtip" role="status" aria-live="polite"></div>
       <div class="rise" id="rise"></div>
     </div>
   </div>
 </div>
+<!-- the refresh tooltip lives out here, not inside #sheet: #sheet is visibility:hidden until an article opens, and a child cannot show through that -->
+<div class="rtip" id="rtip" role="status" aria-live="polite"></div>
 <script>
 "use strict";
 const SUPABASE_URL = "https://mmjojuccdgmmiwyzypvh.supabase.co";
