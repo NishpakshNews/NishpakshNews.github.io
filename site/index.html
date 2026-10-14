@@ -335,7 +335,7 @@
   table.framing th, table.framing td { text-align: left; vertical-align: top; padding: 6px 6px 6px 0; border-top: 1px solid #efefec; }
   .tablebox { overflow-x: auto; }
   .persp { font-size: 15px; line-height: 1.6; }
-  /* dropdown wave (owner, Oct 14 2026): exactly three slow, soft, well-spaced rings drift out one after another from the tap point, only when a
+  /* dropdown wave (owner, Oct 14 2026): one slow, soft ring drifts out one after another from the tap point, only when a
      dropdown opens or shuts (nothing happens on an ordinary touch); the host is clipped only while the rings live */
   .rip-host { overflow: hidden; }
   .rip { position: absolute; left: 0; top: 0; border-radius: 50%; pointer-events: none; z-index: 0; will-change: transform, opacity;
@@ -1340,7 +1340,7 @@ window.addEventListener("resize", railFade);
 
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)");
 // dropdowns glide open and shut: the body's height and opacity are animated, the arrow turns with the class at once
-// the wave: three slow, soft rings drift out from the tap point (the summary's centre when there is no tap), fading gently as they grow
+// the wave: one slow, soft rings drift out from the tap point (the summary's centre when there is no tap), fading gently as they grow
 function ddWave(d, body, open, pt) {
   const sm = d.querySelector(":scope > summary");
   const host = d.matches("details.also") ? sm : (d.closest(".paper") || sm);
@@ -1353,8 +1353,8 @@ function ddWave(d, body, open, pt) {
   const setPos = getComputedStyle(host).position === "static";
   if (setPos) host.style.position = "relative";
   host.classList.add("rip-host");
-  let left = 2;
-  for (let k = 0; k < 2; k++) {
+  let left = 1;
+  for (let k = 0; k < 1; k++) {
     const el = document.createElement("i");
     el.className = "rip";
     el.style.cssText = `width:${size}px;height:${size}px;margin:${-size / 2}px 0 0 ${-size / 2}px;left:${x}px;top:${y}px;opacity:0`;
