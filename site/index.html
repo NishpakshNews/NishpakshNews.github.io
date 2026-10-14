@@ -1359,6 +1359,7 @@ $("sheet").addEventListener("pointerdown", e => {
   if (REDUCED.matches || (e.pointerType === "mouse" && e.button !== 0)) return;
   let host = e.target.closest ? e.target.closest(RIP_BTN) : null;
   if (!host || !$("sheet").contains(host)) return;
+  if (e.target.closest(".dd-body")) return;        // inside an opened dropdown: no wave, only the header (open / close) has one
   if (host.matches("details.dd > summary") && !host.matches("details.also > summary")) host = host.closest(".paper") || host;
   const r = host.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
   const d = 2 * Math.hypot(Math.max(x, r.width - x), Math.max(y, r.height - y));
