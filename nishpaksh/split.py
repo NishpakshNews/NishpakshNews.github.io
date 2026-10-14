@@ -49,6 +49,10 @@ Rules:
 - Keep "allegedly", "not", "no" with the fact they belong to.
 - Do NOT split what is one fact: a change ("raised the rate from 5.25% to 5.50%"), a list of things that
   share one action ("arrested Ram, Shyam and Mohan"), a cause the sentence states ("X died after Y").
+- A figure belongs to the fact it is written with. Never copy one figure into a second fact: "invest $700
+  million in its R&D centre, expansion of production capacity and a new entity" is ONE fact (the sentence does
+  not say how the $700 million is shared), and "$700 million in its R&D centre, including its vehicle testing
+  track" is ONE fact (the track is part of the $700 million, not an extra amount).
 - At most 4 facts. One fact: return it unchanged, as a list of one.
 
 Examples:
@@ -117,6 +121,17 @@ def _pieces_ok(original: str, pieces: list[str]) -> bool:
         got_names |= _names(p) | _caps(p)
     if got_nums != nums:
         return False                                   # a number lost
+    # a figure the original says ONCE may not be handed to two pieces: "about $700 million in its R&D centre,
+    # expansion of production capacity and a dedicated entity" says $700 million of the first item only. Split
+    # into "$700 million for R&D" / "$700 million for expansion", the same amount became two amounts
+    # (Oct 13 2026, Hyundai story). Both pieces carrying it is a list pulled apart: the row stays whole.
+    from collections import Counter
+    orig_count = Counter(round(x, 4) for x in numbers(original))
+    piece_count = Counter()
+    for p in pieces:
+        piece_count.update({round(x, 4) for x in numbers(p)})
+    if any(piece_count[v] > orig_count[v] for v in piece_count):
+        return False
     # a list split into near-identical sentences ("higher EMIs for home loans" / "... for car loans" / "... for
     # personal loans", story 13970) is one fact with a list, not separate facts: pieces of a real compound say
     # different things, so two pieces sharing most of their words means the split is wrong
