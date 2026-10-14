@@ -178,7 +178,7 @@ profiles = Table(
 follows = Table(
     "follows", md,
     Column("reader", String(36), primary_key=True),
-    Column("kind", String(10), primary_key=True),     # section | place | entity | story | recap
+    Column("kind", String(10), primary_key=True),     # section | place | entity | story | recap | next
     Column("key", Text, primary_key=True),
     Column("label", Text),
     Column("created_at", DateTime),

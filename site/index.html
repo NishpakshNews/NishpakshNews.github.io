@@ -234,6 +234,13 @@
            background: #1f2550; color: #fff; font-size: 14px; font-weight: 600; padding: 10px 16px; border-radius: 999px; pointer-events: none;
            box-shadow: 0 6px 18px rgba(22,26,56,0.25); transition: opacity 200ms ease, transform 260ms var(--ease); }
   .toast.on { opacity: 1; transform: translate(-50%, 0); }
+  /* the refresh button's tooltip (owner, Oct 14 2026): short, under the button, shown again on every press */
+  .rtip { position: fixed; z-index: 20; max-width: calc(100vw - 24px); background: #1f2550; color: #fff; font-size: 13.5px; font-weight: 600;
+          line-height: 1.25; white-space: nowrap; padding: 9px 13px; border-radius: 12px; pointer-events: none; opacity: 0; transform: translateY(-6px);
+          box-shadow: 0 6px 18px rgba(22,26,56,0.25); transition: opacity 180ms ease, transform 220ms var(--ease); }
+  .rtip.on { opacity: 1; transform: translateY(0); }
+  .rtip::before { content: ""; position: absolute; top: -5px; left: var(--ax, 20px); width: 10px; height: 10px; background: #1f2550;
+                  transform: translateX(-50%) rotate(45deg); border-radius: 2px; }
   #sheet.open .hbox .meta { opacity: .92; }
   #sheet.anim .hbox .meta { transition: opacity 260ms ease 260ms; }
   .rise { opacity: 0; transform: translateY(24px); }
@@ -789,6 +796,7 @@
       <div class="hbox" id="hbox"><div class="layer brand"></div><div class="hpic" id="hpic"></div><h1 id="sheet-h"></h1><div class="meta"><span id="sheet-meta"></span><button type="button" class="share" id="share" aria-label="Share"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button></div></div>
 <div class="abar" id="abar" aria-hidden="true"></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="rtip" id="rtip" role="status" aria-live="polite"></div>
       <div class="rise" id="rise"></div>
     </div>
   </div>
@@ -1150,10 +1158,12 @@ async function showDeck(keepId) {
     cards = sectionCards();
     renderDeck(keepId);
     buildBar();
+    return true;
   } catch (e) {
     track.innerHTML = `<div class="slot"><div class="state"><div>${esc(T[lang].error)}<br><br>
       <button type="button" class="back" style="width:auto;padding:0 18px;border-radius:999px" id="retry">${esc(T[lang].retry)}</button></div></div></div>`;
     $("retry").onclick = () => { delete cardCache[lang]; track.innerHTML = loadingHtml(); showDeck(keepId); };
+    return false;
   }
 }
 function loadingHtml() {
@@ -1359,7 +1369,6 @@ $("sheet").addEventListener("pointerdown", e => {
   if (REDUCED.matches || (e.pointerType === "mouse" && e.button !== 0)) return;
   let host = e.target.closest ? e.target.closest(RIP_BTN) : null;
   if (!host || !$("sheet").contains(host)) return;
-  if (e.target.closest(".dd-body")) return;        // inside an opened dropdown: no wave, only the header (open / close) has one
   if (host.matches("details.dd > summary") && !host.matches("details.also > summary")) host = host.closest(".paper") || host;
   const r = host.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
   const d = 2 * Math.hypot(Math.max(x, r.width - x), Math.max(y, r.height - y));
@@ -1883,24 +1892,68 @@ function refreshDeck() {
   if (openId) return;                       // an open article is not moved under the reader: the deck is read again on closing
   showDeck(keep);
 }
-// the refresh button: read the feed and the database again, whatever any cache holds, then redraw the deck
-const rbtn = $("rbtn");
+// the refresh button: read the feed and the database again, whatever any cache holds, then redraw the deck.
+// Owner, Oct 14 2026: when nothing new is there a short tooltip says so (every press), and the reader is asked for ONE
+// alert for the next article; when something new is there the deck goes to the top, to the latest article, and no
+// alert is kept. Only the LAST press counts: a press that finds news cancels the alert an earlier press made, a press
+// that finds none makes it again.
+const rtip = $("rtip");
+let rtipTimer = null;
+function showRefreshTip(msg) {
+  rtip.textContent = msg;
+  rtip.style.left = "12px";
+  const r = rbtn.getBoundingClientRect(), w = rtip.offsetWidth || 160;
+  const left = Math.max(12, Math.min(r.left, innerWidth - w - 12));
+  rtip.style.left = `${left}px`; rtip.style.top = `${r.bottom + 12}px`;
+  rtip.style.setProperty("--ax", `${Math.max(14, Math.min(w - 14, r.left + r.width / 2 - left))}px`);
+  rtip.classList.remove("on"); void rtip.offsetWidth; rtip.classList.add("on");      // pressed again: it comes again
+  clearTimeout(rtipTimer); rtipTimer = setTimeout(() => rtip.classList.remove("on"), 2600);
+}
+const newestAt = list => (list || []).reduce((m, c) => Math.max(m, utcMs(c.at) || 0), 0);
+// the one-time alert is a follow ("next|any") that notify.py sends once and then deletes; calls run one after the
+// other, so the last press is the one that is left standing
+let nextAlertChain = Promise.resolve();
+function setNextAlert(on) {
+  nextAlertChain = nextAlertChain.then(async () => {
+    if (!me) return;                                      // alerts belong to a signed-in reader
+    try {
+      if (on) {
+        await rest("follows", {method: "POST", headers: {Prefer: "resolution=ignore-duplicates"},
+          body: JSON.stringify({reader: myId(), kind: "next", key: "any", label: "next"})});
+        follows.set("next|any", "next");
+        askPermission().then(p => subscribePush(Promise.resolve(p)));
+      } else {
+        await rest("follows?kind=eq.next&key=eq.any", {method: "DELETE"});       // always asked: it may be gone or still there
+        follows.delete("next|any");
+      }
+    } catch (e) { /* offline: the next press tries again */ }
+  });
+}
 let refreshing = false;
 async function manualRefresh() {
   if (refreshing || openId) return;
   refreshing = true; rbtn.classList.add("spin");
   const t0 = Date.now();
+  let outcome = null;                                     // "new", "none", or null: it failed, or there was nothing to compare with
   try {
     feedNonce = String(t0);
     storyCache.clear();
     if ("serviceWorker" in navigator) navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {});   // a newer page is picked up too
     const keep = cards[current] && cards[current].id;
+    const had = cardCache[lang] && cardCache[lang].length ? newestAt(cardCache[lang]) : 0;   // what the reader has been shown
     delete cardCache.en; delete cardCache.hi;
-    await showDeck(keep);
+    const ok = await showDeck(keep);
+    if (ok && had) {
+      const isNew = newestAt(cardCache[lang]) > had;
+      outcome = isNew ? "new" : "none";
+      if (isNew && cards.length) jumpTo(0);               // the top of the home page: the latest article
+    }
   } finally {
     await new Promise(r => setTimeout(r, Math.max(0, 700 - (Date.now() - t0))));   // never a flicker: the arrow turns at least a moment
     rbtn.classList.remove("spin"); refreshing = false;
   }
+  if (outcome === "none") { showRefreshTip(T[lang].noNew); setNextAlert(true); }
+  else if (outcome === "new") { rtip.classList.remove("on"); setNextAlert(false); }
 }
 rbtn.addEventListener("click", manualRefresh);
 function wantFresh(story) {                 // news is waiting: read the home page again (and again, if the story is not there yet)
@@ -1989,7 +2042,7 @@ const ICON = {
   pause: '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor"/></svg>',
 };
 Object.assign(T.en, {
-  listen: "Listen", videos: "Videos", menu: "Menu", refresh: "Refresh", signIn: "Sign in", sort: "Sort", following: "Following", later: "Read later",
+  listen: "Listen", videos: "Videos", menu: "Menu", refresh: "Refresh", noNew: "No new articles yet", signIn: "Sign in", sort: "Sort", following: "Following", later: "Read later",
   recap: "Daily recap", search: "Search", logout: "Log out", soon: "Coming soon", close: "Close",
   sorts: {newest: "Newest", verified: "Most established", contested: "Most disputed", developing: "Still developing", outlets: "Most outlets", shortest: "Shortest read"},
   loginTitle: "Log in", name: "Name", email: "Email", password: "Password", stay: "You stay signed in on this device until you log out.",
@@ -2005,7 +2058,7 @@ Object.assign(T.en, {
   primary: "Primary footage", gone: "This article is no longer live, so it cannot be read aloud.", pause: "Pause", seek: "Position in the audio",
 });
 Object.assign(T.hi, {
-  listen: "सुनें", videos: "वीडियो", menu: "मेन्यू", refresh: "रीफ़्रेश", signIn: "साइन इन", sort: "क्रम", following: "फ़ॉलो", later: "बाद में पढ़ें",
+  listen: "सुनें", videos: "वीडियो", menu: "मेन्यू", refresh: "रीफ़्रेश", noNew: "अभी कोई नया लेख नहीं", signIn: "साइन इन", sort: "क्रम", following: "फ़ॉलो", later: "बाद में पढ़ें",
   recap: "दिन का सार", search: "खोजें", logout: "लॉग आउट", soon: "जल्द आ रहा है", close: "बंद करें",
   sorts: {newest: "सबसे नई", verified: "सबसे अधिक स्थापित", contested: "सबसे अधिक मतभेद", developing: "अभी विकसित हो रही", outlets: "सबसे अधिक स्रोत", shortest: "सबसे छोटी"},
   loginTitle: "लॉग इन", name: "नाम", email: "ईमेल", password: "पासवर्ड", stay: "लॉग आउट करने तक आप इस डिवाइस पर साइन इन रहेंगे।",
@@ -2164,7 +2217,7 @@ function menuHtml() {
   return `<div class="mpanes"><div class="mpane">
       ${me ? `<div class="mme"><div class="mav brand">${esc((me.name || "?").trim()[0].toUpperCase())}</div><div style="min-width:0"><div style="font-weight:600">${esc(me.name)}</div><div class="bnote" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(me.email)}</div></div></div>`
            : `<button type="button" class="mrow" data-m="signin" style="font-weight:600;color:#2f3a72">${ICON.user}<span class="grow">${esc(t.signIn)}</span>${ICON.chev}</button>`}
-      <button type="button" class="mrow" data-m="follow">${ICON.bell}<span class="grow">${esc(t.following)}</span><small>${me && follows.size ? follows.size - (isF("recap", "daily") ? 1 : 0) || "" : ""}</small>${ICON.chev}</button>
+      <button type="button" class="mrow" data-m="follow">${ICON.bell}<span class="grow">${esc(t.following)}</span><small>${me && follows.size ? follows.size - (isF("recap", "daily") ? 1 : 0) - (isF("next", "any") ? 1 : 0) || "" : ""}</small>${ICON.chev}</button>
       <button type="button" class="mrow" data-m="notes">${ICON.inbox}<span class="grow">${esc(t.notes)}</span>${unread > 0 ? `<span class="mcount">${unread > 9 ? "9+" : unread}</span>` : ""}${ICON.chev}</button>
       <button type="button" class="mrow" data-m="recap">${ICON.recap}<span class="grow">${esc(t.recap)}</span><small>${esc(istNow().getUTCHours() >= 23 ? t.recapReadyHint : t.recapTimeHint)}</small>${ICON.chev}</button>
       <button type="button" class="mrow" data-m="sort">${ICON.sort}<span class="grow">${esc(t.sort)}</span><small>${esc(t.sorts[sortKey])}</small>${ICON.chev}</button>

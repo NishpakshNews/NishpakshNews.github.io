@@ -44,10 +44,10 @@ RECAP_HOUR_IST = 23                         # the desk run at 23:15 IST makes th
 WORDS = {
     "en": {"followup": "Update to a story you follow", "established": "established", "outlets": "outlets",
            "recap": "Daily recap", "recap_body": lambda n: f"Today's {n} stories in short, section by section",
-           "audio": "Your audio is ready", "place": "", "entity": ""},
+           "audio": "Your audio is ready", "place": "", "entity": "", "next": "New article"},
     "hi": {"followup": "जिस ख़बर को आप फ़ॉलो करते हैं, उसमें नया", "established": "स्थापित", "outlets": "स्रोत",
            "recap": "दिन का सार", "recap_body": lambda n: f"आज की {n} ख़बरें संक्षेप में, खंड के अनुसार",
-           "audio": "आपका ऑडियो तैयार है", "place": "", "entity": ""},
+           "audio": "आपका ऑडियो तैयार है", "place": "", "entity": "", "next": "नया लेख"},
 }
 
 
@@ -109,9 +109,11 @@ def word_in(key: str, text: str) -> bool:
     return re.search(r"(?<![\w\u0900-\u097f])" + re.escape(key) + r"(?![\w\u0900-\u097f])", text) is not None
 
 
-def reasons(article: dict, rows: list[dict], text: str | None = None) -> dict[str, list[tuple[str, str]]]:
+def reasons(article: dict, rows: list[dict], text: str | None = None,
+            at: dt.datetime | None = None) -> dict[str, list[tuple[str, str]]]:
     """reader -> [(kind, key)] of every follow the article matches. A word follow (kind "entity") matches a
-    person the article names, or the word anywhere in the article, English or Hindi (owner, Oct 10 2026)."""
+    person the article names, or the word anywhere in the article, English or Hindi (owner, Oct 10 2026). A "next"
+    follow (the Refresh button's one-time alert, Oct 14 2026) matches any article published after the follow was made."""
     from .people import matches as name_matches
     text = article_text(article) if text is None else text
     secs = section_paths(article.get("category"))
@@ -121,6 +123,11 @@ def reasons(article: dict, rows: list[dict], text: str | None = None) -> dict[st
     out: dict[str, list[tuple[str, str]]] = {}
     for r in rows:
         k, key = r["kind"], str(r["key"])
+        if k == "next":
+            made = _naive(r.get("created_at"))
+            if at is None or made is None or at > made:
+                out.setdefault(str(r["reader"]), []).append((k, key))
+            continue
         hit = (k == "section" and key in secs) or (k == "place" and key in places) \
             or (k == "entity" and (name_matches(key, names) or word_in(key, text))) or (k == "story" and key in parents)
         if hit:
@@ -136,9 +143,9 @@ def _share(bar: dict) -> int:
 def _because(why: list[tuple[str, str]], article: dict, lang: str, label) -> str:
     if any(k == "story" for k, _ in why):
         return WORDS[lang]["followup"]
-    names = []
-    for k, key in why:
-        names.append(label(k, key, lang, article))
+    # the one-time "next article" alert only names itself when nothing else (a section, a word) is the reason
+    names = [label(k, key, lang, article) for k, key in why if k != "next"] \
+        or [label(k, key, lang, article) for k, key in why]
     return " · ".join(dict.fromkeys(n for n in names if n))
 
 
@@ -154,6 +161,8 @@ def _label(kind: str, key: str, lang: str, article: dict) -> str:
     if kind == "entity":
         from .people import matches
         return next((n for n in article.get("people") or [] if matches(key, [n])), key.title() if key.isascii() else key)
+    if kind == "next":
+        return WORDS[lang]["next"]
     return ""
 
 
@@ -201,15 +210,18 @@ def queue_articles(store: Store, now: dt.datetime | None = None) -> int:
                       .where(published.c.updated_at > since).order_by(published.c.updated_at))
     if not rows:
         return 0
-    fl = store.rows(select(follows.c.reader, follows.c.kind, follows.c.key).where(follows.c.kind != "recap"))
+    fl = store.rows(select(follows.c.reader, follows.c.kind, follows.c.key, follows.c.created_at)
+                    .where(follows.c.kind != "recap"))
     made = 0
     newest = since
+    spent: set[str] = set()      # readers whose one-time "next article" alert has been sent: one alert, not one per article
     for r in rows:
         newest = max(newest, _naive(r["updated_at"]))
         p = r["payload_en"] or {}
         if not ((p.get("narrative") or {}).get("paragraphs")):
             continue
-        who = reasons(p, fl, article_text(p, r["payload_hi"]))
+        who = reasons(p, [f for f in fl if not (f["kind"] == "next" and str(f["reader"]) in spent)],
+                      article_text(p, r["payload_hi"]), _naive(r["updated_at"]))
         langs = _reader_langs(store, list(who))
         bar = bar_counts((p.get("narrative") or {}).get("paragraphs"))
         n = (p.get("counts") or {}).get("independent_sources") or 0
@@ -221,6 +233,10 @@ def queue_articles(store: Store, now: dt.datetime | None = None) -> int:
                                           f"{n} {w['outlets']}") if x)
             made += add_notification(store, reader, "article", str(r["story_id"]), head, body,
                                      story_url(r["story_id"], lang), r["story_id"])
+            if ("next", "any") in why:
+                spent.add(reader)
+    if spent:                    # the alert was for one article only: the follow is used up
+        store.exec(delete(follows).where(and_(follows.c.kind == "next", follows.c.reader.in_(sorted(spent)))))
     _set_state(store, "articles", {"at": newest.isoformat()})
     return made
 

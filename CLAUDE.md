@@ -1353,3 +1353,10 @@ and paragraphs mixed unrelated facts. Rebuilt, keeping the Oct 8 rule (never los
 - Hindi: `compose.translation_problem` (ported from booktrans.py's output_problem) rejects empty, echoed, non-Devanagari
   and number-changed translations; they are not cached.
 - Only new articles get this: published ones are closed.
+
+- **Refresh button alert (owner, Oct 14 2026).** `manualRefresh` compares the newest card time before and after the reload.
+  No newer card: a short tooltip ("No new articles yet", every press) and a one-time alert is asked for (follow `next|any`,
+  signed-in readers; `setNextAlert`). A newer card: the deck goes to the top (`jumpTo(0)`) and the alert is cancelled. Only the
+  last press counts (calls are chained). `notify.queue_articles` sends it for the first article published after the follow
+  was made (`reasons(..., at=)`), once per reader per run, then deletes the follow. Migration `20261014000100_follow_next.sql`
+  must be applied before the site is deployed (the follows table only allowed 5 kinds). `sw.js` np-main-37.

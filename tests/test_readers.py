@@ -262,6 +262,28 @@ def test_section_paths_cover_every_level():
     assert "business/domains/hr" in notify.section_paths({"primary": ["business"], "secondary": ["jobs"]})  # old key
 
 
+def test_the_refresh_buttons_next_article_alert_is_sent_once_then_spent(tmp_path):
+    s = _store(tmp_path)
+    t0 = dt.datetime(2026, 10, 14, 10, 0)
+    assert notify.queue_articles(s, t0) == 0
+    s.exec(insert(follows).values(reader="r1", kind="next", key="any", created_at=t0 + dt.timedelta(minutes=1)))
+    s.exec(insert(follows).values(reader="r2", kind="next", key="any", created_at=t0 + dt.timedelta(minutes=30)))
+    cat = {"primary": ["justice"], "secondary": ["courts"]}
+    body = [("The court ordered it.", "established"), ("He will appear.", "single")]
+    _publish(s, 300, t0 + dt.timedelta(minutes=5), _payload("First article", body, cat=cat))
+    _publish(s, 301, t0 + dt.timedelta(minutes=6), _payload("Second article", body, cat=cat))
+    assert notify.queue_articles(s, t0 + dt.timedelta(minutes=10)) == 1       # r1 only, and for one article only
+    rows = s.rows(select(notifications))
+    assert [(r["reader"], r["ref"]) for r in rows] == [("r1", "300")]
+    assert rows[0]["body"].startswith("New article")
+    left = {r["reader"] for r in s.rows(select(follows.c.reader).where(follows.c.kind == "next"))}
+    assert left == {"r2"}                                                      # r1's alert is spent; r2 asked later
+    _publish(s, 302, t0 + dt.timedelta(minutes=40), _payload("Third article", body, cat=cat))
+    assert notify.queue_articles(s, t0 + dt.timedelta(minutes=45)) == 1
+    assert [(r["reader"], r["ref"]) for r in s.rows(select(notifications).where(notifications.c.reader == "r2"))] == [("r2", "302")]
+    assert not s.rows(select(follows).where(follows.c.kind == "next"))
+
+
 def test_a_followed_word_matches_anywhere_in_the_article_in_either_language():
     en = {"headline": "Monsoon floods in Bihar", "narrative": {"paragraphs": [[{"text": "The Kosi river rose overnight."}]]},
           "people": []}
