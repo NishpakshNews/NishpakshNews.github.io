@@ -104,7 +104,7 @@
                 -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); }
   .card .text p { margin: 0 0 10px; }
   .card .foot { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
-  .bar { flex: 1; display: flex; height: 8px; border-radius: 999px; overflow: hidden; gap: 2px; }
+  .bar { flex: 1; display: flex; height: 10px; border-radius: 999px; overflow: hidden; gap: 2px; }
   .bar span { flex-basis: 0; min-width: 0; }
   .ago { font-size: 13px; color: var(--muted); white-space: nowrap; }
   .state { height: 100%; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px;
@@ -461,7 +461,7 @@
   .crow { height: 30px; }
 
   /* the article: the colour bar travels from the card to under the headline, then its names, then audio and video */
-  .abar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; gap: 2px; margin: 16px 4px 0; transform-origin: left center; }
+  .abar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; gap: 2px; margin: 16px 4px 0; transform-origin: left center; }
   .abar span { flex-basis: 0; min-width: 0; }
   .abar:empty { display: none; }
   #sheet:not(.open) .abar { opacity: 0; }
@@ -474,6 +474,125 @@
                  display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 160ms ease; }
   .acts button:active { transform: scale(0.94); }
   .sent.lit .s { background: color-mix(in srgb, currentColor 14%, transparent); border-radius: 3px; }
+
+  /* ---------- the grading made obvious (owner, Oct 15 2026; canvas "Nishpaksh USP Redesign") ----------
+     1. every sentence carries a light wash of its own colour (the text colour is unchanged, so reading is not hindered;
+        --tint is the strength, one place to tune it); the audio's lit sentence (.sent.lit .s, above) still wins
+     2. under the headline the bar gets its names as tappable chips with counts (a symbol in each, so the grade never
+        rests on colour alone); a tap lights up just those sentences
+     3. once that block scrolls away the bar and chips stay pinned under the article's top
+     4. a first-time reader meets "How to read the colours", which then folds into an (i) that opens the full key */
+  :root { --tint: 9%; }
+  .s.established { --sc: var(--bar-e); --st: var(--est); }
+  .s.developing { --sc: var(--bar-v); --st: var(--dev); }
+  .s.unverified, .s.pending { --sc: var(--bar-u); --st: var(--unv); }
+  .s.single { --sc: var(--bar-o); --st: var(--one); }
+  .s.partial { --sc: var(--bar-p); --st: var(--par); }
+  .s.disputed { --sc: var(--bar-d); --st: var(--dis); }
+  .s.false { --sc: var(--bar-r); --st: var(--fal); }
+  .essay .s, .card .text .s { background: color-mix(in srgb, var(--sc) var(--tint), transparent); padding: 1px 3px; border-radius: 4px;
+                              -webkit-box-decoration-break: clone; box-decoration-break: clone;
+                              transition: color 200ms ease, background-color 200ms ease, box-shadow 200ms ease; }
+  .card .text .s { --tint: 7%; }
+  #sheet[data-spot] .essay .s { color: #a8abaf; background: transparent; text-decoration: none; }
+  #sheet[data-spot] .essay .s.spot-on { color: var(--st); background: color-mix(in srgb, var(--sc) 24%, transparent); box-shadow: 0 0 0 2px var(--sc); }
+  #sheet[data-spot] .essay .s.spot-on.developing { text-decoration: underline dotted #7fc4bb; text-underline-offset: 4px; }
+  .abar span, .pbar span { transition: opacity 200ms ease; }
+  .abar span.dim, .pbar span.dim { opacity: 0.28; }
+  .rise > .key.grade { display: block; margin: 12px 4px 0; font-size: 13px; }
+  .gtop { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; }
+  .gsum { font-size: 14px; font-weight: 600; color: var(--est); line-height: 1.3; }
+  .gsum.none { color: var(--muted); }
+  .ginfo { flex: none; min-width: 44px; min-height: 44px; padding: 0; border: 0; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: flex-end; }
+  .gpill { display: flex; align-items: center; height: 32px; border-radius: 999px; background: #fff; color: #2f3a72; box-shadow: 0 2px 0 var(--edge); overflow: hidden;
+           transition: background-color 500ms var(--ease), color 500ms var(--ease), padding 500ms var(--ease), box-shadow 500ms ease; }
+  .gpill b { flex: none; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+             font-family: var(--head); font-style: italic; font-weight: 600; font-size: 18px; transition: width 500ms var(--ease), height 500ms var(--ease), margin 500ms var(--ease), background-color 500ms ease; }
+  .gpill .gtxt { white-space: nowrap; font-size: 13px; font-weight: 600; max-width: 0; opacity: 0; overflow: hidden;
+                 transition: max-width 500ms var(--ease), opacity 300ms ease, margin 500ms var(--ease); }
+  .gpill.open { background: #2f3a72; color: #fff; padding-inline-end: 14px; box-shadow: none; }
+  .gpill.open b { width: 26px; height: 26px; margin-inline-start: 3px; background: #fff; color: #2f3a72; }
+  .gpill.open .gtxt { max-width: 240px; opacity: 1; margin-inline-start: 8px; }
+  .gchips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .gchip { --c: var(--bar-e); --t: var(--est); display: flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 6px; border: 0; border-radius: 12px; cursor: pointer;
+           font: inherit; font-size: 11px; font-weight: 600; line-height: 1.15; text-align: start; background: color-mix(in srgb, var(--c) 14%, #fff); color: var(--t);
+           transition: background-color 200ms ease, color 200ms ease, transform 160ms ease; }
+  .gchip:active, .pchip:active { transform: scale(0.97); }
+  .gg { flex: none; width: 16px; height: 16px; border-radius: 50%; background: var(--c); color: #fff; font-style: normal; font-size: 10.5px; font-weight: 700;
+        display: flex; align-items: center; justify-content: center; line-height: 1; }
+  .gchip .gl { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gchip b { flex: none; font-weight: 700; font-size: 12px; }
+  .gchip.on, .pchip.on { background: var(--c); color: #fff; }
+  .gchip.on .gg, .pchip.on .gg { background: #fff; color: var(--c); }
+  .gdef { font-size: 13.5px; line-height: 1.45; color: var(--ink-soft); overflow: hidden; max-height: 0; opacity: 0;
+          transition: max-height 260ms var(--ease), opacity 200ms ease, margin 260ms var(--ease); }
+  .gdef.on { max-height: 130px; opacity: 1; margin-top: 10px; }
+  .pin { position: absolute; left: 0; right: 0; top: 100%; padding: 8px max(14px, env(safe-area-inset-right)) 8px max(14px, env(safe-area-inset-left));
+         border-radius: 0 0 24px 24px; background: rgb(236,236,233); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+         box-shadow: 0 12px 26px rgba(22,26,56,0.14);
+         opacity: 0; transform: translateY(-10px); visibility: hidden; pointer-events: none;
+         transition: opacity 240ms ease, transform 300ms var(--ease), visibility 0s linear 300ms; }
+  .pin.on { opacity: 1; transform: none; visibility: visible; pointer-events: auto; transition: opacity 240ms ease, transform 300ms var(--ease); }
+  .pin:empty { display: none; }
+  .pbar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; gap: 2px; margin-bottom: 4px; }
+  .pbar span { flex-basis: 0; min-width: 0; }
+  .prow { display: flex; gap: 4px; align-items: center; }
+  .pchip { --c: var(--bar-e); --t: var(--est); flex: 1; min-width: 0; min-height: 44px; padding: 0; border: 0; border-radius: 12px; display: flex; align-items: center;
+           justify-content: center; gap: 4px; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; background: color-mix(in srgb, var(--c) 14%, #fff); color: var(--t);
+           transition: background-color 200ms ease, color 200ms ease, transform 160ms ease; }
+  .pchip .gg { font-size: 9.5px; }
+  .pinfo { flex: none; width: 40px; height: 44px; padding: 0; border: 0; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .pinfo b { width: 28px; height: 28px; border-radius: 50%; background: #fff; box-shadow: 0 2px 0 var(--edge); color: #2f3a72; font-family: var(--head); font-style: italic;
+             font-weight: 600; font-size: 17px; display: flex; align-items: center; justify-content: center; }
+  .pin .gdef.on { margin: 4px 2px; font-size: 12.5px; }
+  .glabel { margin-top: 10px; font-size: 13px; font-weight: 600; color: var(--est); line-height: 1.3; }
+  .glabel.none { color: var(--muted); }
+  .card .glabel + .foot { margin-top: 6px; }
+  .legrow { display: flex; gap: 12px; align-items: stretch; }
+  .legrow > i { flex: none; width: 6px; border-radius: 3px; }
+  .legrow b { display: block; font-size: 15px; } .legrow span { display: block; font-size: 13.5px; line-height: 1.4; color: var(--ink-soft); }
+  /* the first-open tour: three screens, shown once (and from the menu: "How the colours work") */
+  #tour { position: fixed; inset: 0; z-index: 60; display: none; flex-direction: column; color: #fff; opacity: 0; transition: opacity 320ms ease;
+          background: linear-gradient(160deg, #46549a 0%, #2f3a72 40%, #1f2550 75%, #161a38 100%);
+          padding: max(18px, env(safe-area-inset-top)) max(22px, env(safe-area-inset-right)) max(22px, env(safe-area-inset-bottom)) max(22px, env(safe-area-inset-left)); }
+  #tour.on { display: flex; } #tour.show { opacity: 1; }
+  .tour-in { width: 100%; max-width: 480px; margin: 0 auto; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .tour-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding-top: 6px; }
+  .tour-top .tw { font-family: var(--head); font-weight: 600; font-size: 46px; line-height: 1.05; letter-spacing: -0.01em; }
+  html.hi .tour-top .tw { font-size: 42px; line-height: 1.3; }
+  .tour-top .tt { font-size: 15px; line-height: 1.4; opacity: 0.88; margin-top: 6px; max-width: 300px; }
+  .tour-skip { border: 0; background: transparent; color: #fff; opacity: 0.85; min-height: 44px; min-width: 44px; font-weight: 600; font-size: 14px; cursor: pointer; }
+  /* the three screens sit stacked in one grid cell (so nothing jumps when their heights differ) and cross-slide: the one
+     leaving drifts left and fades while the next arrives from the right, the demo card a beat after its words */
+  .tour-body { flex: 1; min-height: 0; overflow-y: auto; display: grid; align-content: center; padding: 8px 0;
+               overflow-x: hidden; scrollbar-width: none; touch-action: pan-y; }
+  .tour-body::-webkit-scrollbar { display: none; }
+  .tour-step { grid-area: 1 / 1; display: flex; flex-direction: column; gap: 22px; opacity: 0; visibility: hidden; pointer-events: none; transform: translateX(32px);
+               transition: opacity 180ms ease, transform 520ms var(--ease), visibility 0s linear 520ms; }
+  .tour-step .tour-demo { opacity: 0; transform: translateY(14px); transition: opacity 180ms ease, transform 520ms var(--ease); }
+  .tour-step.on { opacity: 1; visibility: visible; pointer-events: auto; transform: none; transition: opacity 420ms ease 200ms, transform 700ms var(--ease) 170ms, visibility 0s; }
+  .tour-step.on .tour-demo { opacity: 1; transform: none; transition: opacity 480ms ease 380ms, transform 700ms var(--ease) 340ms; }
+  .tour-step.past { transform: translateX(-32px); }
+  .tour-k { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; opacity: 0.75; }
+  .tour-h { font-family: var(--head); font-weight: 600; font-size: 24px; line-height: 1.15; margin: 6px 0 0; }
+  html.hi .tour-h { font-size: 22px; line-height: 1.4; }
+  .tour-p { font-size: 14.5px; line-height: 1.5; opacity: 0.92; margin: 8px 0 0; }
+  .tour-demo { background: #fff; color: var(--ink); border-radius: 20px; padding: 16px; display: flex; flex-direction: column; gap: 12px; font-size: 14.5px; line-height: 1.7; }
+  .tour-demo .hl { padding: 1px 4px; border-radius: 5px; color: var(--st); background: color-mix(in srgb, var(--sc) 12%, transparent); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+  .tour-demo .tag { display: block; font-size: 11.5px; font-weight: 600; color: var(--st); margin-top: 3px; line-height: 1.3; }
+  .tour-demo .tbar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; gap: 2px; margin-top: 6px; }
+  .tour-demo .tbar span { flex-basis: 0; min-width: 0; }
+  .tour-demo .tex { font-size: 13px; font-weight: 600; line-height: 1.3; }
+  .tour-demo hr { border: 0; border-top: 1px solid #e5e5e1; width: 100%; margin: 0; }
+  .tour-foot { position: relative; display: flex; align-items: center; justify-content: space-between; min-height: 48px; margin-top: 12px; }
+  .tour-dots { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; gap: 6px; } .tour-dots i { height: 8px; width: 8px; border-radius: 999px; background: #fff; opacity: 0.35; transition: width 240ms var(--ease), opacity 240ms ease; }
+  .tour-dots i.on { width: 22px; opacity: 1; }
+  .tour-back { border: 0; background: transparent; color: #fff; opacity: 0.9; min-height: 48px; min-width: 48px; padding: 0 12px 0 0; font-size: 15px; font-weight: 600; cursor: pointer; text-align: start; }
+  .tour-back.off { visibility: hidden; }
+  .tour-next .tl { display: grid; grid-template-columns: minmax(0, 1fr); width: 100%; } .tour-next .tl > span { grid-area: 1 / 1; justify-self: center; white-space: nowrap; opacity: 0; transform: translateY(6px); transition: opacity 260ms ease, transform 420ms var(--ease); }
+  .tour-next .tl > span.on { opacity: 1; transform: none; transition-delay: 120ms; }
+  .tour-next { transition: width 520ms var(--ease); padding: 0; border: 0; border-radius: 999px; background: #fff; color: #2f3a72; min-height: 48px; padding: 0 26px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  @media (prefers-reduced-motion: reduce) { .gpill, .gpill b, .gpill .gtxt, .pin, .gdef, #tour, .tour-step, .tour-step .tour-demo, .tour-next, .tour-next .tl > span { transition-duration: 1ms !important; transition-delay: 0ms !important; animation-duration: 1ms !important; } }
 
   /* the menu */
   .mveil { position: fixed; inset: 0; z-index: 40; display: none; }
@@ -791,7 +910,7 @@
           <button type="button" data-lang="en" aria-pressed="true">EN</button><button type="button" data-lang="hi" aria-pressed="false" lang="hi">हिं</button>
         </div>
       </div>
-      <div class="rail" id="rail" aria-label="Sections of this article"></div><div class="readline"><i id="readfill"></i></div></div>
+      <div class="rail" id="rail" aria-label="Sections of this article"></div><div class="readline"><i id="readfill"></i></div><div class="pin" id="pin" aria-label="Colour key"></div></div>
       <div class="hbox" id="hbox"><div class="layer brand"></div><div class="hpic" id="hpic"></div><h1 id="sheet-h"></h1><div class="meta"><span id="sheet-meta"></span><button type="button" class="share" id="share" aria-label="Share"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button></div></div>
 <div class="abar" id="abar" aria-hidden="true"></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -861,6 +980,54 @@ const VERDICT = {corroborated: "established", confirmed: "established", establis
 // the sections' names (nishpaksh/categories.py labels); the feed's en.json / hi.json carry the same
 const SECTIONS = {"en": {"primary": {"politics": "Politics", "justice": "Justice", "business": "Business", "world": "World", "life": "Life"}, "secondary": {"elections": "Elections", "parties": "Parties", "government": "Government", "parliament": "Parliament", "protests": "Protests", "crime": "Crime", "police": "Police", "courts": "Courts", "corruption": "Corruption", "terror": "Terror", "economy": "Economy", "companies": "Companies", "markets": "Markets", "money": "Your money", "domains": "Domains", "diplomacy": "Diplomacy", "indians-abroad": "Indians abroad", "conflicts": "Conflicts", "defence": "Defence", "abroad": "Abroad", "health": "Health", "education": "Education", "accidents": "Accidents", "environment": "Environment", "sport-films": "Sport & films"}, "tertiary": {"hr": "HR", "finance": "Finance", "marketing": "Marketing", "analytics": "Analytics", "operations": "Operations"}, "tree": {"politics": ["elections", "parties", "government", "parliament", "protests"], "justice": ["crime", "police", "courts", "corruption", "terror"], "business": ["economy", "companies", "markets", "money", "domains"], "world": ["diplomacy", "indians-abroad", "conflicts", "defence", "abroad"], "life": ["health", "education", "accidents", "environment", "sport-films"]}, "tree3": {"domains": ["hr", "finance", "marketing", "analytics", "operations"]}}, "hi": {"primary": {"politics": "राजनीति", "justice": "न्याय", "business": "बिज़नेस", "world": "दुनिया", "life": "जीवन"}, "secondary": {"elections": "चुनाव", "parties": "दल", "government": "सरकार", "parliament": "संसद", "protests": "प्रदर्शन", "crime": "अपराध", "police": "पुलिस", "courts": "अदालत", "corruption": "भ्रष्टाचार", "terror": "आतंक", "economy": "अर्थव्यवस्था", "companies": "कंपनियां", "markets": "बाज़ार", "money": "आपका पैसा", "domains": "क्षेत्र", "diplomacy": "कूटनीति", "indians-abroad": "विदेश में भारतीय", "conflicts": "संघर्ष", "defence": "रक्षा", "abroad": "विदेश", "health": "सेहत", "education": "शिक्षा", "accidents": "हादसे", "environment": "पर्यावरण", "sport-films": "खेल और फ़िल्में"}, "tertiary": {"hr": "एचआर", "finance": "फ़ाइनेंस", "marketing": "मार्केटिंग", "analytics": "एनालिटिक्स", "operations": "ऑपरेशंस"}, "tree": {"politics": ["elections", "parties", "government", "parliament", "protests"], "justice": ["crime", "police", "courts", "corruption", "terror"], "business": ["economy", "companies", "markets", "money", "domains"], "world": ["diplomacy", "indians-abroad", "conflicts", "defence", "abroad"], "life": ["health", "education", "accidents", "environment", "sport-films"]}, "tree3": {"domains": ["hr", "finance", "marketing", "analytics", "operations"]}}};
 const BARKEY = {established: "e", corroborated: "e", confirmed: "e", partial: "p", single: "o", disputed: "d", false: "r", unverified: "u", pending: "u", developing: "v"};
+/* the grading made obvious (owner, Oct 15 2026): names, short names and one-line meanings of the seven colours, in the
+   bar's order. The meanings are the rules in README.md ("What a story page shows"). */
+const GRADE_ORDER = ["established", "developing", "partial", "single", "disputed", "false", "unverified"];
+const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;      // the long names (t.k) are lower case: capitalised where they start a line
+const GLYPH = {established: "✓", developing: "…", partial: "½", single: "1", disputed: "≠", false: "✕", unverified: "?"};
+const BAR2ST = {e: "established", v: "developing", p: "partial", o: "single", d: "disputed", r: "false", u: "unverified"};
+Object.assign(T.en, {
+  howTo: "How to read the colours", gsum: (e, n) => `${e} of ${n} statements established`,
+  kShort: {established: "Established", developing: "Developing", unverified: "Not checked", partial: "Partial", single: "One outlet", disputed: "Disputed", false: "False"},
+  kDef: {established: "3+ independent outlets, 2+ original sources, nobody denies it, and it has held for 6 hours.",
+         developing: "Meets the established rule but has not held for 6 hours yet.",
+         unverified: "Below the bar. Always written with who said it.",
+         partial: "One outlet reports it and other outlets back part of it.",
+         single: "Only one outlet reports it: an exclusive, or a mistake.",
+         disputed: "Someone reports it and someone else denies it. Both versions are shown, each with its holder.",
+         false: "Primary evidence (FIR, court record, official data, video) shows it is false."},
+  legendTitle: "How to read Nishpaksh", legendIntro: "No outlet is trusted by name. Every sentence is coloured by how many independent outlets back it.",
+  menuTour: "How the colours work", tourReplay: "Show the quick tour", colourKey: "Colour key",
+  tour: {tag: "News, in true colours.", skip: "Skip", back: "Back", next: "Next", start: "Start reading", n: i => `${i} OF 3`,
+    h1: "Every sentence is graded.", p1: "The colour tells you how many independent outlets back it. No outlet is trusted by name.",
+    e1: "Three or more independent outlets report this.", t1: "Established: backed by 3+ independent outlets",
+    e2: "Some outlets report this and others deny it.", t2: "Sources disagree: both versions are shown",
+    e3: "Primary evidence, such as a court record, shows this is false.", t3: "Shown false: the evidence is named",
+    h2: "One bar, one glance.", p2: "Every story carries a colour bar. The more green, the more of it is proven.",
+    x1: "Example: a well-backed story", x2: "Example: a story still being checked",
+    h3: "Tap a colour to see why.", p3: "The key sits under every headline and stays pinned as you read. Tap a colour to light up just those sentences."}
+});
+Object.assign(T.hi, {
+  howTo: "रंग कैसे पढ़ें", gsum: (e, n) => `${n} में से ${e} कथन स्थापित`,
+  kShort: {established: "स्थापित", developing: "विकसित", unverified: "अपुष्ट", partial: "आंशिक", single: "एक स्रोत", disputed: "मतभेद", false: "असत्य"},
+  kDef: {established: "कम से कम 3 स्वतंत्र समाचार माध्यम, 2 मूल स्रोत, किसी ने खंडन नहीं किया, और 6 घंटे से टिका हुआ।",
+         developing: "स्थापित की शर्तें पूरी हैं, पर अभी 6 घंटे नहीं हुए।",
+         unverified: "अभी जाँच की सीमा से नीचे। हमेशा यह बताकर लिखा जाता है कि किसने कहा।",
+         partial: "एक माध्यम ने बताया और अन्य माध्यम इसके कुछ हिस्से का समर्थन करते हैं।",
+         single: "केवल एक माध्यम ने बताया: कोई विशेष ख़बर, या कोई ग़लती।",
+         disputed: "कोई इसे बताता है और कोई इसका खंडन करता है। दोनों पक्ष दिखाए जाते हैं, हर एक के नाम के साथ।",
+         false: "प्राथमिक सबूत (एफ़आईआर, अदालती रिकॉर्ड, सरकारी आँकड़े, वीडियो) दिखाते हैं कि यह असत्य है।"},
+  legendTitle: "निष्पक्ष को कैसे पढ़ें", legendIntro: "किसी माध्यम पर नाम से भरोसा नहीं किया जाता। हर वाक्य का रंग बताता है कि कितने स्वतंत्र माध्यम उसका समर्थन करते हैं।",
+  menuTour: "रंगों का मतलब", tourReplay: "छोटा परिचय फिर देखें", colourKey: "रंगों की कुंजी",
+  tour: {tag: "ख़बरें, सच्चे रंगों में।", skip: "छोड़ें", back: "पीछे", next: "आगे", start: "शुरू करें", n: i => `${i} / 3`,
+    h1: "हर वाक्य को परखा गया है।", p1: "रंग बताता है कि कितने स्वतंत्र समाचार माध्यम उसका समर्थन करते हैं। किसी माध्यम पर नाम से भरोसा नहीं किया जाता।",
+    e1: "तीन या अधिक स्वतंत्र माध्यम यह बताते हैं।", t1: "स्थापित: 3+ स्वतंत्र माध्यमों का समर्थन",
+    e2: "कुछ माध्यम यह बताते हैं और कुछ इसका खंडन करते हैं।", t2: "स्रोतों में मतभेद: दोनों पक्ष दिखाए जाते हैं",
+    e3: "अदालती रिकॉर्ड जैसे प्राथमिक सबूत दिखाते हैं कि यह असत्य है।", t3: "असत्य सिद्ध: सबूत का नाम साथ में दिया जाता है",
+    h2: "एक पट्टी, एक नज़र।", p2: "हर ख़बर के साथ एक रंगीन पट्टी होती है। जितना ज़्यादा हरा, उतना ज़्यादा प्रमाणित।",
+    x1: "उदाहरण: अच्छी तरह स्थापित ख़बर", x2: "उदाहरण: जाँच जारी है",
+    h3: "रंग छुएँ, कारण जानें।", p3: "रंगों की कुंजी हर शीर्षक के नीचे रहती है और पढ़ते समय ऊपर टिकी रहती है। किसी रंग को छुएँ तो सिर्फ़ वही वाक्य उभरेंगे।"}
+});
 
 /* ---------- small helpers ---------- */
 function safeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
@@ -1048,6 +1215,7 @@ function cardHtml(c, i) {
   return `<div class="slot" data-i="${i}"><a class="card${pic ? " has-pic" : ""}" href="#/story/${encodeURIComponent(c.id)}" data-id="${esc(c.id)}">
       ${picHtml}<h2>${esc(c.h)}</h2>
       <div class="text">${(c.paras || []).map(p => `<p>${p.map(sentenceHtml).join("")}</p>`).join("")}</div>
+      <div class="glabel${b.e ? "" : " none"}">${esc(T[lang].gsum(b.e || 0, (b.e || 0) + (b.v || 0) + (b.p || 0) + (b.o || 0) + (b.d || 0) + (b.r || 0) + (b.u || 0)))}</div>
       <div class="foot"><div class="bar" role="img" aria-label="${esc(T[lang].bar(b))}">${seg("e", b.e)}${seg("v", b.v)}${seg("p", b.p)}${seg("o", b.o)}${seg("d", b.d)}${seg("r", b.r)}${seg("u", b.u)}</div>
       <span class="ago">${esc(ago(c.at))}</span></div></a></div>`;
 }
@@ -1253,6 +1421,35 @@ function keyHtml(t, nar) {
   return ["established", "developing", "partial", "single", "disputed", "false", "unverified"].filter(k => present.has(k))   // the bar's order (BARKEY)
     .map(k => `<span style="color:${KEYCOLOR[k]}">● ${esc(t.k[k])}</span>`).join("");
 }
+/* the grade block under the headline (owner, Oct 15 2026): what the colours count ("5 of 12 statements established"), the
+   (i) that opens the full key, and one tappable chip per colour present, with its count and a symbol. keyHtml (the old
+   plain-text key) stays above for reference. The same counts feed the pinned copy (pinHtml). */
+function gradeCounts(paras) {
+  const b = barCounts(paras), out = {};
+  for (const k of GRADE_ORDER) out[k] = b[BARKEY[k]] || 0;
+  return out;
+}
+function gradeHtml(t, nar) {
+  const c = gradeCounts(nar.paragraphs), total = GRADE_ORDER.reduce((n, k) => n + c[k], 0);
+  if (!total) return `<div class="key"></div>`;
+  const chips = GRADE_ORDER.filter(k => c[k]).map(k =>
+    `<button type="button" class="gchip" data-st="${k}" aria-pressed="false" style="--c:var(--bar-${BARKEY[k]});--t:${KEYCOLOR[k]}"><i class="gg" aria-hidden="true">${GLYPH[k]}</i><span class="gl">${esc(t.kShort[k])}</span><b>${c[k]}</b></button>`).join("");
+  return `<div class="key grade" id="grade">
+    <div class="gtop"><div class="gsum${c.established ? "" : " none"}">${esc(t.gsum(c.established, total))}</div>
+      <button type="button" class="ginfo" data-leg="1" aria-label="${esc(t.howTo)}"><span class="gpill"><b aria-hidden="true">i</b><span class="gtxt">${esc(t.howTo)}</span></span></button></div>
+    <div class="gchips">${chips}</div>
+    <div class="gdef" aria-live="polite"></div></div>`;
+}
+function pinHtml(t, nar) {
+  const c = gradeCounts(nar.paragraphs), total = GRADE_ORDER.reduce((n, k) => n + c[k], 0);
+  if (!total) return "";
+  const segs = GRADE_ORDER.filter(k => c[k]).map(k => `<span data-st="${k}" style="flex-grow:${c[k]};background:var(--bar-${BARKEY[k]})"></span>`).join("");
+  const chips = GRADE_ORDER.filter(k => c[k]).map(k =>
+    `<button type="button" class="pchip" data-st="${k}" aria-pressed="false" aria-label="${esc(cap(t.k[k]))}: ${c[k]}" style="--c:var(--bar-${BARKEY[k]});--t:${KEYCOLOR[k]}"><i class="gg" aria-hidden="true">${GLYPH[k]}</i>${c[k]}</button>`).join("");
+  return `<div class="pbar" role="img" aria-label="${esc(t.gsum(c.established, total))}">${segs}</div>
+    <div class="prow">${chips}<button type="button" class="pinfo" data-leg="1" aria-label="${esc(t.howTo)}"><b aria-hidden="true">i</b></button></div>
+    <div class="gdef" aria-live="polite"></div>`;
+}
 function whoHtml(p, t) {
   const all = [...(p.timeline || []).flat(), ...(p.undated || []), ...(p.established || []), ...(p.contested || []), ...(p.context || []), ...(p.also || [])];
   if (!all.length) return "";
@@ -1293,7 +1490,7 @@ function articleHtml(row) {
     Object.entries(p.perspectives || {}).map(([k, v]) => `<b>${esc(k)}</b> ${esc((v || []).join(", "))}`).join("<br>");
   const thread = (title, list) => list && list.length ? `<div class="sec">${esc(title)}</div><div class="paper"><ul class="thread">${list.map(x =>
       `<li><a href="#/story/${encodeURIComponent(x.story_id)}" data-story="${esc(x.story_id)}">${esc(x.headline)}</a></li>`).join("")}</ul></div>` : "";
-  return `<div class="key">${keyHtml(t, nar)}</div>
+  return `${gradeHtml(t, nar)}
     <div class="acts"><button type="button" data-act="audio" aria-label="${esc(t.listen)}">${ICON.audio}</button><button type="button" data-act="video" aria-label="${esc(t.videos)}">${ICON.video}</button>
       <div class="talkpeek" data-act="talk" aria-hidden="true"><div class="tpin"><span>${esc(t.talkBanner)}</span></div></div><button type="button" class="talkbtn" data-act="talk" aria-label="${esc(t.talkName)}">${ICON.talk}</button></div>
     ${essayHtml(nar, t)}
@@ -1404,6 +1601,10 @@ function onSheetScroll() {
   const p = Math.min(1, Math.max(0, sc.scrollTop / max));
   $("readfill").style.clipPath = `inset(0 ${(100 - p * 100).toFixed(2)}% 0 0)`;
   $("chrome").classList.toggle("stuck", sc.scrollTop > 8);
+  // the colour bar and chips stay in view: once the grade block has gone under the top, its pinned copy slides in
+  const gc = $("rise").querySelector(".gchips");
+  $("pin").classList.toggle("on", !!gc && $("pin").firstElementChild !== null && gc.getBoundingClientRect().bottom < $("chrome").getBoundingClientRect().bottom + 4);
+  if (sc.scrollTop > 60) collapseHint();
   const line = $("chrome").getBoundingClientRect().bottom + 24;
   let on = -1;
   $("rise").querySelectorAll(".sechead").forEach((h, i) => { if (h.getBoundingClientRect().top <= line) on = i; });
@@ -1420,8 +1621,51 @@ function onSheetScroll() {
 }
 function abarHtml(b) {
   b = b || {};
-  return ["e", "v", "p", "o", "d", "r", "u"].map(k => b[k] ? `<span style="flex-grow:${b[k]};background:var(--bar-${k})"></span>` : "").join("");
+  return ["e", "v", "p", "o", "d", "r", "u"].map(k => b[k] ? `<span data-st="${BAR2ST[k]}" style="flex-grow:${b[k]};background:var(--bar-${k})"></span>` : "").join("");
 }
+/* tap a colour: only those sentences stay lit (owner, Oct 15 2026); the bar and both chip rows follow; a second tap clears it */
+let spot = null;
+function setSpot(st) { spot = spot === st ? null : st; paintSpot(); }
+function paintSpot() {
+  const t = T[lang];
+  if (spot) sheet.dataset.spot = spot; else delete sheet.dataset.spot;
+  $("rise").querySelectorAll(".essay .s").forEach(el => el.classList.toggle("spot-on", !!spot && el.classList.contains(spot)));
+  sheet.querySelectorAll(".gchip, .pchip").forEach(b => { const on = b.dataset.st === spot; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on ? "true" : "false"); });
+  sheet.querySelectorAll("#abar span, #pin .pbar span").forEach(s => s.classList.toggle("dim", !!spot && s.dataset.st !== spot));
+  sheet.querySelectorAll(".gdef").forEach(d => {
+    if (spot) { d.innerHTML = `<b style="color:${KEYCOLOR[spot]}">${esc(cap(t.k[spot]))}.</b> ${esc(t.kDef[spot])}`; d.classList.add("on"); }
+    else d.classList.remove("on");
+  });
+  // if none of the lit sentences is on screen, glide to the first one (under the pinned bar)
+  const first = spot && $("rise").querySelector(".essay .s.spot-on");
+  if (first && openId) {
+    const r = first.getBoundingClientRect(), top = $("chrome").getBoundingClientRect().bottom + 110;
+    const seen = [...$("rise").querySelectorAll(".essay .s.spot-on")].some(el => { const q = el.getBoundingClientRect(); return q.top >= top && q.bottom <= innerHeight - 20; });
+    if (!seen) sheetScroll.scrollTo({top: sheetScroll.scrollTop + r.top - top, behavior: REDUCED.matches ? "auto" : "smooth"});
+  }
+}
+/* the first time a reader opens an article, "How to read the colours" is spelled out; after a few seconds, a scroll or a
+   tap it folds into the (i) and stays that way (remembered on this device) */
+let legendFirst = null, hintTimer = null;
+function legendHint() {
+  const pill = $("rise").querySelector(".gpill"); if (!pill) return;
+  clearTimeout(hintTimer);
+  if (legendFirst === null) legendFirst = !safeGet("np-legend");
+  if (!legendFirst) return;
+  pill.classList.add("open");
+  hintTimer = setTimeout(collapseHint, 7000);
+}
+function collapseHint() {
+  clearTimeout(hintTimer);
+  const pill = $("rise").querySelector(".gpill.open");
+  if (pill) pill.classList.remove("open");
+  if (legendFirst) { legendFirst = false; safeSet("np-legend", "1"); }
+}
+sheet.addEventListener("click", e => {
+  const c = e.target.closest(".gchip[data-st], .pchip[data-st]");
+  if (c) { collapseHint(); setSpot(c.dataset.st); return; }
+  if (e.target.closest("[data-leg]")) { collapseHint(); openSheet("legend"); }
+});
 let sheetRow = null;
 function fillSheet(row, card) {
   const t = T[lang];
@@ -1436,6 +1680,9 @@ function fillSheet(row, card) {
     metaPre = `${t.sources(n, (p.counts || {}).outlets)} · `; metaAt = row.updated_at;
     $("sheet-meta").textContent = metaPre + ago(metaAt);
     $("rise").innerHTML = articleHtml(row);
+    spot = null; delete sheet.dataset.spot;
+    $("pin").innerHTML = pinHtml(t, p.narrative || {}); $("pin").classList.remove("on");
+    legendHint();
     markSentences(row);
     buildRail();
     document.title = `${head} · Nishpaksh`;
@@ -1445,6 +1692,7 @@ function fillSheet(row, card) {
     $("sheet-meta").textContent = ago(card.at);
     $("rise").innerHTML = `<div class="paper essay" aria-busy="true"><p style="color:var(--muted)">${esc(t.loading)}</p></div>`;
     $("rail").innerHTML = "";
+    $("pin").innerHTML = ""; $("pin").classList.remove("on");
   }
 }
 function cardRectFor(id) {
@@ -1548,6 +1796,7 @@ function closeStory(animate = true) {
   tkLeave();                       // the floating button fades and the conversation closes with the article
   const id = openId;
   openId = null;
+  collapseHint(); spot = null; paintSpot(); $("pin").classList.remove("on");
   document.title = "Nishpaksh · निष्पक्ष";
   document.documentElement.classList.remove("reading"); sections.inert = false;
   const k = cards.findIndex(c => String(c.id) === id);
@@ -2004,13 +2253,14 @@ function revealPage() {
   if (revealed) return;
   revealed = true;
   const root = document.documentElement;
-  if (!root.classList.contains("launch")) { greetSoon(); tidyTimer = setTimeout(tidy, 7000); return; }
+  if (!root.classList.contains("launch")) { greetSoon(); tidyTimer = setTimeout(tidy, 7000); setTimeout(maybeTour, 1400); return; }
   // the indigo stays at least half a second, so the splash and the page read as one screen
   setTimeout(() => {
     root.classList.add("ready");
     tidyTimer = setTimeout(tidy, 7500);
     $("theme").setAttribute("content", "#ECECE9");
     setTimeout(greetSoon, 520);
+    setTimeout(maybeTour, 1500);
   }, Math.max(0, 500 - (performance.now() - started)));
 }
 /* ---------- trial_version_2.1 (owner, Oct 9 2026): menu, sign in, sort, audio, videos, the header that tidies ---------- */
@@ -2025,6 +2275,7 @@ const ICON = {
   recap: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 22h14a2 2 0 0 0 2-2V4H8v16a2 2 0 0 1-4 0v-9h4"/><path d="M12 8h4M12 12h4M12 16h4"/></svg>',
   search: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
   out: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>',
+  info: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.6v.01"/></svg>',
   chev: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9a9ca3" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
   back: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>',
   tick: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2f3a72" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>',
@@ -2173,7 +2424,7 @@ function flyBar(fromCard) {
   const a = cb.getBoundingClientRect(), b = ab.getBoundingClientRect();
   if (!b.width) return;
   ab.style.transition = "none";
-  ab.style.transform = `translate(${a.left - b.left}px, ${a.top - b.top}px) scale(${a.width / b.width}, 0.8)`;
+  ab.style.transform = `translate(${a.left - b.left}px, ${a.top - b.top}px) scale(${a.width / b.width}, ${(a.height / b.height) || 0.8})`;
   requestAnimationFrame(() => requestAnimationFrame(() => {
     ab.style.transition = "transform 560ms cubic-bezier(.3,.85,.25,1)";
     ab.style.transform = "";
@@ -2188,7 +2439,7 @@ function flyBarBack(cardEl) {       // closing: the bar goes back to the card's 
   ab.style.willChange = "transform";
   ab.style.opacity = "1";
   ab.style.transition = "transform 460ms var(--ease)";
-  ab.style.transform = `translate(${a.left - b.left}px, ${a.top - b.top}px) scale(${a.width / b.width}, 0.8)`;
+  ab.style.transform = `translate(${a.left - b.left}px, ${a.top - b.top}px) scale(${a.width / b.width}, ${(a.height / b.height) || 0.8})`;
   setTimeout(() => { ab.style.transition = ""; ab.style.transform = ""; ab.style.opacity = ""; ab.style.willChange = ""; }, 500);
 }
 // every sentence of the article knows its place (paragraph.sentence), for the audio's lighting
@@ -2199,6 +2450,88 @@ function markSentences(row) {
   if (player.key === `${row.story_id}-${lang}`) light(true);
   if (/[?&]listen=1/.test(location.hash)) setTimeout(() => openAudio(), 500);
 }
+
+/* the first-open tour (owner, Oct 15 2026; canvas "D · First-open tour"): three screens, once per device (np-tour), skippable,
+   and again from the menu ("How the colours work") or from the (i) key. Its examples describe themselves instead of
+   quoting news, so nothing in it can be mistaken for a real story. ?tour=1 forces it. */
+let tourEl = null, tourStep = 0, tourBack = null, tourInert = [];
+function tourHtml(t) {
+  const tr = t.tour, v = k => `--sc:var(--bar-${BARKEY[k]});--st:${KEYCOLOR[k]}`;
+  const seg = arr => arr.map(([k, n]) => `<span style="flex-grow:${n};background:var(--bar-${BARKEY[k]})"></span>`).join("");
+  const demo1 = [["established", "e1", "t1"], ["disputed", "e2", "t2"], ["false", "e3", "t3"]].map(([k, a, b]) =>
+    `<div><span class="hl" style="${v(k)}">${esc(tr[a])}</span><span class="tag" style="${v(k)}">${esc(tr[b])}</span></div>`).join("");
+  const demo2 = `<div><div class="tex" style="color:var(--est)">${esc(tr.x1)}</div><div class="tbar">${seg([["established", 7], ["developing", 1], ["disputed", 1], ["unverified", 1]])}</div>
+      <div class="tex" style="color:var(--muted);font-weight:500;margin-top:4px">${esc(t.gsum(7, 10))}</div></div><hr>
+    <div><div class="tex" style="color:var(--dis)">${esc(tr.x2)}</div><div class="tbar">${seg([["established", 1], ["single", 3], ["unverified", 4], ["disputed", 1], ["false", 1]])}</div>
+      <div class="tex" style="color:var(--muted);font-weight:500;margin-top:4px">${esc(t.gsum(1, 10))}</div></div>`;
+  const chips = ["established", "developing", "single", "disputed", "unverified", "false"].map(k =>
+    `<span class="gchip${k === "disputed" ? " on" : ""}" style="--c:var(--bar-${BARKEY[k]});--t:${KEYCOLOR[k]}"><i class="gg" aria-hidden="true">${GLYPH[k]}</i><span class="gl">${esc(t.kShort[k])}</span></span>`).join("");
+  const demo3 = `<div class="gchips">${chips}</div><div class="gdef on"><b style="color:${KEYCOLOR.disputed}">${esc(cap(t.k.disputed))}.</b> ${esc(t.kDef.disputed)}</div>`;
+  const step = (i, h, p, demo) => `<div class="tour-step" data-i="${i}"><div><div class="tour-k">${esc(tr.n(i + 1))}</div><h2 class="tour-h">${esc(h)}</h2><p class="tour-p">${esc(p)}</p></div><div class="tour-demo">${demo}</div></div>`;
+  return `<div class="tour-in"><div class="tour-top"><div><div class="tw">${esc(t.wordmark)}</div><div class="tt">${esc(tr.tag)}</div></div><button type="button" class="tour-skip" data-tour="skip">${esc(tr.skip)}</button></div>
+    <div class="tour-body">${step(0, tr.h1, tr.p1, demo1)}${step(1, tr.h2, tr.p2, demo2)}${step(2, tr.h3, tr.p3, demo3)}</div>
+    <div class="tour-foot"><button type="button" class="tour-back off" data-tour="back">${esc(tr.back)}</button><div class="tour-dots"><i></i><i></i><i></i></div><button type="button" class="tour-next" data-tour="next"><span class="tl"><span class="a">${esc(tr.next)}</span><span class="b">${esc(tr.start)}</span></span></button></div></div>`;
+}
+function paintTour() {
+  const tr = T[lang].tour;
+  tourEl.querySelectorAll(".tour-step").forEach((s, i) => { s.classList.toggle("on", i === tourStep); s.classList.toggle("past", i < tourStep); });
+  tourEl.querySelectorAll(".tour-dots i").forEach((d, i) => d.classList.toggle("on", i === tourStep));
+  // "Next" and "Start reading" both sit in the button and cross-fade; the button itself grows or shrinks to the label showing
+  const nb = tourEl.querySelector(".tour-next"), la = nb.querySelector(".a"), lb = nb.querySelector(".b"), last = tourStep === 2;
+  la.classList.toggle("on", !last); lb.classList.toggle("on", last);
+  const w = (last ? lb : la).offsetWidth;
+  if (w) nb.style.width = `${w + 52}px`;
+  tourEl.querySelector(".tour-back").classList.toggle("off", tourStep === 0);
+}
+function showTour(force) {
+  if (tourEl || (!force && safeGet("np-tour"))) return;
+  tourEl = document.createElement("div");
+  tourEl.id = "tour"; tourEl.setAttribute("role", "dialog"); tourEl.setAttribute("aria-modal", "true"); tourEl.setAttribute("aria-label", T[lang].menuTour);
+  tourEl.innerHTML = tourHtml(T[lang]);
+  document.body.append(tourEl);
+  tourBack = document.activeElement; tourStep = 0; paintTour();
+  tourInert = [$("app"), sheet].filter(el => el && !el.inert);
+  tourInert.forEach(el => { el.inert = true; });
+  tourEl.classList.add("on");
+  paintTour();                          // once shown, so the button can be measured
+  requestAnimationFrame(() => requestAnimationFrame(() => { if (tourEl) tourEl.classList.add("show"); }));
+  tourEl.querySelector(".tour-next").focus({preventScroll: true});
+}
+function closeTour() {
+  if (!tourEl) return;
+  safeSet("np-tour", "1");
+  const el = tourEl; tourEl = null;
+  tourInert.forEach(x => { x.inert = false; }); tourInert = [];
+  el.classList.remove("show");
+  setTimeout(() => el.remove(), 340);
+  try { if (tourBack && tourBack.focus) tourBack.focus({preventScroll: true}); } catch (e) { /* gone */ }
+}
+function maybeTour() {
+  const forced = /[?&]tour=1/.test(location.search);
+  if (!forced && (safeGet("np-tour") || /^#\/story\//.test(location.hash))) return;
+  if (sheetKind || mdrop.classList.contains("on") || sheet.classList.contains("on")) return;
+  showTour(true);
+}
+document.addEventListener("click", e => {
+  const b = tourEl && e.target.closest("[data-tour]"); if (!b) return;
+  if (b.dataset.tour === "back") { if (tourStep > 0) { tourStep--; paintTour(); } }
+  else if (b.dataset.tour === "skip" || tourStep >= 2) closeTour(); else { tourStep++; paintTour(); }
+});
+// a swipe goes between the screens too
+let tourX = null;
+document.addEventListener("touchstart", e => { tourX = tourEl && tourEl.contains(e.target) ? e.touches[0].clientX : null; }, {passive: true});
+document.addEventListener("touchend", e => {
+  if (tourX === null || !tourEl) return;
+  const dx = e.changedTouches[0].clientX - tourX; tourX = null;
+  if (dx < -50 && tourStep < 2) { tourStep++; paintTour(); } else if (dx > 50 && tourStep > 0) { tourStep--; paintTour(); }
+}, {passive: true});
+document.addEventListener("keydown", e => {
+  if (!tourEl) return;
+  if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); closeTour(); }
+  else if (e.key === "ArrowRight" && tourStep < 2) { tourStep++; paintTour(); }
+  else if (e.key === "ArrowLeft" && tourStep > 0) { tourStep--; paintTour(); }
+  if (["ArrowDown", "ArrowUp", "PageDown", "PageUp", "j", "k"].includes(e.key)) e.stopImmediatePropagation();
+}, true);
 
 /* the menu */
 const mdrop = document.createElement("div"), mveil = document.createElement("div");
@@ -2213,6 +2546,7 @@ function menuHtml() {
       <button type="button" class="mrow" data-m="notes">${ICON.inbox}<span class="grow">${esc(t.notes)}</span>${unread > 0 ? `<span class="mcount">${unread > 9 ? "9+" : unread}</span>` : ""}${ICON.chev}</button>
       <button type="button" class="mrow" data-m="recap">${ICON.recap}<span class="grow">${esc(t.recap)}</span><small>${esc(istNow().getUTCHours() >= 23 ? t.recapReadyHint : t.recapTimeHint)}</small>${ICON.chev}</button>
       <button type="button" class="mrow" data-m="sort">${ICON.sort}<span class="grow">${esc(t.sort)}</span><small>${esc(t.sorts[sortKey])}</small>${ICON.chev}</button>
+      <button type="button" class="mrow" data-m="tour">${ICON.info}<span class="grow">${esc(t.menuTour)}</span></button>
       ${canInstall() ? `<button type="button" class="mrow" data-m="install">${ICON.install}<span class="grow">${esc(t.install)}</span></button>` : ""}
       ${me ? `<div class="msep"><button type="button" class="mrow" data-m="logout" style="color:#b2251c">${ICON.out}<span class="grow">${esc(t.logout)}</span></button></div>` : ""}
     </div><div class="mpane">
@@ -2256,6 +2590,7 @@ mdrop.addEventListener("click", e => {
   if (m === "sort") { mdrop.classList.add("sub"); fitMenu(); }
   else if (m === "back") { mdrop.classList.remove("sub"); fitMenu(); }
   else if (m === "signin") { hideMenu(); openSheet("signin"); }
+  else if (m === "tour") { closeMenu(); setTimeout(() => showTour(true), 260); }
   else if (m === "install") { if (installEvt) { doInstall(); closeMenu(); } else { hideMenu(); doInstall(); } }
   else if (m === "follow" || m === "notes" || m === "recap") asSheet(m);
   else if (m === "logout") { me = null; saveMe(); follows = new Map(); unread = 0; paintMe(); paintBadge(); closeMenu(); }
@@ -2331,6 +2666,10 @@ function renderSheet() {
           <div style="min-width:0"><div style="font-size:15px;font-weight:600;line-height:1.3">${esc(v.title)}</div><div class="bnote" style="margin-top:4px">${esc(v.channel)}</div>
           <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><span class="btag" style="background:${v.lang === "hi" ? "#fbefe0" : "#e9ecfb"};color:${v.lang === "hi" ? "#8a4b00" : "#2f3a72"}">${esc(v.lang === "hi" ? t.hindi : t.english)}</span>
           ${v.primary ? `<span class="btag" style="background:#e8f3ee;color:#1d6a45">${esc(t.primary)}</span>` : ""}</div></div></a>`).join("")}</div>`);
+  } else if (sheetKind === "legend") {
+    bsheet.innerHTML = frame(t.legendTitle, `<div class="bbody"><p class="bnote" style="margin:0;font-size:14.5px;line-height:1.5;color:var(--ink-soft)">${esc(t.legendIntro)}</p>
+      ${GRADE_ORDER.map(k => `<div class="legrow"><i style="background:var(--bar-${BARKEY[k]})"></i><div><b style="color:${KEYCOLOR[k]}">${esc(cap(t.k[k]))}</b><span>${esc(t.kDef[k])}</span></div></div>`).join("")}
+      <button type="button" class="blink" data-b="tour">${esc(t.tourReplay)}</button></div>`);
   } else if (sheetKind === "install") {
     const ios = !installEvt && isIOS;
     bsheet.innerHTML = frame(t.installTitle, `<div class="bbody">
@@ -2372,6 +2711,7 @@ bsheet.addEventListener("click", async e => {
   else if (a === "play") { closeSheet(); playAudio(`${audioState.id}-${chosenLang || lang}`); }
   else if (a === "make") makeAudio();
   else if (a === "install") doInstall();
+  else if (a === "tour") { closeSheet(); setTimeout(() => showTour(true), 260); }
 });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && (sheetKind || mdrop.classList.contains("on"))) { e.stopPropagation(); closeMenu(); closeSheet(); } }, true);
 
@@ -2401,7 +2741,7 @@ async function doInstall() {
 function installCardSoon(n = 0) {
   try {
     if (installCardDone || !canInstall()) return;
-    if (!revealed || sheetKind || mdrop.classList.contains("on") || sheet.classList.contains("on") || TK.ui !== "closed") { if (n < 8) setTimeout(() => installCardSoon(n + 1), 2500); return; }
+    if (!revealed || sheetKind || mdrop.classList.contains("on") || sheet.classList.contains("on") || TK.ui !== "closed" || document.getElementById("tour")) { if (n < 8) setTimeout(() => installCardSoon(n + 1), 2500); return; }
     installCardDone = true; installHow = false; openSheet("install");
   } catch (e) { /* page still starting: the next try covers it */ if (n < 8) setTimeout(() => installCardSoon(n + 1), 2500); }
 }
