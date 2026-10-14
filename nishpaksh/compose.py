@@ -34,6 +34,30 @@ places and organisations, and all numbers, as they are. Return a JSON object wit
 {payload}"""
 
 
+_DEVANAGARI = re.compile(r"[\u0900-\u097F]")
+_DIGITS_HI = str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f", "0123456789")
+
+
+def translation_problem(src: str, out: str) -> str | None:
+    """Why a Hindi string is unusable, or None. Ported from the owner's booktrans.py (output_problem): an empty or
+    echoed string, or one with no Devanagari at all, would otherwise be cached and published as 'translated'; and a
+    translation that changes a number is a wrong article (the prompt says keep numbers as they are)."""
+    out_t, src_t = (out or "").strip(), (src or "").strip()
+    if not out_t:
+        return "empty"
+    letters = re.findall(r"[A-Za-z]", src_t)
+    if len(src_t) >= 20 and len(letters) >= 6:
+        norm = lambda t: re.sub(r"\W+", " ", t.lower()).strip()
+        if norm(out_t) == norm(src_t):
+            return "echoed the source"
+        if not _DEVANAGARI.search(out_t):
+            return "no Devanagari"
+    nums = lambda t: sorted(re.findall(r"\d+", t.translate(_DIGITS_HI).replace(",", "")))
+    if nums(src_t) != nums(out_t):
+        return "numbers changed"
+    return None
+
+
 def tidy(text: str) -> str:
     """'LPU (LPU)' -> 'LPU': an abbreviation the extraction repeated in brackets."""
     return re.sub(r"\b([\w.&'-]+(?: [\w.&'-]+){0,4}) \(\1\)", r"\1", text or "")
@@ -306,7 +330,7 @@ def _collect_strings(payload: dict) -> list[str]:
                 out.append(i["time"]["when_text"])
     for f in payload["framing"]:
         out.append(f["text"])
-    for i in payload.get("context", []):
+    for i in payload.get("context", []) + payload.get("also", []):
         out.append(i["text"])
         if i.get("related_event"):
             out.append(i["related_event"])
@@ -314,6 +338,7 @@ def _collect_strings(payload: dict) -> list[str]:
     out += [b["text"] for b in payload.get("background", [])]
     for para in (payload.get("narrative") or {}).get("paragraphs", []):
         out += [x["text"] for x in para]
+    out += [x["text"] for x in (payload.get("narrative") or {}).get("other_coverage", [])]
     return [s for s in dict.fromkeys(out) if s]
 
 
@@ -348,10 +373,16 @@ def _translate(store: Store, router: Router | None, strings: list[str]) -> dict:
             except Exception as e:  # noqa: BLE001
                 log.warning("translation failed: %s", e)
                 continue
-            got = {}
+            got, bad = {}, []
             for k, v in (res.data or {}).items() if isinstance(res.data, dict) else []:
                 if k.isdigit() and int(k) < len(chunk) and isinstance(v, str) and v.strip():
-                    got[_key(chunk[int(k)])] = v.strip()
+                    why = translation_problem(chunk[int(k)], v)
+                    if why:
+                        bad.append((chunk[int(k)], why))
+                    else:
+                        got[_key(chunk[int(k)])] = v.strip()
+            for src, why in bad:                      # never cached: the article stays "partly translated" and a later pass retries
+                log.info("translation rejected (%s): %s", why, src[:80])
             store.translation_put(got)
             cache.update(got)
     return cache
@@ -372,10 +403,13 @@ def _apply(payload: dict, strings: list[str], cache: dict, tr) -> dict:
                 i["time"]["when_text"] = tr(i["time"]["when_text"])
     for f in hi["framing"]:
         f["text"] = tr(f["text"])
-    for i in hi.get("context", []):
+    for i in hi.get("context", []) + hi.get("also", []):
         i["text"] = tr(i["text"])
         if i.get("related_event"):
             i["related_event"] = tr(i["related_event"])
+    for x in (hi.get("narrative") or {}).get("other_coverage", []):
+        x["text"] = tr(x["text"])
+        x.pop("parts", None)
     for x in hi.get("parents", []) + hi.get("children", []):
         x["headline"] = tr(x["headline"])
     for b in hi.get("background", []):
@@ -683,7 +717,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     drop_outlet_self_talk(payload)
     drop_past_schedules(payload)       # "is scheduled to" for what has already happened (owner, Oct 9 2026)
     from .belong import check as context_belongs
-    context_belongs(store, router, story_id, payload)   # other news from the same page: dropped on two "other news"
+    context_belongs(store, router, story_id, payload)   # a line that is not about this story goes to "Also in these reports" (belong.py)
     an_ = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
     fold_covered(payload, an_.get("covered") or {})
     link_updates(payload, an_.get("updates") or {})
@@ -699,6 +733,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     banned = set(payload["loaded_words"])
     if router is None or not _writer_attempt_allowed(store, story_id, h):
         return _outcome(story_id, "writer tries used up")
+    from .belong import assign_topics
+    assign_topics(store, router, story_id, payload)     # one subject per paragraph (plan.py); no topics: shared words, as before
     # an earlier try that fell short of the bar is continued, not started again (owner, Oct 7 2026)
     an = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
     draft = _remap_draft(store, an.get("writer_draft"), payload)

@@ -243,6 +243,13 @@
   .sechead { display: flex; align-items: baseline; gap: 10px; margin: 26px 6px 0; scroll-margin-top: 150px; }
   .sechead span { font-size: 11.5px; font-weight: 700; letter-spacing: 0.08em; color: #46549a; }
   .sechead h3 { margin: 0; font-family: var(--head); font-size: 21px; font-weight: 600; }
+  details.also > summary { cursor: pointer; list-style: none; }
+  details.also > summary::-webkit-details-marker { display: none; }
+  details.also > summary span { display: inline-block; transition: transform .15s; }
+  details.also[open] > summary span { transform: rotate(45deg); }
+  .alsonote { font-size: 13px; opacity: 0.7; margin: 0 0 8px; }
+  .alsolist { margin: 0; padding-left: 18px; }
+  .alsolist li { margin: 6px 0; line-height: 1.5; }
   .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
   .tile { background: #fff; border-radius: 18px; padding: 14px 14px 12px; box-shadow: 0 3px 0 var(--edge); display: flex; flex-direction: column; gap: 6px; }
   .tile.wide { grid-column: 1 / -1; }
@@ -782,7 +789,7 @@ const T = {
     ago: (n, u) => `${n} ${u} ago`, units: {m: "min", h: "h", d: "d"},
     back: "Back to all stories", sources: (n, o) => `${n} independent source${n === 1 ? "" : "s"}` + (o && o > n ? ` · ${o} outlets` : ""),
     k: {established: "established", developing: "developing", unverified: "not yet cross-checked", partial: "partly backed by others", single: "one outlet only", disputed: "sources disagree", false: "shown false"},
-    falseTag: "FALSE", sourcesTitle: "Sources", who: "Who reported what", reported: "Reported by", denied: "Denied by",
+    also: "Also in these reports", alsoNote: "Other items from the same reports that are not about this story", falseTag: "FALSE", sourcesTitle: "Sources", who: "Who reported what", reported: "Reported by", denied: "Denied by",
     unreadable: "could not be read", unread: "not read (same owner as another source, or reading limit)",
     helpline: "If you or someone you know is struggling, help is available: Tele-MANAS, free and confidential, 14416 or 1-800-891-4416 (24×7).",
     earlier: "Earlier in this story", next: "What happened next", ongoing: "part of an ongoing story",
@@ -803,7 +810,7 @@ const T = {
     ago: (n, u) => `${n} ${u} पहले`, units: {m: "मिनट", h: "घंटे", d: "दिन"},
     back: "सभी ख़बरों पर लौटें", sources: (n, o) => `${n} स्वतंत्र स्रोत` + (o && o > n ? ` · ${o} समाचार माध्यम` : ""),
     k: {established: "स्थापित", developing: "विकसित हो रही", unverified: "अभी पुष्टि नहीं", partial: "आंशिक रूप से अन्य स्रोतों का समर्थन", single: "केवल एक स्रोत", disputed: "स्रोतों में मतभेद", false: "असत्य सिद्ध"},
-    falseTag: "असत्य", sourcesTitle: "स्रोत", who: "किसने क्या बताया", reported: "किसने बताया", denied: "किसने खंडन किया",
+    also: "इन्हीं रिपोर्टों में अन्य ख़बरें", alsoNote: "इन्हीं रिपोर्टों की अन्य बातें, जो इस ख़बर से नहीं जुड़ती", falseTag: "असत्य", sourcesTitle: "स्रोत", who: "किसने क्या बताया", reported: "किसने बताया", denied: "किसने खंडन किया",
     unreadable: "पढ़ा नहीं जा सका", unread: "नहीं पढ़ा गया (दूसरे स्रोत का ही मालिक, या पढ़ने की सीमा)",
     helpline: "अगर आप या आपका कोई परिचित मुश्किल में है, तो मदद उपलब्ध है: टेली-मानस, निःशुल्क और गोपनीय, 14416 या 1-800-891-4416 (24×7)।",
     earlier: "इस ख़बर में पहले", next: "इसके बाद क्या हुआ", ongoing: "जारी ख़बर का हिस्सा",
@@ -1149,7 +1156,20 @@ function ranges(nums) {
 }
 // the first figure in a "By the numbers" sentence becomes the tile's big number (the sentence stays under it)
 const FIGURE = /(?<![\w.])(?:(?:[$₹€£]|Rs\.?\s?|INR\s?|USD\s?)\d[\d,]*(?:\.\d+)?(?:\s?(?:lakh|crore|million|billion|trillion|bn|mn|cr|लाख|करोड़))?|\d[\d,]*(?:\.\d+)?\s?(?:%|per\s?cent|percent|lakh|crore|million|billion|trillion|dollars|rupees|लाख|करोड़|प्रतिशत|फीसदी|डॉलर|रुपये|रुपए)|\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|(?!(?:19|20)\d\d\b)\d{2,}(?:\.\d+)?)(?![\w-])/i;
-function essayHtml(nar, t) {
+function essayHtml(nar, t) { return essayBody(nar, t) + alsoHtml(nar, t); }
+// "Also in these reports": lines the pages carried that are not about this story (belong.py), collapsed under the
+// article, one plain line each, never a paragraph; coloured and numbered like the rest
+function alsoHtml(nar, t) {
+  const items = nar.other_coverage || [];
+  if (!items.length) return "";
+  const names = Object.fromEntries((nar.sources || []).map(s => [s.n, s.outlet]));
+  const link = a => `<a href="#src-${a}" data-src="${a}" title="${esc(names[a] || "")}">${a}</a>`;
+  const sup = x => { const r = ranges(x.sources || []).map(([a, b]) => b === a ? link(a) : `${link(a)}–${link(b)}`).join(","); return r ? `<sup>${r}</sup>` : ""; };
+  const rows = items.map(x => `<li><span class="s ${esc(cls(x.class))}">${esc(x.text)}</span>${sup(x)}</li>`).join("");
+  return `<details class="also"><summary class="sechead"><span>+</span><h3>${esc(t.also || "Also in these reports")}</h3></summary>` +
+         `<div class="paper essay"><p class="alsonote">${esc(t.alsoNote || "")}</p><ul class="alsolist">${rows}</ul></div></details>`;
+}
+function essayBody(nar, t) {
   const names = Object.fromEntries((nar.sources || []).map(s => [s.n, s.outlet]));
   const link = a => `<a href="#src-${a}" data-src="${a}" title="${esc(names[a] || "")}">${a}</a>`;
   const sup = x => { const r = ranges(x.sources || []).map(([a, b]) => b === a ? link(a) : `${link(a)}–${link(b)}`).join(","); return r ? `<sup>${r}</sup>` : ""; };
@@ -1204,7 +1224,7 @@ function keyHtml(t, nar) {
     .map(k => `<span style="color:${KEYCOLOR[k]}">● ${esc(t.k[k])}</span>`).join("");
 }
 function whoHtml(p, t) {
-  const all = [...(p.timeline || []).flat(), ...(p.undated || []), ...(p.established || []), ...(p.contested || []), ...(p.context || [])];
+  const all = [...(p.timeline || []).flat(), ...(p.undated || []), ...(p.established || []), ...(p.contested || []), ...(p.context || []), ...(p.also || [])];
   if (!all.length) return "";
   const seen = new Set();
   const items = all.filter(i => i && i.text && !seen.has(i.text) && seen.add(i.text)).map(i => {
@@ -1249,7 +1269,7 @@ function articleHtml(row) {
     ${essayHtml(nar, t)}
     ${p.suicide ? `<p class="note helpline">${esc(t.helpline)}</p>` : ""}
     ${thread(t.earlier, p.parents)}${thread(t.next, p.children)}
-    ${sources ? `<div class="sec">${esc(t.sourcesTitle)}</div><div class="paper"><ol class="sources">${sources}</ol></div>` : ""}
+    ${sources ? `<div class="paper"><details class="who srcs"><summary>${esc(t.sourcesTitle)} (${(nar.sources || []).length})</summary><ol class="sources">${sources}</ol></details></div>` : ""}
     ${framing}
     ${persp ? `<div class="sec">${esc(t.perspectives)}</div><div class="paper persp">${persp}${p.perspective_mode === "story" ? `<br><span class="note">${esc(t.localNote)}</span>` : ""}</div>` : ""}
     <div style="height:12px"></div>${whoHtml(p, t)}`;
@@ -1471,6 +1491,8 @@ $("rise").addEventListener("click", e => {
   if (s) {
     e.preventDefault();
     const li = $("src-" + s.dataset.src);
+    const box = li && li.closest("details");
+    if (box && !box.open) box.open = true;          // the Sources list is a dropdown: open it before jumping to the line
     if (li) { li.scrollIntoView({behavior: "smooth", block: "center"}); li.classList.add("flash"); setTimeout(() => li.classList.remove("flash"), 1400); }
     return;
   }

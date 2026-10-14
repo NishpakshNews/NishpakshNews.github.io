@@ -87,7 +87,8 @@ Within a paragraph write 2-4 sentences, the main point first, then what supports
               tells the first of them (it must be cited in the lead); if there is a second, it is what
               happened today, told in the second sentence. Never the setting or background ("Donald Trump said 125 million people voted in
               India's election, mixing up India with Brazil", not "Brazil held an election on Sunday").
-  background  how this came about: earlier events, each clearly with its own time
+  background  the past of the story's own subject, oldest first: its history, then the steps just before the news,
+              each clearly with its own time (code decides the paragraphs; never add what is not in them)
   explained   what a rule, term, post, finding or number means
   happened    what happened, in time order (the statements of the news are not repeated here)
   numbers     the figures: amounts, tolls, counts, percentages, each with what it measures
@@ -1181,14 +1182,22 @@ def _finish(payload: dict, paragraphs: list, also: list, by_id: dict, meta: dict
     paragraphs, kept = _drop_repeats(paragraphs, by_id)
     if meta.get("section_keys"):
         meta = dict(meta, section_keys=[meta["section_keys"][k] for k in kept if k < len(meta["section_keys"])])
+    # lines that were on the pages but are not about this story ("Also in these reports", belong.py): plain one-line
+    # items, never in a paragraph, never written by the writer; they get their colour and source numbers like the rest
+    by_id = dict(by_id)
+    other = []
+    for i in sorted(payload.get("also") or [], key=lambda i: (str((i.get("time") or {}).get("start") or "~"), i["id"])):
+        if i.get("text") and i.get("id") is not None:
+            by_id[i["id"]] = i
+            other.append({"text": i["text"], "ids": [i["id"]]})
     numbering: dict[str, int] = {}
-    for sent in [x for para in paragraphs for x in para] + also:
+    for sent in [x for para in paragraphs for x in para] + also + other:
         for x in sent["ids"]:
             for s in by_id[x]["sources"]:
                 numbering.setdefault(s["url"], len(numbering) + 1)
     for s in payload["sources"]:
         numbering.setdefault(s["url"], len(numbering) + 1)
-    for sent in [x for para in paragraphs for x in para] + also:
+    for sent in [x for para in paragraphs for x in para] + also + other:
         sent["class"] = CLASS[max(RANK.get(shade(by_id[x]), 2) for x in sent["ids"])]
         if sent.get("parts"):
             for part in sent["parts"]:
@@ -1205,7 +1214,7 @@ def _finish(payload: dict, paragraphs: list, also: list, by_id: dict, meta: dict
                    for url, n in sorted(numbering.items(), key=lambda kv: kv[1])]
     background = [b for b in payload.get("background") or [] if b.get("id") is not None]
     return dict(meta, hash=input_hash(sections_from_payload(payload), background), writer=WRITER_VERSION,
-                paragraphs=paragraphs, not_in_essay=also, sources=source_list,
+                paragraphs=paragraphs, not_in_essay=also, other_coverage=other, sources=source_list,
                 covers=sorted({x for para in paragraphs for s in para for x in s["ids"]}))
 
 

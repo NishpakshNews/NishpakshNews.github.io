@@ -2639,59 +2639,146 @@ def test_who_speaks_is_code_s_job_story_13107():
     assert "he " not in " ".join(t2[1:]).lower().replace("the ", "")
 
 
-def test_context_is_dropped_only_when_the_model_says_other_news_twice(store):
-    """Owner, Oct 8 2026: "It's better to have something unrelated in the story and think, why is this here,
-    than not to have something important" (background, related and explanation alike). A line goes only on
-    two "other news" answers; one "connected", no answer (quota) or a model that never answers keeps it.
-    No code rule drops a line by its words (one dropped Air Force ration drops in a story on flood victims)."""
-    from nishpaksh import belong
+def _belong_fixture(store):
+    """A story on a protest-site decision, its context lines, and a model that answers per line (by the
+    first six letters of its text), asking by asking."""
     from nishpaksh.router import LLMResult
     sid = store.insert_returning_id(stories, dict(created_at=NOW, updated_at=NOW, dirty=False, qualifies=True,
-                                                  signature="cheetah cubs", analysis={}))
-    core = {"id": 1, "role": "core", "text": "A cheetah gave birth to five cubs in Kuno National Park",
-            "verdict": "corroborated", "kind": "event", "sources": [], "n_sources": 3}
-    ctx = [{"id": 2, "role": "related", "text": "Kerala Home Minister defended a vigilance probe into a road project"},
-           {"id": 3, "role": "background", "text": "Heavy rain fell in Nepal"},                # shares no word
-           {"id": 4, "role": "explanation", "text": "Project Cheetah brings the cheetah back to India"},
-           {"id": 5, "role": "reaction", "text": "The minister congratulated the field staff"}]   # never asked
+                                                  signature="jantar mantar", analysis={}))
+    core = {"id": 1, "role": "core", "kind": "event", "verdict": "corroborated", "sources": [], "n_sources": 3,
+            "text": "Delhi Police removed Jantar Mantar Road from the list of protest sites",
+            "time": {"start": "2026-10-12T00:00:00"}}
+    ctx = [{"id": 2, "role": "background", "text": "Jantar Mantar had been a protest site for 33 years"},
+           {"id": 3, "role": "background", "text": "Three women journalists alleged harassment by police at a protest"},
+           {"id": 4, "role": "background", "text": "Police detained activists at Jantar Mantar",
+            "time": {"start": "2026-10-10T00:00:00"}},
+           {"id": 5, "role": "related", "text": "Protest rules apply on the road, not inside the observatory"},
+           {"id": 6, "role": "background", "text": "New venues were announced by police",
+            "time": {"start": "2026-10-14T00:00:00"}},
+           {"id": 7, "role": "reaction", "text": "The leader called the decision unacceptable"}]   # never asked
 
     def payload():
-        return {"established": [dict(core)], "contested": [], "undated": [], "timeline": [],
-                "context": [dict(c, kind="event", verdict="unverified", sources=[]) for c in ctx]}
+        return {"established": [dict(core)], "contested": [], "undated": [], "timeline": [], "news": [1],
+                "context": [dict(c, kind="event", verdict="unverified", sources=[], time=c.get("time")) for c in ctx]}
 
     class Says:
-        """answers[k]: the k-th asking's answer per line text (a default for the rest)."""
+        """answers[k]: the k-th asking's answer per line (first six letters of its text; '*' the rest)."""
         def __init__(self, *answers):
             self.answers, self.prompts = list(answers), []
 
         def call(self, tier, prompt, **kw):
             self.prompts.append(prompt)
             ans = self.answers[min(len(self.prompts), len(self.answers)) - 1]
-            res = [{"n": int(n), "answer": ans.get(t[:6], ans.get("*")) if isinstance(ans, dict) else ans}
-                   for n, t in re.findall(r'^(\d+)\. "(.*)"$', prompt.split("LINES:")[1], re.M)]
+            res = []
+            for n, t in re.findall(r'^(\d+)\. "(.*)"$', prompt.split("LINES:")[1], re.M):
+                a = ans.get(t[:6], ans.get("*")) if isinstance(ans, dict) else ans
+                if a:
+                    res.append({"n": int(n), "answer": a})
             return LLMResult("", {"results": res}, "m", [], 1)
 
     def run(*answers):
         store.exec(update(stories).where(stories.c.id == sid).values(analysis={}))
         p = payload()
         m = Says(*answers)
+        from nishpaksh import belong
         belong.check(store, m, sid, p)
-        return [c["id"] for c in p["context"]], m
-    kept, m = run("connected")
-    assert kept == [2, 3, 4, 5] and len(m.prompts) == 1          # one "connected" settles it: asked once
-    assert run("other news", "connected")[0] == [2, 3, 4, 5]       # one "other news" is not enough
-    kept, m = run({"Kerala": "other news", "*": "connected"}, "other news")
-    assert kept == [3, 4, 5] and "Nepal" not in m.prompts[1].split("LINES:")[1]   # only the doubted line again
-    assert run("other news", "other news")[0] == [5]               # every role on the same bar
-    # answers are kept: nothing asked again
-    p = payload()
-    again = Says("connected")
-    belong.check(store, again, sid, p)
-    assert again.prompts == [] and [c["id"] for c in p["context"]] == [5]
-    # nothing could be asked (no model): everything stays
+        return p, m
+    return sid, payload, Says, run
+
+
+def test_context_line_not_about_the_story_goes_to_also_in_these_reports_not_the_story(store):
+    """Owner, Oct 13 2026: Background of a protest-site story held a harassment complaint and, in a cricket
+    story, a bowler's record. They were "connected" (a fact about a person or place in the story) and unsure
+    meant keep. Now: the line is placed by two answers; "other" (or two answers that differ in kind) moves it to
+    payload["also"], shown as a plain line under the article. Nothing is dropped."""
+    sid, payload, Says, run = _belong_fixture(store)
+    p, m = run("history", "history")
+    by = {i["id"]: i for i in p["context"]}
+    assert by[2]["role"] == "background" and by[2]["slot"] == "history" and by[2]["tag"] == "history"
+    assert p["also"] == [] and len(m.prompts) == 2
+    # the journalists' complaint: two "other" -> Also in these reports; every other line stays
+    p, m = run({"Three ": "other", "*": "history"}, {"Three ": "other", "*": "history"})
+    assert [i["id"] for i in p["also"]] == [3] and 3 not in {i["id"] for i in p["context"]}
+    # answers that differ in KIND are not enough to keep a line in the story: the safe answer is "other"
+    p, _ = run({"Three ": "history", "*": "history"}, {"Three ": "linked", "*": "history"})
+    assert [i["id"] for i in p["also"]] == [3]
+    # reactions are never asked, never moved
+    assert 7 in {i["id"] for i in p["context"]} and 7 not in {i["id"] for i in p["also"]}
+
+
+def test_context_line_is_placed_by_its_answers_and_its_date(store):
+    """History and lead-up are settled by code from the date (within 14 days before the news = lead-up); a
+    'background' line dated AFTER the news is not background (it goes to Related events); 'explains' moves a line
+    to Explained, 'linked' to Related events."""
+    sid, payload, Says, run = _belong_fixture(store)
+    p, _ = run({"Police": "history", "New ve": "history", "*": "explains"},
+                {"Police": "leadup", "New ve": "history", "*": "explains"})
+    by = {i["id"]: i for i in p["context"]}
+    assert by[4]["role"] == "background" and by[4]["slot"] == "leadup"      # history vs lead-up: dated 2 days before
+    assert by[2]["role"] == "explanation" and by[3]["role"] == "explanation"
+    assert by[6]["role"] == "related"                                       # dated after the news
+    p, _ = run("linked", "linked")
+    assert {i["id"]: i["role"] for i in p["context"]}[2] == "related"
+
+
+def test_context_tagging_never_demotes_on_missing_answers(store):
+    """No model, a quota stop, or a model that answers only once: nothing moves (an outage never demotes a
+    line). Answers are kept: nothing is asked again."""
+    from nishpaksh import belong
+    sid, payload, Says, run = _belong_fixture(store)
+    p, m = run({"Three ": "other", "*": "history"}, {})        # the second asking answers nothing
+    assert p["also"] == [] and len(p["context"]) == 6
     store.exec(update(stories).where(stories.c.id == sid).values(analysis={}))
     p = payload()
-    assert belong.check(store, None, sid, p) == 0 and len(p["context"]) == 4
+    belong.check(store, None, sid, p)
+    assert p["also"] == [] and len(p["context"]) == 6
+    p, m = run("history", "history")
+    again = Says("other")
+    p2 = payload()
+    belong.check(store, again, sid, p2)
+    assert again.prompts == [] and p2["also"] == []
+
+
+def test_background_paragraphs_are_one_slot_and_one_topic(store):
+    """The plan (plan.py): Background = the subject's history, then the steps just before the news, each oldest
+    first, never in one paragraph; and a paragraph is one topic whatever the time order says."""
+    from nishpaksh import plan
+    def it(i, t, slot, topic, start):
+        return {"id": i, "role": "background", "text": t, "kind": "event", "verdict": "corroborated", "slot": slot,
+                "topic": topic, "time": {"start": start}}
+    items = [it(1, "Jantar Mantar was designated a protest site in 1993", "history", 0, "1993-01-01T00:00:00"),
+             it(2, "The NGT banned protests at Jantar Mantar in 2017", "history", 0, "2017-10-05T00:00:00"),
+             it(3, "The Supreme Court set aside the ban in 2018", "history", 0, "2018-07-23T00:00:00"),
+             it(4, "A panel was set up by the Home Ministry", "history", 1, "2018-08-01T00:00:00"),
+             it(5, "Police detained activists on 10 October", "leadup", 2, "2026-10-10T00:00:00")]
+    sec = {i["id"]: "background" for i in items}
+    pl = plan.build(items, sec)
+    ids = [p.ids for p in pl]
+    assert ids == [[1, 2, 3], [4], [5]]            # history before lead-up; topic 1 apart from topic 0
+    topic = {i["id"]: i["topic"] for i in items}
+    assert all(len({topic[x] for x in p.ids}) == 1 for p in pl)
+    # no topics (the grouping call failed): the old word-based grouping, nothing breaks
+    for i in items:
+        i.pop("topic")
+    assert sorted(x for p in plan.build(items, sec) for x in p.ids) == [1, 2, 3, 4, 5]
+
+
+def test_also_in_these_reports_lines_get_colour_and_sources_but_no_paragraph(store):
+    """belong.place's `also` lines are shown as plain items (`other_coverage`) with the same colour and source
+    numbers as the essay, are not in `covers` (the essay is not asked to carry them) and not in the completeness bar."""
+    from nishpaksh import narrative
+    core = {"id": 1, "role": "core", "kind": "event", "verdict": "corroborated", "n_sources": 3, "text": "The road was closed",
+            "sources": [{"url": "http://a/1", "outlet": "A"}], "minor": False}
+    other = {"id": 9, "role": "background", "kind": "event", "verdict": "unverified", "n_sources": 1,
+             "text": "A bowler holds the wicket record", "sources": [{"url": "http://b/2", "outlet": "B"}],
+             "tag": "other", "time": None}
+    payload = {"also": [other], "sources": [{"url": "http://a/1", "outlet": "A"}, {"url": "http://b/2", "outlet": "B"}],
+               "established": [core], "contested": [], "undated": [], "timeline": [], "context": [], "news": [1]}
+    para = [[{"text": "The road was closed.", "ids": [1]}]]
+    nar = narrative._finish(payload, para, [], {1: core}, {"model": "m", "rejected": 0})
+    assert [x["text"] for x in nar["other_coverage"]] == ["A bowler holds the wicket record"]
+    assert nar["other_coverage"][0]["sources"] and nar["other_coverage"][0]["class"]
+    assert 9 not in nar["covers"] and narrative.essay_ok(dict(nar, model="m"), payload)
 
 
 def test_compound_statements_split_into_single_facts_story_13970(store):
@@ -4196,3 +4283,18 @@ def test_a_title_with_of_is_removed_whole_or_not_at_all_when_a_person_is_named_a
     assert titles.title_before("Rajya Sabha Leader of the Opposition Mallikarjun Kharge", "Mallikarjun Kharge") \
         == "Rajya Sabha Leader of the Opposition"
     assert titles.title_before("said in Delhi. Chief Minister Atishi", "Atishi") == "Chief Minister"
+
+
+def test_hindi_translation_is_checked_before_it_is_kept():
+    """Ported from booktrans.py's output_problem: an empty or echoed string, English with no Devanagari, or a
+    translation that changes a number is rejected (not cached, not published as translated)."""
+    from nishpaksh.compose import translation_problem as bad
+    src = "Delhi Police designated three new protest sites on 12 October at a cost of Rs 66,080"
+    good = "\u0926\u093f\u0932\u094d\u0932\u0940 \u092a\u0941\u0932\u093f\u0938 \u0928\u0947 12 \u0905\u0915\u094d\u0924\u0942\u092c\u0930 \u0915\u094b \u0924\u0940\u0928 \u0928\u090f \u0938\u094d\u0925\u0932 \u0924\u092f \u0915\u093f\u090f, \u0916\u0930\u094d\u091a Rs 66,080"
+    assert bad(src, good) is None
+    assert bad(src, "") == "empty" and bad(src, src) == "echoed the source"
+    assert bad(src, "Police named three sites on 12 October, Rs 66,080") == "no Devanagari"
+    assert bad(src, good.replace("66,080", "60,086")) == "numbers changed"
+    assert bad(src, good.replace("12", "\u0967\u0968")) is None        # Devanagari numerals are the same number
+    assert bad("II", "II") is None and bad("Ramlila Ground", "Ramlila Ground") is None   # short labels may be identical
+

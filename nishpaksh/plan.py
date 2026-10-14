@@ -40,7 +40,8 @@ class Rule:
 
 RULES: dict[str, Rule] = {
     "news": Rule("given", "none", "", "the lead: what makes this a story today, with who, where and when"),
-    "background": Rule("time", "subject", "when", "how it came about: earlier events, each with its own time"),
+    "background": Rule("time", "subject", "when", "the past of the story's own subject, oldest first: its history, then the "
+                                                   "steps just before the news; each paragraph one subject, with its own time"),
     "explained": Rule("given", "subject", "term", "what a term, rule, post or finding means"),
     "happened": Rule("time", "subject", "when", "what happened, in time order"),
     "numbers": Rule("given", "subject", "", "figures: each with what it measures"),
@@ -147,12 +148,24 @@ def _cluster(units: list[list[dict]], words) -> list[list[dict]]:
     return out
 
 
-def _pack(units: list[list[dict]], words, strict: bool = True) -> list[list[dict]]:
+def _pack(units: list[list[dict]], words, strict: bool = True, topical: bool = False) -> list[list[dict]]:
     """Units into paragraphs: closed at MAX_STATEMENTS, or when the next unit is not about what the paragraph is
     about. `strict` (every section but one speaker's own argument): units are first grouped by subject, a unit
     joins a paragraph only if it shares a subject with the unit before it, and a lone statement stays alone rather
     than join a paragraph it has nothing to do with. Not strict (a speaker's argument): the earlier rule, a
-    paragraph changes subject after MIN_STATEMENTS statements."""
+    paragraph changes subject after MIN_STATEMENTS statements. `topical`: the units are already ONE topic (the
+    grouping call, belong.assign_topics), so a paragraph closes only at MAX_STATEMENTS."""
+    if topical:
+        paras_t: list[list[dict]] = []
+        cur_t: list[dict] = []
+        for u in units:
+            if cur_t and len(cur_t) + len(u) > MAX_STATEMENTS:
+                paras_t.append(cur_t)
+                cur_t = []
+            cur_t += u
+        if cur_t:
+            paras_t.append(cur_t)
+        return paras_t
     if strict:
         units = _cluster(units, words)
     paras: list[list[dict]] = []
@@ -216,16 +229,34 @@ def build(items: list[dict], sec: dict[int, str]) -> list[Para]:
                 for i in ordered:
                     labels.setdefault(i.get("related_event") or None, []).append(i)
                 chunks = [c for c in labels.values()]
+            elif key == "background":
+                # the subject's history first, then the steps just before the news (belong.place sets `slot`);
+                # a paragraph never mixes the two, and both are oldest first
+                chunks = [[i for i in ordered if (i.get("slot") or "history") == s_] for s_ in ("history", "leadup")]
+                chunks = [c for c in chunks if c]
             else:
                 chunks = [ordered]
             for chunk in chunks:
-                for group in _pack(_units(chunk), words):
-                    made.append(Para(0, key, [i["id"] for i in group]))
+                for part, topical in _by_topic(chunk):
+                    for group in _pack(_units(part), words, topical=topical):
+                        made.append(Para(0, key, [i["id"] for i in group]))
         _open(made, key, {i["id"]: i for i in mine})
         plan += made
     for n, p in enumerate(plan, 1):
         p.n = n
     return plan
+
+
+def _by_topic(chunk: list[dict]) -> list[tuple[list[dict], bool]]:
+    """A chunk split by topic (belong.assign_topics): one subject per paragraph, whatever the time order says.
+    [(statements, topical)]; without topics (the grouping call failed) the chunk stays whole and is grouped by
+    shared words as before. Topics come in the order their earliest statement comes in the chunk."""
+    if not any(i.get("topic") is not None for i in chunk):
+        return [(chunk, False)]
+    parts: dict = {}
+    for i in chunk:
+        parts.setdefault(i.get("topic") if i.get("topic") is not None else ("alone", i["id"]), []).append(i)
+    return [(p_, True) for p_ in parts.values()]
 
 
 def _say(items: list[dict], words) -> list[Para]:

@@ -218,7 +218,8 @@ def link_candidate(store: Store, sid: int) -> None:
 
 def _all_items(p: dict) -> list[dict]:
     return ([i for tier in p.get("timeline") or [] for i in tier] + list(p.get("undated") or [])
-            + list(p.get("established") or []) + list(p.get("contested") or []) + list(p.get("context") or []))
+            + list(p.get("established") or []) + list(p.get("contested") or []) + list(p.get("context") or [])
+            + list(p.get("also") or []))
 
 
 def _core_major(p: dict) -> list[dict]:
@@ -341,7 +342,8 @@ def mature(store: Store, sid: int) -> bool:
                 i["verdict"] = v
                 changed = True
             by_id[i.get("id")] = i
-        for para in (p.get("narrative") or {}).get("paragraphs") or []:
+        nar_ = p.get("narrative") or {}
+        for para in (nar_.get("paragraphs") or []) + [nar_.get("other_coverage") or []]:     # + the "Also in these reports" lines
             for s in para:
                 ranks = [RANK.get(shade(by_id.get(x) or {}), 2) for x in s.get("ids") or [] if x in by_id]
                 if ranks and s.get("class") != CLASS[max(ranks)]:

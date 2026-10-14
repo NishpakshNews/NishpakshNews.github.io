@@ -1334,3 +1334,22 @@ the design is now in `site/index.html` (below); `live/test.html` stays a plain t
   (tested with a fallback face, wider than Hind).
 
 - **The guides open other articles by themselves (owner, Oct 13 2026):** the article's guide and the recap's guide both have a second function, `open_article(story_id)` (`brief.ts` `OPEN_ARTICLE`, declared in `toolsFor` for both kinds). The recap's lines already carry every story's number (`s<id>`); the article's guide gets a list `OTHER STORIES TODAY` (`[a<id>] how long ago | outlets | headline`, newest 40 of today's IST day, `otherstories.ts`, from the site's feed file `<lang>.json` with a 2 s timeout; no list = it is told it cannot open others). The function is an ordinary blocking one, never answered SILENT: `talk.js` `LiveProtocol._tools` hands it to the page (`on.open` = `openArticle`), which asks `live-token` with `{open: id, lang}` (public text, no login check, no count, `articleDigest(.., 80, "OPENED ARTICLE")`), keeps it per conversation (never fetched twice), and sends the text back as the answer; a failure is told to the guide in words. While it loads, a recorded filler line (`filler-<Voice>-<lang>-1..4.m4a`, words in `live/intro.json` `filler_en` / `filler_hi`, made by `python -m nishpaksh.live_intro --kind filler`, or Actions -> live-intro with kind `filler`; 80 files, 1 speech call each) plays and the guide's answer follows it; no recording for a voice = silence until the answer. The card shows "Reading: <headline>" (`TK.reading`, `onArticle`). The watchdog does not nudge while an article is being fetched. Tests: `tests/live/opentalk.test.mjs`, `tests/live/otherstories.test.mjs`, `tests/talk_ui/flow_reading.cjs`, `tests/test_live_intro.py`. NOT verified on the real model: that it calls `open_article` only for depth questions, the total delay, and that the Live model accepts a function answer arriving a second or two after the call. Deploy: `live-token`, publish the site, then run `live-intro` with kind `filler`. A native Hindi reader should check the Hindi filler lines.
+
+## Context placement: "Also in these reports" (owner, Oct 13 2026)
+The Background of a protest-site story held a harassment complaint, a cricket story's Background a bowler's record,
+and paragraphs mixed unrelated facts. Rebuilt, keeping the Oct 8 rule (never lose something important) by DEMOTING, not dropping:
+- `belong.check`: every background / related / explanation line gets one fixed-choice answer (history, lead-up, explains,
+  linked, other) against the story's news, asked twice (second time reversed), cached in `analysis.context_tags`.
+  Agreeing answers decide; answers differing in KIND decide `other` (the safe answer); fewer than two answers (quota,
+  no model) move nothing. history vs lead-up is settled by CODE from the date (within 14 days before the news = lead-up).
+  A "background" line dated after the news becomes a related event. Reactions and "what next" are never asked.
+- `other` lines go to `payload["also"]`, not the writer, not the completeness bar. `narrative._finish` turns them into
+  `narrative.other_coverage` (plain lines with colour and source numbers); the site shows them in a collapsed
+  "Also in these reports" under the article, one line each, never a paragraph. No topic labels yet (decided: none).
+- Background slots (`plan.py`): history first, then lead-up, each oldest first, never in one paragraph.
+- One subject per paragraph: `belong.assign_topics` (one `dupes.topics` call, cached in `analysis.topic_groups`) puts a
+  `topic` on every statement; `plan._by_topic` splits a section's chunk by topic and `_pack(topical=True)` closes a
+  paragraph only at MAX_STATEMENTS. No topics (call failed): the word-based `_cluster` as before.
+- Hindi: `compose.translation_problem` (ported from booktrans.py's output_problem) rejects empty, echoed, non-Devanagari
+  and number-changed translations; they are not cached.
+- Only new articles get this: published ones are closed.
