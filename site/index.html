@@ -960,7 +960,7 @@ async function newerThanFeed(l, newestMs) {
   const rows = await api(`published?select=${ROW_SELECT}&updated_at=gt.${since}&order=updated_at.desc&limit=30`, 4000);
   return rows.filter(r => r.pe && r.pe.length).map(r => rowCard(r, l));
 }
-async function loadCards(l) {
+async function loadCards(l, feedOnly = false) {      // feedOnly (the refresh button): never ask the database for newer rows
   if (cardCache[l]) return cardCache[l];
   let stories = null;
   try {
@@ -977,7 +977,7 @@ async function loadCards(l) {
     // whatever the database has newer than the feed (see newerThanFeed); a failure only means the feed's view
     try {
       const newest = Math.max(...stories.map(s => utcMs(s.at)));
-      const extra = await newerThanFeed(l, newest);
+      const extra = feedOnly ? [] : await newerThanFeed(l, newest);
       if (extra.length) {
         const ids = new Set(extra.map(c => String(c.id)));
         stories = extra.concat(stories.filter(s => !ids.has(String(s.id))));
@@ -1152,9 +1152,9 @@ track.addEventListener("error", e => {
 }, true);
 track.addEventListener("pointerdown", e => { const a = e.target.closest("a.card"); if (a) loadStory(a.dataset.id); }, {passive: true});
 
-async function showDeck(keepId) {
+async function showDeck(keepId, feedOnly = false) {
   try {
-    pool = await loadCards(lang);
+    pool = await loadCards(lang, feedOnly);
     cards = sectionCards();
     renderDeck(keepId);
     buildBar();
@@ -1934,7 +1934,7 @@ async function manualRefresh() {
     const keep = cards[current] && cards[current].id;
     const had = cardCache[lang] && cardCache[lang].length ? newestAt(cardCache[lang]) : 0;   // what the reader has been shown
     delete cardCache.en; delete cardCache.hi;
-    const ok = await showDeck(keep);
+    const ok = await showDeck(keep, true);      // the feed alone: the tooltip does not depend on Supabase
     if (ok && had) {
       const isNew = newestAt(cardCache[lang]) > had;
       outcome = isNew ? "new" : "none";
