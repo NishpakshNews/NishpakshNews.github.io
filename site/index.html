@@ -1353,8 +1353,8 @@ function ddWave(d, body, open, pt) {
   const setPos = getComputedStyle(host).position === "static";
   if (setPos) host.style.position = "relative";
   host.classList.add("rip-host");
-  let left = 3;
-  for (let k = 0; k < 3; k++) {
+  let left = 2;
+  for (let k = 0; k < 2; k++) {
     const el = document.createElement("i");
     el.className = "rip";
     el.style.cssText = `width:${size}px;height:${size}px;margin:${-size / 2}px 0 0 ${-size / 2}px;left:${x}px;top:${y}px;opacity:0`;
