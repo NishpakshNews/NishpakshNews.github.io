@@ -1108,6 +1108,16 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   numbers ("Fourteen", "A dozen"), shown as written. Every `.sent` now carries its `data-k` from `essayBody` (figures can be
   shown in another order than stored); `markSentences` keeps a key already given. `sw.js` np-main-48.
 
+- **The home card in the page's order; headline and lead edge to edge (owner, Oct 15 2026).** The card's text was the first 9
+  sentences in STORED order, so articles written before the new section order opened with Explained on the card while the page
+  showed What happened. `feed.page_order` (the Python twin of the site's `pageOrder` / `sectionGroups`, same `SEC_ORDER`) and
+  `feed._card_text(paragraphs, keys)` now take the paragraphs in the page's order; the Hindi card uses its own section keys, else
+  the English ones. The site's fallback `cardText(paras, keys)` does the same (`ROW_SELECT` reads `sk` = section_keys).
+  `FEED_VERSION` 4 rewrites every card at the next export. The card's headline and text and the article's headline and lead are
+  justified like the section cards (last line as it falls; headlines never hyphenated; card and article justify the headline
+  alike so its lines break the same while it glides). Seen in the browser: a short English headline at 27px gets wide gaps
+  between words. `sw.js` np-main-50. Test: `tests/test_feed_order.py`.
+
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →
 retract headline-only reads → Tavily reads blocked pages → wire copies → grouping (`stories.py`) →

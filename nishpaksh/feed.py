@@ -59,11 +59,34 @@ def bar_counts(paragraphs: list) -> dict[str, int]:
     return c
 
 
-def _card_text(paragraphs: list, limit: int = CARD_SENTENCES) -> list[list[dict]]:
-    """The opening of the article for the card: whole paragraphs until `limit` sentences."""
+SEC_ORDER = ["news", "background", "happened", "say", "numbers", "explained", "next", "related"]
+
+
+def page_order(paragraphs: list, keys: list | None) -> list[int]:
+    """Paragraph indices in the order the article page shows them (the site's pageOrder / sectionGroups, owner
+    Oct 15 2026): grouped by section in SEC_ORDER, whatever order the article was written in. Display only: the
+    stored paragraphs keep their indices."""
+    n = len(paragraphs or [])
+    if not keys:
+        return list(range(n))
+    groups: dict[str, list[int]] = {}
+    cur = "happened"
+    for k in range(n):
+        cur = (keys[k] if k < len(keys) else None) or cur
+        groups.setdefault(cur, []).append(k)
+    known = [k for k in SEC_ORDER if k in groups]
+    rest = [k for k in groups if k not in SEC_ORDER]
+    return [i for key in known + rest for i in groups[key]]
+
+
+def _card_text(paragraphs: list, keys: list | None = None, limit: int = CARD_SENTENCES) -> list[list[dict]]:
+    """The opening of the article for the card, in the page's section order: whole paragraphs until `limit`
+    sentences (owner, Oct 15 2026: the card showed the stored order, the page the new one)."""
+    paragraphs = paragraphs or []
     out: list[list[dict]] = []
     n = 0
-    for para in paragraphs or []:
+    for k in page_order(paragraphs, keys):
+        para = paragraphs[k]
         if n >= limit:
             break
         keep = []
@@ -114,12 +137,14 @@ def card(row: dict, lang: str) -> dict | None:
     pe = row.get("payload_en") or {}
     p = (row.get("payload_hi") if lang == "hi" else None) or pe
     paras = (p.get("narrative") or {}).get("paragraphs") or []
+    # the Hindi page is a copy of the English one, paragraph for paragraph: its own keys, else the English ones
+    keys = (p.get("narrative") or {}).get("section_keys") or (pe.get("narrative") or {}).get("section_keys") or []
     if not ((pe.get("narrative") or {}).get("paragraphs")):
         return None                       # a page still waiting for its first essay is not shown
     head = (row.get("headline_hi") if lang == "hi" else None) or row.get("headline_en") or p.get("headline")
     return {"id": row["story_id"], "at": row["updated_at"].isoformat(timespec="seconds"),
             "thread": pe.get("thread") or row["story_id"], "ongoing": bool(pe.get("parents")),
-            "h": head, "paras": _card_text(paras),
+            "h": head, "paras": _card_text(paras, keys),
             "bar": bar_counts((pe.get("narrative") or {}).get("paragraphs")),
             "n": (pe.get("counts") or {}).get("independent_sources") or 0,
             "cat": normalize(pe.get("category")),   # the site's sections, keys (labels in en.json / hi.json)
@@ -133,7 +158,7 @@ def words(paragraphs: list) -> int:
 
 
 MANIFEST = "manifest.json"
-FEED_VERSION = 3          # part of every article's stamp: raising it rewrites every article file once
+FEED_VERSION = 4          # part of every article's stamp: raising it rewrites every article file once
 NOT_SPEAKERS = {"", "article", "-", "none", "unknown", "reporter", "the article"}
 
 

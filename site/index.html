@@ -1226,6 +1226,12 @@
   #sheet[data-spot] canvas.wash { opacity: 0; }
   .wcard .s, .wcard .tile .s { background: transparent; box-shadow: none; padding: 0; border-radius: 0; }
   #rise .paper.essay:not(.lead) p, #rise .paper.quote p { text-align: justify; text-align-last: start; -webkit-hyphens: auto; hyphens: auto; }
+  /* Edge to edge on the home cards and the article's top too (owner, Oct 15 2026): the card's headline and text, the
+     article's headline and lead, justified like the section cards, the last line left as it falls. Headlines are never
+     hyphenated (a broken word reads badly in large type); the card and the article justify the headline alike, so its
+     lines still break the same while it glides from one to the other. */
+  .card h2, .hbox h1 { text-align: justify; text-align-last: start; -webkit-hyphens: manual; hyphens: manual; }
+  .card .text p, #rise .paper.lead p { text-align: justify; text-align-last: start; -webkit-hyphens: auto; hyphens: auto; }
   @media (prefers-reduced-motion: reduce) { canvas.wash { transition: none; } }
 </style>
 </head>
@@ -1427,9 +1433,10 @@ let feedNonce = "";           // set by the refresh button: a new address, so no
 const cardCache = {};          // lang -> every card (one per thread, newest first); the deck shows a section's first MAX_CARDS
 const storyCache = new Map();  // id -> Promise<row|null>
 
-function cardText(paras, limit = 9) {       // as nishpaksh/feed.py _card_text
+function cardText(paras, keys, limit = 9) {       // as nishpaksh/feed.py _card_text: in the page's section order
   const out = []; let n = 0;
-  for (const para of paras || []) {
+  for (const k of pageOrder({paragraphs: paras || [], section_keys: keys || []})) {
+    const para = paras[k];
     if (n >= limit) break;
     const keep = [];
     for (const s of para || []) {
@@ -1456,14 +1463,14 @@ function utcMs(ts) { return Date.parse(/Z|[+-]\d\d:?\d\d$/.test(ts) ? ts : ts + 
 const knownAt = new Map();     // story id -> the `at` of its card: part of its file's address, so a story is never read
                                // from a copy somebody's request left in a cache (and a not-yet-published 404 is not reused)
 const ROW_SELECT = "story_id,updated_at,headline_en,headline_hi,pe:payload_en->narrative->paragraphs," +
-  "ph:payload_hi->narrative->paragraphs,counts:payload_en->counts,thread:payload_en->thread," +
+  "ph:payload_hi->narrative->paragraphs,sk:payload_en->narrative->section_keys,counts:payload_en->counts,thread:payload_en->thread," +
   "parents:payload_en->parents,cat:payload_en->category,places:payload_en->places,people:payload_en->people";
 function rowCard(r, l) {       // a card from a database row (as nishpaksh/feed.py card())
   const words = (r.pe || []).reduce((n, para) => n + (para || []).reduce((m, s) => m + String(s.text || "").split(/\s+/).filter(Boolean).length, 0), 0);
   return {
     id: r.story_id, at: new Date(utcMs(r.updated_at)).toISOString().slice(0, 19), thread: r.thread || r.story_id,
     ongoing: !!(r.parents && r.parents.length), h: (l === "hi" && r.headline_hi) || r.headline_en,
-    paras: cardText(l === "hi" && r.ph && r.ph.length ? r.ph : r.pe), bar: barCounts(r.pe),
+    paras: cardText(l === "hi" && r.ph && r.ph.length ? r.ph : r.pe, r.sk), bar: barCounts(r.pe),
     n: (r.counts || {}).independent_sources || 0, cat: normCat(r.cat), w: words,
     pl: r.places || [], pp: (r.people || []).slice(0, 6)};
 }
