@@ -35,7 +35,7 @@
 <link rel="preconnect" href="https://raw.githubusercontent.com" crossorigin>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Rozha+One&family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Noto+Serif+Devanagari:wght@600&family=Tiro+Devanagari+Hindi&family=Hind:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Rozha+One&family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Noto+Serif+Devanagari:wght@600&family=Tiro+Devanagari+Hindi&family=Nunito:wght@800&family=Hind:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   /* nishpaksh_version_1.0 (owner, Oct 8 2026): one card at a time, the card grows into the article.
      Design approved on the canvas as trial_version_0.6; version 1.1 (indigo, serif headlines, upright greeting). Served at the main address since Oct 8 2026; /v1/ redirects here. */
@@ -139,7 +139,7 @@
   .chrome { position: sticky; top: 0; z-index: 3; margin: 0 calc(-1 * max(14px, env(safe-area-inset-left))); opacity: 0;
             padding: calc(max(14px, env(safe-area-inset-top)) + 7px) max(14px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left));
             transition: background-color 240ms ease, box-shadow 240ms ease; }
-  .chrome.stuck { background: rgba(236,236,233,0.88); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: 0 1px 0 rgba(0,0,0,0.06); }
+  .chrome.stuck { background: rgba(244,244,241,0.94); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: 0 1px 0 rgba(0,0,0,0.06); }
   .crow { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; height: 44px; margin-bottom: 10px; }
   .crow > :first-child { justify-self: start; }
   .crow > :last-child { justify-self: end; }
@@ -234,12 +234,27 @@
            background: #1f2550; color: #fff; font-size: 14px; font-weight: 600; padding: 10px 16px; border-radius: 999px; pointer-events: none;
            box-shadow: 0 6px 18px rgba(22,26,56,0.25); transition: opacity 200ms ease, transform 260ms var(--ease); }
   .toast.on { opacity: 1; transform: translate(-50%, 0); }
-  /* the refresh button's tooltip (owner, Oct 14 2026): short, in the header row beside the button (never over a card),
-     white like the menu button so it reads on the indigo, shown again on every press */
-  .rtip { position: fixed; z-index: 20; background: #fff; color: #1f2550; font-size: 13px; font-weight: 700; line-height: 1;
-          white-space: nowrap; padding: 8px 12px; border-radius: 999px; pointer-events: none; opacity: 0; transform: translateX(-6px);
-          box-shadow: 0 4px 14px rgba(22,26,56,0.28); transition: opacity 180ms ease, transform 220ms var(--ease); }
-  .rtip.on { opacity: 1; transform: translateX(0); }
+  /* the refresh button's answer when nothing is new (owner, Oct 15 2026; canvas "pop + open", option 1): a small indigo pill at
+     the bottom centre of the card, never over the header or the logo. A tick dot springs up, opens into "Up to date",
+     holds, and fades; shown again on every press (about 3 s in all). */
+  .rtip { position: fixed; left: 50%; bottom: 96px; z-index: 20; display: flex; align-items: center; height: 52px; padding: 0 24px;
+          border-radius: 999px; background: #1f2550; color: #fff; font: 800 18px/1 "Nunito", var(--body); white-space: nowrap; pointer-events: none;
+          opacity: 0; transform: translate(-50%, 18px); box-shadow: 0 8px 22px rgba(22,26,56,0.28); }
+  .rtip .tx { display: block; overflow: hidden; max-width: 0; margin-left: 0; opacity: 0; }
+  .rtip svg { flex: none; display: block; }
+  .rtip.on { animation: rtpop 3s both; }
+  .rtip.on .tx { animation: rtopen 3s both; }
+  @keyframes rtpop { 0% { opacity: 0; transform: translate(-50%, 18px) scale(.6); padding: 0 16px; }
+                     7% { opacity: 1; transform: translate(-50%, -4px) scale(1.06); }
+                     11% { transform: translate(-50%, 0) scale(1); padding: 0 16px; }
+                     26% { padding: 0 24px; }
+                     90% { opacity: 1; transform: translate(-50%, 0); padding: 0 24px; }
+                     100% { opacity: 0; transform: translate(-50%, 6px); padding: 0 24px; } }
+  @keyframes rtopen { 0%, 12% { max-width: 0; margin-left: 0; opacity: 0; }
+                      26%, 90% { max-width: 200px; margin-left: 9px; opacity: 1; }
+                      100% { max-width: 200px; margin-left: 9px; opacity: 0; } }
+  @keyframes rtfade { 0% { opacity: 0; } 9%, 91% { opacity: 1; } 100% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .rtip.on { animation: rtfade 3s both; transform: translate(-50%, 0); } .rtip.on .tx { animation: none; max-width: 200px; margin-left: 9px; opacity: 1; } }
   #sheet.open .hbox .meta { opacity: .92; }
   #sheet.anim .hbox .meta { transition: opacity 260ms ease 260ms; }
   .rise { opacity: 0; transform: translateY(24px); }
@@ -574,6 +589,38 @@
   .pinfo b { width: 28px; height: 28px; border-radius: 50%; background: #fff; box-shadow: 0 2px 0 var(--edge); color: #2f3a72; font-family: var(--head); font-style: italic;
              font-weight: 600; font-size: 17px; display: flex; align-items: center; justify-content: center; }
   .pin .gdef.on { margin: 4px 2px; font-size: 12.5px; }
+  /* the key card (owner, Oct 15 2026, canvas "A2+ bar + pills", option 1): under the headline the colour bar, its title and its
+     legend are one white card: "Backed by independent outlets" + (i), one unbroken bar, then a tinted pill per colour (symbol,
+     name, count; tap to light just those sentences). The pinned copy is the same thing made smaller: solid white, hard edge. */
+  .kcard { position: relative; margin: 12px 0 0; padding: 4px 12px 12px; }
+  .kcard::before { content: ""; position: absolute; inset: 0; background: var(--card); border-radius: 20px; box-shadow: 0 3px 0 var(--edge); }
+  .kcard > * { position: relative; }
+  .kcard:has(#abar:empty) { display: none; }
+  .khead { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding-left: 4px; }
+  .ktitle { font-family: "Nunito", var(--body); font-size: 15.5px; font-weight: 800; color: var(--ink); line-height: 1.3; }
+  .kinfo { flex: none; width: 44px; height: 44px; padding: 0; border: 0; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .kinfo b, .pinfo b { width: 32px; height: 32px; border-radius: 50%; background: var(--ground); box-shadow: none; color: #2f3a72; font-family: var(--head); font-style: italic;
+                       font-weight: 600; font-size: 18px; display: flex; align-items: center; justify-content: center; }
+  .pinfo b { width: 28px; height: 28px; font-size: 17px; }
+  .kcard .abar { margin: 0 4px; height: 12px; gap: 3px; }
+  .kcard .gsum { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .kchips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .kpill { --c: var(--bar-e); --t: var(--est); display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 13px 0 8px; border: 0; border-radius: 99px; cursor: pointer;
+           font: inherit; font-size: 13px; font-weight: 600; background: color-mix(in srgb, var(--c) 14%, #fff); color: var(--t);
+           transition: background-color 200ms ease, color 200ms ease, transform 160ms ease; }
+  .kpill .gg { width: 18px; height: 18px; font-size: 12px; }
+  .kpill:active { transform: scale(0.97); }
+  .kpill.on { background: var(--c); color: #fff; }
+  .kpill.on .gg { background: #fff; color: var(--c); }
+  #sheet:not(.open) .kcard::before, #sheet:not(.open) .khead, #sheet:not(.open) .kbody { opacity: 0; }
+  #sheet.anim.open .kcard::before, #sheet.anim.open .khead, #sheet.anim.open .kbody { transition: opacity 280ms ease 480ms; }
+  #sheet.anim:not(.open) .kcard::before, #sheet.anim:not(.open) .khead, #sheet.anim:not(.open) .kbody { transition: opacity 110ms ease; }
+  .pin { background: #F4F4F1; -webkit-backdrop-filter: none; backdrop-filter: none; border-radius: 0 0 20px 20px; padding-top: 10px; padding-bottom: 8px;
+         box-shadow: 0 3px 0 var(--edge), 0 12px 24px rgba(22,26,56,0.10); }
+  .pbar { height: 8px; gap: 3px; margin-bottom: 6px; }
+  .pchip { min-height: 40px; border-radius: 99px; background: color-mix(in srgb, var(--c) 16%, #fff); }
+  .pchip.on { background: var(--c); }
+  .pchip .gg { width: 16px; height: 16px; font-size: 10.5px; }
   .glabel { margin-top: 10px; font-size: 13px; font-weight: 600; color: var(--est); line-height: 1.3; }
   .glabel.none { color: var(--muted); }
   .card .glabel + .foot { margin-top: 6px; }
@@ -941,7 +988,7 @@
       </div>
       <div class="rail" id="rail" aria-label="Sections of this article"></div><div class="readline"><i id="readfill"></i></div><div class="pin" id="pin" aria-label="Colour key"></div></div>
       <div class="hbox" id="hbox"><div class="layer brand"></div><div class="hpic" id="hpic"></div><h1 id="sheet-h"></h1><div class="meta"><span id="sheet-meta"></span><button type="button" class="share" id="share" aria-label="Share"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button></div></div>
-<div class="abar" id="abar" aria-hidden="true"></div>
+<div class="kcard" id="kcard"><div class="khead" id="khead"></div><div class="abar" id="abar" aria-hidden="true"></div><div class="kbody" id="kbody"></div></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
       <div class="rise" id="rise"></div>
     </div>
@@ -1016,7 +1063,7 @@ const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;      // the long names
 const GLYPH = {established: "✓", developing: "…", partial: "½", single: "1", disputed: "≠", false: "✕", unverified: "?"};
 const BAR2ST = {e: "established", v: "developing", p: "partial", o: "single", d: "disputed", r: "false", u: "unverified"};
 Object.assign(T.en, {
-  howTo: "How to read the colours", gsum: (e, n) => `${e} of ${n} statements confirmed`,
+  howTo: "How to read the colours", backed: "Independent sources, in colour", gsum: (e, n) => `${e} of ${n} statements confirmed`,
   kShort: {established: "Confirmed", developing: "Developing", unverified: "Unverified", partial: "Partly confirmed", single: "One report", disputed: "Disputed", false: "False"},
   kDef: {established: "3+ independent outlets, 2+ original sources, nobody denies it, and it has held for 6 hours.",
          developing: "Meets the confirmed rule but has not held for 6 hours yet.",
@@ -1037,7 +1084,7 @@ Object.assign(T.en, {
     h3: "Tap a colour to see why.", p3: "The key sits under every headline and stays pinned as you read. Tap a colour to light up just those sentences."}
 });
 Object.assign(T.hi, {
-  howTo: "रंग कैसे पढ़ें", gsum: (e, n) => `${n} में से ${e} कथन पुष्ट`,
+  howTo: "रंग कैसे पढ़ें", backed: "स्वतंत्र स्रोत, रंगों में", gsum: (e, n) => `${n} में से ${e} कथन पुष्ट`,
   kShort: {established: "पुष्ट", developing: "विकसित", unverified: "अपुष्ट", partial: "आंशिक पुष्टि", single: "एक ही रिपोर्ट", disputed: "विवादित", false: "असत्य"},
   kDef: {established: "कम से कम 3 स्वतंत्र समाचार माध्यम, 2 मूल स्रोत, किसी ने खंडन नहीं किया, और 6 घंटे से टिका हुआ।",
          developing: "पुष्ट की शर्तें पूरी हैं, पर अभी 6 घंटे नहीं हुए।",
@@ -1405,7 +1452,7 @@ function alsoHtml(nar, t) {
   const names = Object.fromEntries((nar.sources || []).map(s => [s.n, s.outlet]));
   const link = a => `<a href="#src-${a}" data-src="${a}" title="${esc(names[a] || "")}">${a}</a>`;
   const sup = x => { const r = ranges(x.sources || []).map(([a, b]) => b === a ? link(a) : `${link(a)}–${link(b)}`).join(","); return r ? `<sup>${r}</sup>` : ""; };
-  const rows = items.map(x => `<li><span class="s ${esc(cls(x.class))}">${esc(x.text)}</span>${sup(x)}</li>`).join("");
+  const rows = items.map(x => `<li><span class="s ${esc(cls(x.class))}">${esc(x.text)}${sup(x)}</span></li>`).join("");
   return `<details class="also dd"><summary class="sechead"><span>+</span><h3>${esc(t.also || "Also in these reports")}</h3></summary>` +
          `<div class="dd-body"><div class="paper essay"><p class="alsonote">${esc(t.alsoNote || "")}</p><ul class="alsolist">${rows}</ul></div></div></details>`;
 }
@@ -1415,11 +1462,12 @@ function essayBody(nar, t) {
   const sup = x => { const r = ranges(x.sources || []).map(([a, b]) => b === a ? link(a) : `${link(a)}–${link(b)}`).join(","); return r ? `<sup>${r}</sup>` : ""; };
   const body = x => {
     const tag = x.class === "false" ? `<span class="ftag">${esc(t.falseTag)}</span>` : "";
+    const sp = sup(x);   // the number goes inside the last coloured span, so the wash runs under it
     return tag + (x.parts && x.parts.length > 1
-      ? x.parts.map(p => `<span class="s ${esc(cls(p.class))}">${esc(p.text)}</span>`).join(" ")
-      : `<span class="s ${esc(cls(x.class))}">${esc(x.text)}</span>`);
+      ? x.parts.map((p, i) => `<span class="s ${esc(cls(p.class))}">${esc(p.text)}${i === x.parts.length - 1 ? sp : ""}</span>`).join(" ")
+      : `<span class="s ${esc(cls(x.class))}">${esc(x.text)}${sp}</span>`);
   };
-  const sent = x => `<span class="sent">${body(x)}${sup(x)}</span>`;   // one per sentence: lit while read aloud (2.1)
+  const sent = x => `<span class="sent">${body(x)}</span>`;   // one per sentence: lit while read aloud (2.1)
   const paras = nar.paragraphs || [], keys = nar.section_keys || [], who = nar.who || [];
   if (!keys.length) return `<div class="paper essay">${paras.map(p => "<p>" + p.map(sent).join(" ") + "</p>").join("")}</div>`;
   // group paragraphs into sections in the order they come
@@ -1471,16 +1519,18 @@ function gradeCounts(paras) {
   for (const k of GRADE_ORDER) out[k] = b[BARKEY[k]] || 0;
   return out;
 }
-function gradeHtml(t, nar) {
-  const c = gradeCounts(nar.paragraphs), total = GRADE_ORDER.reduce((n, k) => n + c[k], 0);
-  if (!total) return `<div class="key"></div>`;
-  const chips = GRADE_ORDER.filter(k => c[k]).map(k =>
-    `<button type="button" class="gchip" data-st="${k}" aria-pressed="false" style="--c:var(--bar-${BARKEY[k]});--t:${KEYCOLOR[k]}"><i class="gg" aria-hidden="true">${GLYPH[k]}</i><span class="gl">${esc(t.kShort[k])}</span><b>${c[k]}</b></button>`).join("");
-  return `<div class="key grade" id="grade">
-    <div class="gtop"><div class="gsum${c.established ? "" : " none"}">${esc(t.gsum(c.established, total))}</div>
-      <button type="button" class="ginfo" data-leg="1" aria-label="${esc(t.howTo)}"><span class="gpill"><b aria-hidden="true">i</b><span class="gtxt">${esc(t.howTo)}</span></span></button></div>
-    <div class="gchips">${chips}</div>
-    <div class="gdef" aria-live="polite"></div></div>`;
+function gradeFromBar(b) { const out = {}; for (const k of GRADE_ORDER) out[k] = (b && b[BARKEY[k]]) || 0; return out; }   // the card's bar counts, by grade
+function gradeTotal(c) { return GRADE_ORDER.reduce((n, k) => n + c[k], 0); }
+function kheadHtml(t, c) {     // "Backed by independent outlets" and the (i)
+  if (!gradeTotal(c)) return "";
+  return `<div class="ktitle">${esc(t.backed)}</div><button type="button" class="kinfo" data-leg="1" aria-label="${esc(t.howTo)}"><b aria-hidden="true">i</b></button>`;
+}
+function kbodyHtml(t, c) {     // one tinted pill per colour present (symbol, name, count), and the definition line a tap opens
+  const total = gradeTotal(c);
+  if (!total) return "";
+  const pills = GRADE_ORDER.filter(k => c[k]).map(k =>
+    `<button type="button" class="kpill" data-st="${k}" aria-pressed="false" style="--c:var(--bar-${BARKEY[k]});--t:${KEYCOLOR[k]}"><i class="gg" aria-hidden="true">${GLYPH[k]}</i>${esc(t.kShort[k])} <b>${c[k]}</b></button>`).join("");
+  return `<div class="gsum">${esc(t.gsum(c.established, total))}</div><div class="kchips">${pills}</div><div class="gdef" aria-live="polite"></div>`;
 }
 function pinHtml(t, nar) {
   const c = gradeCounts(nar.paragraphs), total = GRADE_ORDER.reduce((n, k) => n + c[k], 0);
@@ -1532,8 +1582,7 @@ function articleHtml(row) {
     Object.entries(p.perspectives || {}).map(([k, v]) => `<b>${esc(k)}</b> ${esc((v || []).join(", "))}`).join("<br>");
   const thread = (title, list) => list && list.length ? `<div class="sec">${esc(title)}</div><div class="paper"><ul class="thread">${list.map(x =>
       `<li><a href="#/story/${encodeURIComponent(x.story_id)}" data-story="${esc(x.story_id)}">${esc(x.headline)}</a></li>`).join("")}</ul></div>` : "";
-  return `${gradeHtml(t, nar)}
-    <div class="acts"><button type="button" data-act="audio" aria-label="${esc(t.listen)}">${ICON.audio}</button><button type="button" data-act="video" aria-label="${esc(t.videos)}">${ICON.video}</button>
+  return `<div class="acts"><button type="button" data-act="audio" aria-label="${esc(t.listen)}">${ICON.audio}</button><button type="button" data-act="video" aria-label="${esc(t.videos)}">${ICON.video}</button>
       <div class="talkpeek" data-act="talk" aria-hidden="true"><div class="tpin"><span>${esc(t.talkBanner)}</span></div></div><button type="button" class="talkbtn" data-act="talk" aria-label="${esc(t.talkName)}">${ICON.talk}</button></div>
     ${essayHtml(nar, t)}
     ${p.suicide ? `<p class="note helpline">${esc(t.helpline)}</p>` : ""}
@@ -1644,7 +1693,7 @@ function onSheetScroll() {
   $("readfill").style.clipPath = `inset(0 ${(100 - p * 100).toFixed(2)}% 0 0)`;
   $("chrome").classList.toggle("stuck", sc.scrollTop > 8);
   // the colour bar and chips stay in view: once the grade block has gone under the top, its pinned copy slides in
-  const gc = $("rise").querySelector(".gchips");
+  const gc = $("kbody").querySelector(".kchips");
   $("pin").classList.toggle("on", !!gc && $("pin").firstElementChild !== null && gc.getBoundingClientRect().bottom < $("chrome").getBoundingClientRect().bottom + 4);
   if (sc.scrollTop > 60) collapseHint();
   const line = $("chrome").getBoundingClientRect().bottom + 24;
@@ -1672,7 +1721,7 @@ function paintSpot() {
   const t = T[lang];
   if (spot) sheet.dataset.spot = spot; else delete sheet.dataset.spot;
   $("rise").querySelectorAll(".essay .s").forEach(el => el.classList.toggle("spot-on", !!spot && el.classList.contains(spot)));
-  sheet.querySelectorAll(".gchip, .pchip").forEach(b => { const on = b.dataset.st === spot; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on ? "true" : "false"); });
+  sheet.querySelectorAll(".gchip, .pchip, .kpill").forEach(b => { const on = b.dataset.st === spot; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on ? "true" : "false"); });
   sheet.querySelectorAll("#abar span, #pin .pbar span").forEach(s => s.classList.toggle("dim", !!spot && s.dataset.st !== spot));
   sheet.querySelectorAll(".gdef").forEach(d => {
     if (spot) { d.innerHTML = `<b style="color:${KEYCOLOR[spot]}">${esc(cap(t.k[spot]))}.</b> ${esc(t.kDef[spot])}`; d.classList.add("on"); }
@@ -1704,7 +1753,7 @@ function collapseHint() {
   if (legendFirst) { legendFirst = false; safeSet("np-legend", "1"); }
 }
 sheet.addEventListener("click", e => {
-  const c = e.target.closest(".gchip[data-st], .pchip[data-st]");
+  const c = e.target.closest(".gchip[data-st], .pchip[data-st], .kpill[data-st]");
   if (c) { collapseHint(); setSpot(c.dataset.st); return; }
   if (e.target.closest("[data-leg]")) { collapseHint(); openSheet("legend"); }
 });
@@ -1718,9 +1767,12 @@ function fillSheet(row, card) {
     const p = (lang === "hi" && row.payload_hi) || row.payload_en || {};
     const head = (lang === "hi" && row.headline_hi) || row.headline_en || p.headline || "";
     $("sheet-h").textContent = head;
+    const nar0 = p.narrative || {};
     const n = (p.counts || {}).independent_sources || 0;
     metaPre = `${t.sources(n, (p.counts || {}).outlets)} · `; metaAt = row.updated_at;
     $("sheet-meta").textContent = metaPre + ago(metaAt);
+    const kc = gradeCounts(nar0.paragraphs);
+    $("khead").innerHTML = kheadHtml(t, kc); $("kbody").innerHTML = kbodyHtml(t, kc);
     $("rise").innerHTML = articleHtml(row);
     spot = null; delete sheet.dataset.spot;
     $("pin").innerHTML = pinHtml(t, p.narrative || {}); $("pin").classList.remove("on");
@@ -1732,6 +1784,7 @@ function fillSheet(row, card) {
     $("sheet-h").textContent = card.h;
     metaPre = ""; metaAt = card.at;
     $("sheet-meta").textContent = ago(card.at);
+    $("khead").innerHTML = kheadHtml(t, gradeFromBar(card.bar)); $("kbody").innerHTML = kbodyHtml(t, gradeFromBar(card.bar));
     $("rise").innerHTML = `<div class="paper essay" aria-busy="true"><p style="color:var(--muted)">${esc(t.loading)}</p></div>`;
     $("rail").innerHTML = "";
     $("pin").innerHTML = ""; $("pin").classList.remove("on");
@@ -2184,13 +2237,12 @@ const rtip = $("rtip");
 let rtipTimer = null;
 function showRefreshTip(msg) {
   if (openId) return;
-  rtip.textContent = msg;
-  rtip.style.left = "0px";
-  const pill = rbtn.parentElement.getBoundingClientRect(), w = rtip.offsetWidth || 150, h = rtip.offsetHeight || 30;
-  rtip.style.left = `${Math.min(pill.right + 8, innerWidth - w - 8)}px`;      // the header's own row, beside the button
-  rtip.style.top = `${pill.top + (pill.height - h) / 2}px`;
+  rtip.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span class="tx">${esc(msg)}</span>`;
+  // measured from the top of the sections bar (card foot, 24px above the bar, then 46px up into the card), above the audio player when it is open
+  const barTop = $("sections").getBoundingClientRect().top;
+  rtip.style.bottom = `${Math.round(innerHeight - barTop + 70 + (pbar.classList.contains("on") ? 68 : 0))}px`;
   rtip.classList.remove("on"); void rtip.offsetWidth; rtip.classList.add("on");      // pressed again: it comes again
-  clearTimeout(rtipTimer); rtipTimer = setTimeout(() => rtip.classList.remove("on"), 2600);
+  clearTimeout(rtipTimer); rtipTimer = setTimeout(() => rtip.classList.remove("on"), 3000);
 }
 const newestAt = list => (list || []).reduce((m, c) => Math.max(m, utcMs(c.at) || 0), 0);
 // the one-time alert is a follow ("next|any") that notify.py sends once and then deletes; calls run one after the
@@ -2235,7 +2287,7 @@ async function manualRefresh() {
     await new Promise(r => setTimeout(r, Math.max(0, 700 - (Date.now() - t0))));   // never a flicker: the arrow turns at least a moment
     rbtn.classList.remove("spin"); refreshing = false;
   }
-  if (outcome === "none") { showRefreshTip(T[lang].noNew); setNextAlert(true); }
+  if (outcome === "none") { showRefreshTip(T[lang].upToDate); setNextAlert(true); }
   else if (outcome === "new") { rtip.classList.remove("on"); setNextAlert(false); }
 }
 rbtn.addEventListener("click", manualRefresh);
@@ -2327,7 +2379,7 @@ const ICON = {
   pause: '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor"/></svg>',
 };
 Object.assign(T.en, {
-  listen: "Listen", videos: "Videos", menu: "Menu", refresh: "Refresh", noNew: "No new articles yet", signIn: "Sign in", sort: "Sort", following: "Following", later: "Read later",
+  listen: "Listen", videos: "Videos", menu: "Menu", refresh: "Refresh", noNew: "No new articles yet", upToDate: "Up to date", signIn: "Sign in", sort: "Sort", following: "Following", later: "Read later",
   recap: "Daily recap", search: "Search", logout: "Log out", soon: "Coming soon", close: "Close",
   sorts: {newest: "Newest", verified: "Most established", contested: "Most disputed", developing: "Still developing", outlets: "Most outlets", shortest: "Shortest read"},
   loginTitle: "Log in", name: "Name", email: "Email", password: "Password", stay: "You stay signed in on this device until you log out.",
@@ -2343,7 +2395,7 @@ Object.assign(T.en, {
   primary: "Primary footage", gone: "This article is no longer live, so it cannot be read aloud.", pause: "Pause", seek: "Position in the audio",
 });
 Object.assign(T.hi, {
-  listen: "सुनें", videos: "वीडियो", menu: "मेन्यू", refresh: "रीफ़्रेश", noNew: "अभी कोई नया लेख नहीं", signIn: "साइन इन", sort: "क्रम", following: "फ़ॉलो", later: "बाद में पढ़ें",
+  listen: "सुनें", videos: "वीडियो", menu: "मेन्यू", refresh: "रीफ़्रेश", noNew: "अभी कोई नया लेख नहीं", upToDate: "सब अपडेट है", signIn: "साइन इन", sort: "क्रम", following: "फ़ॉलो", later: "बाद में पढ़ें",
   recap: "दिन का सार", search: "खोजें", logout: "लॉग आउट", soon: "जल्द आ रहा है", close: "बंद करें",
   sorts: {newest: "सबसे नई", verified: "सबसे अधिक स्थापित", contested: "सबसे अधिक मतभेद", developing: "अभी विकसित हो रही", outlets: "सबसे अधिक स्रोत", shortest: "सबसे छोटी"},
   loginTitle: "लॉग इन", name: "नाम", email: "ईमेल", password: "पासवर्ड", stay: "लॉग आउट करने तक आप इस डिवाइस पर साइन इन रहेंगे।",
