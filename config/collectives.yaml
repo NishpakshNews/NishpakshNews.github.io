@@ -1,0 +1,14 @@
+# Bodies that are several people acting together take "they", "their" and a plural verb, never "it" (owner, Oct 15 2026:
+# "for the Supreme Court they must be used, because multiple justices hear a case"). The grammar rule is collective-noun
+# agreement (notional concord): British and Indian English both allow "the court were", "the commission said they ...".
+# `agreement.py` reads this file; a missing or broken file falls back to the same defaults in the code.
+#
+# words: the LAST word of a body's name ("Supreme Court", "Election Commission", "the bench"): any body ending in one of them
+# names: whole names that do not end in such a word ("Lok Sabha", "Collegium")
+# leave: bodies that stay "it" even though a word above ends their name (add a name here to override)
+# Not in the list on purpose (one institution, not a group deciding): government, ministry, department, party, company,
+# bank, agency, army. Add a word to `words:` to make it plural everywhere; a one-line change.
+words: [court, bench, tribunal, commission, committee, council, cabinet, board, panel, jury, parliament, assembly,
+        collegium, senate, police, politburo]
+names: [Lok Sabha, Rajya Sabha, Vidhan Sabha, Congress Working Committee, Election Commission of India]
+leave: []

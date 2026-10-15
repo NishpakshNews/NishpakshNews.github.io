@@ -27,7 +27,7 @@ import logging
 import re
 import threading
 
-from . import clock, figures, grammar, sentences, voice
+from . import clock, figures, grammar, refs, sentences, voice
 from . import plan as planning
 from .grammar import (ATTRIBUTION_VERBS, CONNECTIVE, DISPUTE_MARKERS, FALSE_MARKERS,  # noqa: F401 (moved to grammar.py)
                       HEDGE_MARKERS)
@@ -161,7 +161,11 @@ statements. Events may be told in order ("after", "later", "then"), but never li
 only for the person or body a statement names in "said by"; never invent a speaker. When a statement
 is itself reported speech ("A said that B claimed X"), keep it reported: never make A the author of X.
 Every sentence must make sense on its own: never write "denied this" unless the sentence just before
-says what was denied. Introduce every person and body at first mention with the fullest name and role
+says what was denied. A court, bench, tribunal, commission, committee, council, cabinet, board, panel and the police are several people
+acting together: write "they", "their" and a plural verb for them ("The Supreme Court said they were hearing the plea"),
+never "it". A paragraph never opens with "It", "They", "This", "These", "Those" or "The new X" for
+something not yet named: open with the name ("The Election Commission of India said it was trying to ..."). If a
+statement says a thing only as "the scheme" / "the bill", write it as given: the newsroom adds the name. Introduce every person and body at first mention with the fullest name and role
 the statements give ("AAP Delhi chief Saurabh Bharadwaj", "Supreme Court judge Ujjal Bhuyan"); after
 that, the surname ("Bharadwaj") or a short form. Never use a surname alone for someone not yet
 introduced.
@@ -895,15 +899,22 @@ def _join_fragments(para: list) -> list:
     return out
 
 
-def _check_one(sent, by_id, banned, outlets, scope: set[str], style: bool, near: str):
+def _check_one(sent, by_id, banned, outlets, scope: set[str], style: bool, near: str, opens: bool = False):
     """(sentence, ids) for one sentence: the checks, then (grammar.py) the one safe code repair for the fault
     found, checked again by EVERY check. A repair that still fails leaves the original failure standing, so
     a repair can turn a dropped sentence into a published one that passes, never relax a check. The counters
     show it: the fault is not counted as a rejection but as "fixed: <reason>" (owner, Oct 10 2026)."""
     def run(s_):
         _TL.last = None
+        # how a sentence stands in the paragraph comes FIRST (refs.py): a pronoun with nothing to point at is the
+        # real fault, and its repair (the speaker named) also fixes the speaker faults the validator would name
+        if isinstance(s_, dict) and style:
+            why = (refs.opening_problem(s_.get("text") or "") if opens else None) \
+                or refs.antecedent_problem(s_.get("text") or "", near)
+            if why:
+                return _no(why)
         got = _validate(s_, by_id, banned, outlets, scope, style) if isinstance(s_, dict) else None
-        if got is not None and style and not _pronoun_ok(s_["text"], got, by_id, near):
+        if got is not None and style and not _pronoun_ok(s_["text"], got, by_id, near or ""):
             got = _no("pronoun without evidence")
         return got
     ids = run(sent)
@@ -940,7 +951,7 @@ def _still_ok(sent: dict, by_id, banned, outlets) -> bool:
     if so. The rejection counters are left as they were (a refused change is not a rejected sentence)."""
     saved, last = dict(_reasons()), getattr(_TL, "last", None)
     try:
-        fixed, ids = _check_one(sent, by_id, banned, outlets, set(), True, "")
+        fixed, ids = _check_one(sent, by_id, banned, outlets, set(), True, None)
         return ids is not None and fixed.get("text") == sent.get("text")
     finally:
         _reasons().clear()
@@ -977,7 +988,7 @@ def _check_paragraphs(drafted: list[list], by_id, banned, outlets, style: bool =
             scope, near = set(), ""
         if same_section and idx > 0 and isinstance(sent, dict) and LEANS_BACK.search(str(sent.get("text") or "")):
             leans_on[idx] = idx - 1
-        sent, ids = _check_one(sent, by_id, banned, outlets, scope, style, near)
+        sent, ids = _check_one(sent, by_id, banned, outlets, scope, style, near, opens=(k == 0))
         if ids is not None:
             flat[idx] = (p, k, sent)             # the sentence as repaired, if it was
         if ids is None:

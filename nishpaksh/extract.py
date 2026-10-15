@@ -237,6 +237,17 @@ def ground(ex: dict, source: str) -> int:
     return len(dropped)
 
 
+def _rel(it: dict) -> dict | None:
+    rel = {}
+    if it.get("frame"):
+        rel["frame"] = it["frame"]
+    if it.get("refs"):
+        rel["refs"] = it["refs"]
+    if it.get("refs_open"):
+        rel["refs_open"] = it["refs_open"]
+    return rel or None
+
+
 def store_extraction(store: Store, article_id: int, story_id: int | None, ex: dict) -> None:
     store.exec(delete(claims).where(claims.c.article_id == article_id))
     rows = []
@@ -245,7 +256,7 @@ def store_extraction(store: Store, article_id: int, story_id: int | None, ex: di
             rows.append(dict(story_id=story_id, article_id=article_id, local_id=it["id"], kind=kind,
                              text=it["text"], stance=it["stance"], attributed_to=it["attributed_to"],
                              evidence=it["evidence"], loaded_words=it["loaded_words"],
-                             time=it.get("time"), rel={"frame": it["frame"]} if it.get("frame") else None))
+                             time=it.get("time"), rel=_rel(it)))
     for it in ex.get("context") or []:
         # context is stored like a statement, marked in `rel` (unused for statements): background and
         # related events are events (they have times), the rest are claims
@@ -254,7 +265,7 @@ def store_extraction(store: Store, article_id: int, story_id: int | None, ex: di
                          text=it["text"], stance=it["stance"], attributed_to=it["attributed_to"],
                          evidence=it["evidence"], loaded_words=it["loaded_words"], time=it.get("time"),
                          rel={"context": it["context"], "event": it.get("event") or "",
-                              **({"frame": it["frame"]} if it.get("frame") else {})}))
+                              **{k: v for k, v in (_rel(it) or {}).items()}}))
     for i, r in enumerate(ex["relations"]):
         rows.append(dict(story_id=story_id, article_id=article_id, local_id=f"r{i + 1}", kind="relation",
                          text="", stance=r["stance"], attributed_to=r["attributed_to"], evidence="none",
@@ -273,6 +284,14 @@ def _extract_one(store: Store, router: Router, a: dict) -> str:
         if ex is None:
             raise ValueError("empty extraction")
         ground(ex, f"{a['title'] or ''} {a['text'] or ''}")
+        # what "It" and "the new scheme" point to, from the article itself (refs.py, Oct 15 2026)
+        try:
+            from . import refs as _refs
+            _refs.resolve_extraction(ex, f"{a['title'] or ''}. {a['text'] or ''}", router)
+        except QuotaExhausted:
+            raise
+        except Exception as e:  # noqa: BLE001 - references are an improvement, never a reason to lose a reading
+            log.warning("refs failed for article %s: %s", a["id"], str(e)[:150])
     except QuotaExhausted:
         return "quota"
     except CallFailed as e:

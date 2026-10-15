@@ -262,7 +262,7 @@ def vary_attribution(paragraphs: list[list[dict]], refs: Refs | None = None, spe
                 or re.match(r"(?i)(its|their|it|they)\b", m.group("body")):
             # "The US Department of State identified ..." after its own line: "The department identified ..."
             name = re.match(rf"^(?:The\s+)?{re.escape(re.sub(r'(?i)^the\s+', '', sps[0]))}\b", text)
-            subj = next((o for o in options if o not in ("it",)), None)
+            subj = next((o for o in options if o not in ("it", "they")), None)
             if name and subj and not ATTRIB.search(text[name.end():name.end() + 40]):
                 return subj[:1].upper() + subj[1:] + text[name.end():]
             return None
@@ -345,6 +345,13 @@ def polish(payload: dict) -> None:
     by_id = {i["id"]: i for i in items if "id" in i}
     speakers_of = lambda sent: [(by_id.get(i) or {}).get("speaker") for i in sent.get("ids") or []]   # noqa: E731
     vary_attribution(paras, refs, speakers_of)
+    # a body of several people is "they", with a plural verb, never "it" (agreement.py, owner Oct 15 2026)
+    from .agreement import fix_article as _plural_bodies
+    nar["plural_bodies"] = _plural_bodies(paras)
     # last: whoever the reader has not been told about gets the context in brackets (owner, Oct 11 2026)
     from .gloss import gloss
     gloss(paras, speakers_of, [i.get("text") or "" for i in items], names)
+    # and what a thing is, the first time it is written without the reader having been told (refs.py, Oct 15 2026)
+    from .refs import gloss_article
+    refs_of = lambda sent: [r for i in sent.get("ids") or [] for r in (by_id.get(i) or {}).get("refs") or []]   # noqa: E731
+    nar["refs"] = gloss_article(paras, payload.get("headline") or "", refs_of)

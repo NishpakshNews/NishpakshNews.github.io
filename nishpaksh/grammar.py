@@ -224,11 +224,14 @@ def _verb(text: str, ids: list[int], by_id: dict, scope: set[str]) -> str | None
 def _pronoun(text: str, ids: list[int], by_id: dict, scope: set[str]) -> str | None:
     """"He added that ..." with no one before it: the speaker's name (the names pass then writes it as
     the first mention or the surname). Only a sentence that attributes with the pronoun, and one speaker."""
-    m = re.match(rf"^(He|She)\s+{voice.SAY_VERB}\b", text)
+    m = re.match(rf"^(He|She|It|They)\s+{voice.SAY_VERB}\b", text)
     speakers = {voice.speaker_key(by_id[i]["speaker"]): by_id[i]["speaker"] for i in ids if by_id[i].get("speaker")}
     if not m or len(speakers) != 1 or None in speakers:
         return None
-    return next(iter(speakers.values())) + text[len(m.group(1)):]
+    who = next(iter(speakers.values()))
+    if m.group(1) in ("It", "They") and not voice.is_body(who):
+        return None                      # it / they for a person is not this repair's to guess
+    return who + text[len(m.group(1)):]
 
 
 def _self_attr(text: str, ids: list[int], by_id: dict, scope: set[str]) -> str | None:
@@ -255,7 +258,17 @@ def _specific(text: str, ids: list[int], by_id: dict, scope: set[str]) -> str | 
     return t[:m.start("who")] + next(iter(full)) + t[m.end("who"):]
 
 
+def _opening(text: str, ids: list[int], by_id: dict, scope: set[str]) -> str | None:
+    """\"It was trying ..., X said.\" opening a paragraph: \"X said it was trying ...\" (refs.repair_opening). Only when X
+    is a speaker of the sentence's own statements."""
+    from . import refs
+    names = {by_id[i]["speaker"] for i in ids if by_id[i].get("speaker")}
+    return refs.repair_opening(text, names) or _pronoun(text, ids, by_id, scope)    # or "It added that ..." -> the body
+
+
 REPAIRS = {
+    "opens with a pronoun": _opening,
+    "pronoun without antecedent": _pronoun,
     "speaker attributes himself": _self_attr,
     "speaker not specific": _specific,
     "not a full sentence": _close,

@@ -232,6 +232,40 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   Not yet built (next, in this order): MEASURE on stored data (`tools/replay.py`: `fixed:` counts, `plan.moved`, `flow`) and
   tune the phase 2-4 rules against what really fails; a words-level pass (house vocabulary, the same thing named the same
   way across sentences). The titles' dates are recorded but not yet used to drop a title after an office changes hands.
+- **Every sentence knows what came before it (owner, Oct 15 2026; `refs.py`).** Seen: lead "It was trying to trace the missing
+  video recording, Election Commission of India said." and "The new scheme is replacing the Mahatma Gandhi ... Scheme." Causes:
+  (1) reading rule 2b moves "said" + speaker out of the fact, so a speaker-subject became "It"; a sentence that pointed back to an
+  earlier sentence of its article ("the new scheme") lost its target; the prompt asked for names (2c) but nothing checked;
+  (2) the writer reorders statements, so even a good sentence dangles when the plan puts it first; `gloss.py` knew kin and offices
+  only; (3) nothing checked how a paragraph OPENS. Fix in three layers, code first: A `refs.resolve_extraction` (in `extract`, with the
+  source article): a subject pronoun is replaced by the speaker ONLY when the source writes "<speaker> said it was ..."; a generic
+  thing (`refs.HEADS`: scheme, bill, video ...) gets the name the source gives it, stored in `claims.rel.refs` (never in the
+  text: matching compares texts; `compose._item_refs` merges them onto the statement); what code cannot find is asked ONCE per
+  article in one batched call (`refs.ask_model`) and kept only if the answer's words stand in the source; two candidate names =
+  none. B `refs.gloss_article` (in `style.polish`, last): first written mention of a thing the headline and earlier text did not
+  name gets the name in brackets, once (square brackets when the name has round ones). C `refs.opening_problem` in
+  `narrative._check_one` (`opens=` first sentence of a paragraph): It/They/This/These/Those/Its/Their refused as "opens with a
+  pronoun"; repair `grammar._opening`: "It was ..., X said." -> "X said it was ...". Counted: `narrative.refs`
+  {glossed, unresolved} (read with replay). Not built: pronoun/definite references INSIDE a paragraph (only openers are checked),
+  Hindi pages, a re-read of already stored statements (old claims have no `refs`; they apply from the next reading).
+  **Follow-up, same day (owner: mid-paragraph pronouns, Hindi, and "they" for a court).** (1) Mid-paragraph:
+  `refs.antecedent_problem` in `narrative._check_one` (runs FIRST, before the validator, so its repair also cures the speaker
+  faults the validator would name): an It / They / Its / Their with no name or "the + noun" before it in the sentence or in `near` (the
+  sentence before + the speaker in scope) is refused as "pronoun without antecedent"; repair `grammar._pronoun` now also names the
+  speaker for "It / They added that ..." when the speaker is a body. `_still_ok` passes `near=None` (position unknown: not asked).
+  Narrow on purpose: any name counts as something to point at; what it cannot see is a wrong antecedent. (2) Hindi: a Hindi SOURCE is
+  matched across scripts (`refs.is_hindi`, `_like_in_hindi` over `textmatch._roman/_like`): a gloss must be English letters and
+  every name word / figure must have a Devanagari word it can be; code does not search a Hindi source (pronoun left open and counted),
+  the batched question asks for the name "in English letters" (`ASK_PROMPT_HI`). The Hindi PAGE is a per-sentence translation of the
+  finished English, so English fixes carry over; `compose.translation_problem` now rejects a translation that changes or drops a
+  bracketed name ("bracketed name changed") or opens with a Hindi pronoun when the English has none ("pronoun added"); the prompt
+  says brackets are copied and a court/commission/board/police takes the plural (वे, उन्होंने). (3) Collective-noun agreement
+  (notional concord): `agreement.py` + `config/collectives.yaml` (court, bench, tribunal, commission, committee, council, cabinet,
+  board, panel, jury, parliament, assembly, police ...; government, ministry, party, company stay "it" until added there):
+  `it / its / itself` whose NEAREST body is such a body (same clause; a person is no body; expletive "it is clear that" left) become
+  they / their / themselves, with the verb (was-were, is-are, has-have, says-say), in `style.polish` after `vary_attribution`;
+  `voice.body_refs` gives "they" for them; the writer prompt says so; counted as `narrative.plural_bodies`. Not done: an object
+  "it" after other verbs, "it's", a body named only by a pronoun with no body in the sentence or the one before.
 - **Story layers (Oct 5 2026, owner):** a story has its own event (core) and CONTEXT: background,
   related events (a separate event the reports connect to this one: written as separate, never
   blended), explanation, reactions, what next. Extraction records context (`claims.rel.context`),

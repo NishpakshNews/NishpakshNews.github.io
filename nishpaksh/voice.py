@@ -320,7 +320,8 @@ def body_refs(name: str) -> list[str]:
         short = "the Centre"
     elif short:
         short = f"the {short}"
-    return ([short] if short else []) + ["it"]
+    from .agreement import is_collective
+    return ([short] if short else []) + (["they"] if is_collective(name) else ["it"])   # a court is several judges
 
 
 BODY_WORDS = set(SHORT_BODY) | {"trust", "foundation", "limited", "ltd", "group", "institute", "university", "school",

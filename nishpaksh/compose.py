@@ -29,13 +29,21 @@ ESTABLISHED = {"corroborated", "confirmed"}
 
 TRANSLATE_PROMPT = """Translate each value of this JSON object into Hindi (Devanagari script).
 Translate literally and neutrally: do not add, soften or strengthen anything. Keep names of people,
-places and organisations, and all numbers, as they are. Return a JSON object with exactly the same keys.
+places and organisations, and all numbers, as they are. Anything in brackets (...) or [...] is a name: copy it
+letter for letter, in the same brackets. A court, bench, tribunal, commission, committee, council, cabinet, board or the
+police is several people: where the English says "they" / "their", write the plural (वे, उन्होंने, उनके) with plural verbs.
+Never begin a sentence with a pronoun (यह, वह, वे, उन्होंने ...) unless the English sentence begins with one: keep the
+name the English uses. Return a JSON object with exactly the same keys.
 
 {payload}"""
 
 
 _DEVANAGARI = re.compile(r"[\u0900-\u097F]")
 _DIGITS_HI = str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f", "0123456789")
+
+
+_HI_OPEN = re.compile(r"^(?:यह|ये|वह|वे|उन्होंने|उसने|इसने|उसे|इसे|उन्हें|इन|उन|इस|उस|उनके|उसके|इसके|इनके)(?=[\s,।])")
+_EN_PRONOUN = re.compile(r"(?i)\b(?:it|its|itself|they|their|them|this|these|those|he|she|his|her|him)\b")
 
 
 def translation_problem(src: str, out: str) -> str | None:
@@ -55,6 +63,14 @@ def translation_problem(src: str, out: str) -> str | None:
     nums = lambda t: sorted(re.findall(r"\d+", t.translate(_DIGITS_HI).replace(",", "")))
     if nums(src_t) != nums(out_t):
         return "numbers changed"
+    # the name the newsroom put in brackets (refs.py) is copied as it is: a missing or changed one is a wrong article
+    for m in re.finditer(r"[\(\[]([^()\[\]]*(?:\([^()]*\))?[^()\[\]]*)[\)\]]", src_t):
+        inner = m.group(1).strip()
+        if re.search(r"[A-Za-z]{3,}", inner) and " ".join(inner.split()) not in " ".join(out_t.split()):
+            return "bracketed name changed"
+    # the translator may not turn a name into a pronoun that points at nothing (refs.py)
+    if _HI_OPEN.match(out_t.lstrip("\"“‘' ")) and not _EN_PRONOUN.search(src_t):
+        return "pronoun added"
     return None
 
 
@@ -69,6 +85,20 @@ def _interval(rows: list[dict]) -> dict:
     whens = Counter(r["time"]["when_text"] for r in rows if r.get("time") and r["time"].get("when_text"))
     return {"start": min(starts) if starts else None, "end": max(ends) if ends else None,
             "when_text": whens.most_common(1)[0][0] if whens else ""}
+
+
+def _item_refs(c: dict, rows: list[dict]) -> list[dict]:
+    """The names the reports gave to the generic references of this statement (\"the new scheme\"), for the ones
+    its text still has. One name per phrase; two different names for one phrase = none (never a guess)."""
+    if c.get("kind") == "relation":
+        return []
+    text = (c.get("text") or "").lower()
+    found: dict[str, set[str]] = {}
+    for r in [c, *rows]:
+        for ref in ((r.get("rel") or {}).get("refs") or []):
+            if ref.get("phrase") and ref.get("gloss") and ref["phrase"].lower() in text:
+                found.setdefault(ref["phrase"], set()).add(ref["gloss"])
+    return [{"phrase": ph, "gloss": next(iter(g))} for ph, g in found.items() if len(g) == 1]
 
 
 def build_payload(store: Store, router: Router | None, story_id: int) -> dict | None:
@@ -191,6 +221,8 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
             "n_outlets": (c.get("origins") or {}).get("outlets", 0),
             # its fields (frames.py): the writer's sections place figures by them
             "frame": (c.get("rel") or {}).get("frame") if c["kind"] != "relation" else None,
+            # what a generic reference in it points to (refs.py): from the statement or any report behind it
+            "refs": _item_refs(c, members.get(cid, [])),
         }
 
     all_items = {cid: item(cid) for cid in canon if members.get(cid)}
