@@ -89,17 +89,17 @@ Within a paragraph write 2-4 sentences, the main point first, then what supports
               India's election, mixing up India with Brazil", not "Brazil held an election on Sunday").
   background  the past of the story's own subject, oldest first: its history, then the steps just before the news,
               each clearly with its own time (code decides the paragraphs; never add what is not in them)
-  explained   what a rule, term, post, finding or number means
   happened    what happened, in time order (the statements of the news are not repeated here)
-  numbers     the figures: amounts, tolls, counts, percentages, each with what it measures
   say         what each person or body says: claims, allegations, positions, and the responses to them.
               Each PARAGRAPH is one speaker's argument (the main claim first, then its details); a
               response paragraph names who answers and what is answered. Name each speaker as given;
               never give one speaker's line to another
+  numbers     the figures: amounts, tolls, counts, percentages, each with what it measures
+  explained   what a rule, term, post, finding or number means
+  next        what happens next: hearings, deadlines, required steps
   related     other events the reports connect to this one, each with its own time and its own people;
               never blended into the story's event. Do not write "separately" or "in a separate case":
               the section's heading says it (unless a statement itself says so)
-  next        what happens next: hearings, deadlines, required steps
 Write only the sections that have statements (and "news"); skip the others.
 A disagreement is written where its subject is, in the same paragraph as the rest of that subject, with
 both versions and whose they are; never collected into a paragraph or section about differing accounts.
@@ -184,8 +184,8 @@ background), the present and what happens next.
 {people}{background}Statements, by section and paragraph:
 {statements}
 
-Reply with JSON only, the sections in this order (news, background, explained, happened, numbers, say,
-related, next), each with its paragraphs:
+Reply with JSON only, the sections in this order (news, background, happened, say, numbers, explained,
+next, related), each with its paragraphs:
 {{"sections": [{{"key": "news", "paragraphs": [[{{"text": "...", "ids": [3]}}]]}},
                {{"key": "happened", "paragraphs": [[{{"text": "...", "ids": [5, 7]}}], [ ... ]]}}, ...]}}"""
 
@@ -219,11 +219,11 @@ Failed sentences in these sections:
 Reply with JSON only: {{"sections": [{{"key": "...", "paragraphs": [[{{"text": "...", "ids": [3]}},
   {{"parts": [{{"text": "...,", "ids": [4]}}, {{"text": "...", "ids": [9]}}]}}]]}}]}}"""
 
-# the order on the page (owner, Oct 7 2026): the news in a line or two, then the context a reader with
-# no prior knowledge needs, then the story in full
-SECTIONS = [("news", "The news"), ("background", "Background"), ("explained", "Explained"),
-            ("happened", "What happened"), ("numbers", "By the numbers"), ("say", "What they say"),
-            ("related", "Related events"), ("next", "What next")]
+# the order on the page (owner, Oct 15 2026; was news, background, explained, happened, numbers, say, related, next):
+# the news in a line or two, background, the story, who says what, the figures, what it means, what next, related events
+SECTIONS = [("news", "The news"), ("background", "Background"), ("happened", "What happened"),
+            ("say", "What they say"), ("numbers", "By the numbers"), ("explained", "Explained"),
+            ("next", "What next"), ("related", "Related events")]
 SECTION_KEYS = [k for k, _ in SECTIONS]
 # the fill pass works on a few sections at a time: small tasks are done completely (owner, Oct 7 2026:
 # Flash-Lite given all 40 statements wrote 10 sentences; given 8-10 at a time it uses them all)

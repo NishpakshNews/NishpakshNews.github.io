@@ -1705,6 +1705,28 @@ function alsoHtml(nar, t) {
   return `<details class="also dd"><summary class="sechead"><span>+</span><h3>${esc(t.also || "Also in these reports")}</h3></summary>` +
          `<div class="dd-body"><div class="paper essay"><p class="alsonote">${esc(t.alsoNote || "")}</p><ul class="alsolist">${rows}</ul></div></div></details>`;
 }
+/* the sections in the page's order (owner, Oct 15 2026): the lead, then 01 Background, 02 What happened, 03 What they say,
+   04 By the numbers, 05 Explained, 06 What next, 07 Related events, whatever order the article was written in (older articles
+   were written Background, Explained, What happened, By the numbers, What they say, Related events, What next). Display only:
+   the stored paragraphs keep their indices, so audio timing (markSentences) still finds every sentence. */
+const SEC_ORDER = ["news", "background", "happened", "say", "numbers", "explained", "next", "related"];
+function sectionGroups(nar) {
+  const paras = nar.paragraphs || [], keys = nar.section_keys || [];
+  const byKey = new Map();
+  let cur = "happened";
+  paras.forEach((_, k) => {
+    cur = keys[k] || cur;
+    if (!byKey.has(cur)) byKey.set(cur, []);
+    byKey.get(cur).push(k);
+  });
+  const known = SEC_ORDER.filter(k => byKey.has(k)), rest = [...byKey.keys()].filter(k => !SEC_ORDER.includes(k));
+  return [...known, ...rest].map(key => ({key, items: byKey.get(key)}));
+}
+// paragraph indices in the order the page shows them
+function pageOrder(nar) {
+  const paras = nar.paragraphs || [];
+  return (nar.section_keys || []).length ? sectionGroups(nar).flatMap(g => g.items) : paras.map((_, k) => k);
+}
 function essayBody(nar, t) {
   const names = Object.fromEntries((nar.sources || []).map(s => [s.n, s.outlet]));
   const link = a => `<a href="#src-${a}" data-src="${a}" title="${esc(names[a] || "")}">${a}</a>`;
@@ -1719,13 +1741,7 @@ function essayBody(nar, t) {
   const sent = x => `<span class="sent">${body(x)}</span>`;   // one per sentence: lit while read aloud (2.1)
   const paras = nar.paragraphs || [], keys = nar.section_keys || [], who = nar.who || [];
   if (!keys.length) return `<div class="paper essay">${paras.map(p => "<p>" + p.map(sent).join(" ") + "</p>").join("")}</div>`;
-  // group paragraphs into sections in the order they come
-  const groups = [];
-  paras.forEach((para, k) => {
-    const key = keys[k] || (groups.length ? groups[groups.length - 1].key : "happened");
-    const g = groups[groups.length - 1];
-    if (g && g.key === key) g.items.push(k); else groups.push({key, items: [k]});
-  });
+  const groups = sectionGroups(nar);
   let no = 0;
   return groups.map(g => {
     const ps = g.items.map(k => paras[k]);
@@ -2796,7 +2812,8 @@ function flyBarBack(cardEl) {       // closing: the bar goes back to the card's 
 // every sentence of the article knows its place (paragraph.sentence), for the audio's lighting
 function markSentences(row) {
   const p = (lang === "hi" && row.payload_hi) || row.payload_en || {};
-  const flat = ((p.narrative || {}).paragraphs || []).flatMap((para, k) => (para || []).map((_, i) => `${k}.${i}`));
+  const nar = p.narrative || {}, paras = nar.paragraphs || [];
+  const flat = pageOrder(nar).flatMap(k => (paras[k] || []).map((_, i) => `${k}.${i}`));
   $("rise").querySelectorAll(".sent").forEach((el, i) => { if (flat[i]) el.dataset.k = flat[i]; });
   if (player.key === `${row.story_id}-${lang}`) light(true);
   if (/[?&]listen=1/.test(location.hash)) setTimeout(() => openAudio(), 500);

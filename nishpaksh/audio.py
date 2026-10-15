@@ -53,6 +53,24 @@ STYLE = {"en": "Read this news article aloud in a calm, neutral news-reader voic
 RECAP_INTRO = {"en": "Nishpaksh. The day's news, {day}.", "hi": "निष्पक्ष। आज की ख़बरें, {day}।"}
 
 
+def _page_order(keys: list, n: int) -> list[int]:
+    """Paragraph indices in the order the site shows them (owner, Oct 15 2026): sections in narrative.SECTIONS order,
+    paragraphs of one section in their stored order; p keeps the stored index, so the timing file still lights the
+    right sentence. A paragraph with no key belongs to the section before it (as the site groups them)."""
+    from .narrative import SECTION_KEYS
+    if not keys:
+        return list(range(n))
+    owner, cur = [], "happened"
+    for i in range(n):
+        cur = keys[i] if i < len(keys) and keys[i] else cur
+        owner.append(cur)
+    rank = {k: r for r, k in enumerate(SECTION_KEYS)}
+    first = {}
+    for i, k in enumerate(owner):
+        first.setdefault(k, i)
+    return sorted(range(n), key=lambda i: (rank.get(owner[i], len(rank)), first[owner[i]], i))
+
+
 # -- what is read ---------------------------------------------------------------------------------------------
 def article_units(headline: str, payload: dict, lang: str) -> list[dict]:
     """The text to read, in order: {"text", "p", "s"}; p = paragraph index, s = sentence index in it (p = -1 for
@@ -62,7 +80,8 @@ def article_units(headline: str, payload: dict, lang: str) -> list[dict]:
     keys = nar.get("section_keys") or []
     units = [{"text": headline.strip(), "p": -1, "s": -1}] if headline else []
     last = None
-    for pi, para in enumerate(paras):
+    for pi in _page_order(keys, len(paras)):
+        para = paras[pi]
         key = keys[pi] if pi < len(keys) else None
         if key and key != last and key in HEADINGS.get(lang, HEADINGS["en"]):
             units.append({"text": HEADINGS[lang][key] + ".", "p": pi, "s": -1})

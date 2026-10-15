@@ -483,8 +483,11 @@ every outlet that covered it, and colours every sentence by how well it is suppo
 - **Everything in the article, in sections with headings (owner, Oct 5 and Oct 7 2026):** code puts every
   statement in exactly one section (`narrative.assign_sections`), and code puts them in this order
   (`narrative._in_order`, owner Oct 7 2026: a reader with no prior knowledge gets the context first):
-  news (1-2 sentence lead, no heading), Background, Explained, What happened, By the numbers, What they
-  say, Related events, What next. NO
+  news (1-2 sentence lead, no heading), Background, What happened, What they say, By the numbers, Explained,
+  What next, Related events (owner, Oct 15 2026; numbered 01-07 on the site; it was Background, Explained, What
+  happened, By the numbers, What they say, Related events, What next). The site (`sectionGroups`, `pageOrder`) and the
+  read-aloud (`audio._page_order`) show older articles in the new order too, by display only (stored paragraphs and
+  their indices unchanged, so audio timing still lights the right sentence). NO
   disputed section (owner, Oct 7 2026): a disagreement is written where its subject is, with both
   versions and whose; contradicting statements and claim/response pairs share a section; purple
   one-outlet lines stay with their subject (the colour marks them). One sectioned draft,
