@@ -98,7 +98,7 @@ def build_entry(run: dict, desk: dict | None, outlets: dict | None, intake: dict
         entry["express"] = st["express"]
     if desk:
         entry["desk"] = {k: desk[k] for k in ("published", "seats", "ready", "ready_beat", "tried", "skipped",
-                                              "beat_seat", "already_this_hour", "short") if k in desk}
+                                              "beat_seat", "beat_seat_empty", "already_this_hour", "short") if k in desk}
         if desk.get("express"):
             entry["desk"]["express"] = desk["express"]
     return entry
@@ -315,7 +315,7 @@ the next session starts from numbers.
 - `pipeline`: counts of the run's stages (grouped, rated, queue, extracted, analysed, qualifying, settled ...).
 - `quota_left`, `tier_calls`: Gemini quota left per tier at the end of the run, and the calls made, by outcome.
 - `desk`: the writing desk's record of the hour: `published` (story ids), `seats` (general / beat left), `ready`,
-  `ready_beat`, `skipped`, `beat_seat`, `short`.
+  `ready_beat`, `skipped`, `beat_seat`, `beat_seat_empty`, `short`.
 - `express`: the express lane's funnel for the run (appears when the lane runs). Counts per step, in order:
   `taken` (new links from express feeds that were downloaded), `intake_excluded` (kept out by code before the page was
   fetched) and `intake_over_cap`, `unreadable` (page not fully readable: option B), `asked` (headlines the model

@@ -10,7 +10,7 @@ function browser({ clip = false } = {}) {
     constructor() { this.sampleRate = 48000; this.currentTime = 0; this.state = "running"; this.destination = {}; this.audioWorklet = { addModule: async () => {} }; }
     async resume() {}
     createBuffer(_c, n, rate) { return { duration: n / rate, copyToChannel() {} }; }
-    createBufferSource() { const s = { connect() {}, start(t) { s.at = t; }, stop() { s.stopped = true; }, onended: null }; w.sources.push(s); return s; }
+    createBufferSource() { const s = { connect() {}, start(t) { s.at = t; }, stop() { s.stopped = true; }, onended: null, playbackRate: { value: 1 } }; w.sources.push(s); return s; }
     createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
     createGain() { return { gain: {}, connect() {} }; }
     async decodeAudioData() { return { duration: 3 }; }
@@ -79,7 +79,7 @@ test("without a recording the guide says the RECAP's words, not the article's", 
   ws.onopen();
   await msg(ws, { setupComplete: {} });
   await tick(30);
-  const said = ws.sent.filter((m) => /Say these two sentences/.test(m.realtimeInput?.text || ""));
+  const said = ws.sent.filter((m) => /[Ss]ay this one sentence aloud/.test(m.realtimeInput?.text || ""));
   assert.equal(said.length, 1);
   assert.match(said[0].realtimeInput.text, /About today's news\?/);
   assert.doesNotMatch(said[0].realtimeInput.text, /this story/);

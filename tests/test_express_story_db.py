@@ -99,7 +99,8 @@ def test_a_second_outlet_not_yet_read_holds_the_story(store):
     sid, aid = _story(store, f, read=True)
     _claim(store, sid, aid, "Tata Motors")
     store.insert_returning_id(articles, dict(
-        url="https://y/1", feed_id=None, outlet="Mint", lang="en", role="news", title="Tata Motors plant opens", story_id=sid,
+        # an INDEPENDENT second outlet: Mint is HT Media like Hindustan Times (config/ownership.yaml), one outlet
+        url="https://y/1", feed_id=None, outlet="The Hindu", lang="en", role="news", title="Tata Motors plant opens", story_id=sid,
         published_at=NOW, fetched_at=NOW, text="Tata Motors plant. " * 30, text_source="full", minhash=[1],
         extract_failures=0, extracted_at=None))
     assert express.assess(store, sid) is False

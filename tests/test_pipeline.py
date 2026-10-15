@@ -2192,8 +2192,8 @@ def test_sections_left_short_are_filled_a_few_at_a_time():
     assert set(nar["covers"]) == {1, 2, 3, 4, 5, 6, 7} and essay_ok(nar, payload)
     keys = nar["section_keys"]
     assert len(keys) == len(nar["paragraphs"]) and keys[0] == "news"
-    # context before the full account (owner, Oct 7 2026)
-    assert [k for k in dict.fromkeys(keys)] == ["news", "background", "happened", "numbers", "say", "next"]
+    # context before the full account (owner, Oct 7 2026); section order of Oct 15 2026
+    assert [k for k in dict.fromkeys(keys)] == ["news", "background", "happened", "say", "numbers", "next"]
 
 
 def test_a_short_article_is_finished_next_time_not_thrown_away(store):
@@ -2508,7 +2508,8 @@ def test_feed_writes_the_reading_site_files(store, tmp_path):
     page = json.loads((out / "story" / f"{row['story_id']}.json").read_text(encoding="utf-8"))
     nar = page["payload_en"]["narrative"]
     assert nar["paragraphs"] == row["payload_en"]["narrative"]["paragraphs"] and nar["sources"]
-    assert set(page["payload_en"]["narrative"]) == {"paragraphs", "section_keys", "sources"}
+    # "who": the speaker of each "What they say" card (feed._speakers, Oct 9 2026), English page only
+    assert set(page["payload_en"]["narrative"]) == {"paragraphs", "section_keys", "sources", "who"}
     assert page["headline_hi"] == row["headline_hi"]
     # the next export reads nothing it already has (egress): unchanged articles come from the manifest
     reads = []
@@ -3203,7 +3204,8 @@ def test_beat_stories_get_reserved_reading_places(store, monkeypatch):
 
 
 def test_the_desk_keeps_one_seat_for_domains_or_sport(store, monkeypatch):
-    """Two seats for any story, one only for a Domains/Sport story; empty when none is ready."""
+    """Two seats for any story, and beat seats (two since Oct 13 2026) only for a Domains/Sport story; empty when none is
+    ready. A beat seat filled and one left empty: the stats keep who took it and say the other stayed empty."""
     from nishpaksh import desk
     import nishpaksh.compose as C
     gen = [_story_with_sources(store, f"General {k}", 3) for k in range(4)]
@@ -3225,6 +3227,7 @@ def test_the_desk_keeps_one_seat_for_domains_or_sport(store, monkeypatch):
     monkeypatch.setattr(V, "base_verdicts", lambda *a, **k: None)
     st = desk.work(store, None, now=NOW)
     assert done == gen[:2] + [sport] and st["beat_seat"] == [sport]
+    assert st["beat_seat_empty"] == "1 empty: none could be written"
     # next hour, nothing of a beat ready: two general articles and the seat stays empty
     order[:] = gen[2:]
     st = desk.work(store, None, now=NOW + dt.timedelta(hours=1))
@@ -3377,7 +3380,10 @@ def test_each_statement_carries_the_one_sentence_shape_that_applies_to_it():
     dis = mk(5, "The toll is 40", "disputed", speaker="the police", conflicts_with=[6])
     assert "SHAPE" not in _statement_line(plain)                                  # plain: nothing to decide
     assert 'SHAPE: "<the content>, Humayun Kabir said."' in _statement_line(said)
-    assert 'with the statement\'s own verb "accused"' in _statement_line(acc)
+    # owner, Oct 13 2026: a statement about its own speaker is written with them as the subject (it keeps its own verb)
+    assert "the content is about Humayun Kabir themselves" in _statement_line(acc)
+    acc2 = mk(7, "The MLA's supporters were accused of booth capturing by the police", speaker="Station officer Ravi Jha")
+    assert 'with the statement\'s own verb "accused"' in _statement_line(acc2)
     assert "The evidence shows this is false: <the evidence given>" in _statement_line(false)
     assert "A viral post said" in _statement_line(false)
     assert "both versions, each pinned on its holder" in _statement_line(dis)
@@ -3480,10 +3486,13 @@ def test_the_plan_gives_every_section_its_own_paragraphs():
     sec = assign_sections(items)
     sec[3] = "news"
     pl = plan.build(items, sec)
-    assert [p.section for p in pl] == ["news", "background", "happened", "numbers", "say", "say", "say", "related", "next"]
+    # section order of Oct 15 2026; "What happened" here is three different subjects, and since the owner's Oct 13-14
+    # commits a lone statement stays alone rather than join a paragraph about something else (plan._pack, strict)
+    assert [p.section for p in pl] == ["news", "background", "happened", "happened", "happened", "say", "say", "say",
+                                       "numbers", "next", "related"]
     assert [p.n for p in pl] == list(range(1, len(pl) + 1))
     by = {p.n: p for p in pl}
-    assert by[3].ids == [4, 2, 1]                                  # what happened, in time order (5, 7, 9 October)
+    assert [i for p in pl if p.section == "happened" for i in p.ids] == [4, 2, 1]   # what happened, in time order (5, 7, 9 October)
     # one speaker's argument together; the response right after what it answers; every statement once
     say = [p for p in pl if p.section == "say"]
     assert [(p.speaker, p.ids, p.link) for p in say] == [("Asha Rao", [6, 8], "new"), ("Orion Builders", [9], "answers"),
@@ -3534,12 +3543,12 @@ def test_conform_puts_the_writers_sentences_back_into_the_plan():
     texts = {x["text"] for x in block + lead}
     out, keys, stats = plan.conform([block, lead], ["say", "news"], pl)
     assert keys[0] == "news" and out[0][0]["ids"] == [3]                       # the lead first, whatever order it came in
-    assert keys == sorted(keys, key=["news", "background", "happened", "numbers", "say", "related", "next"].index)
+    assert keys == sorted(keys, key=["news", "background", "happened", "say", "numbers", "explained", "next", "related"].index)          # section order of Oct 15 2026
     assert {x["text"] for p in out for x in p} == texts                       # sentences never changed or lost
     paras = [[x["ids"][0] for x in p] for p, k in zip(out, keys) if k == "say"]
     assert paras == [[6, 8], [9], [7]]                                       # one speaker per paragraph, the answer after
     assert not any(p[0]["text"].startswith("She added") for p in out)        # leaning sentence never opens a paragraph
-    happened = next(p for p, k in zip(out, keys) if k == "happened")
+    happened = [x for p, k in zip(out, keys) if k == "happened" for x in p]   # one paragraph per subject (Oct 13-14 2026)
     assert [x["ids"][0] for x in happened] == [4, 2, 1]
     assert stats["moved"] >= 1 and stats["planned"] == len(pl)
 
@@ -3580,7 +3589,7 @@ def test_the_writer_is_given_the_plan_and_the_article_follows_it():
     assert "PARAGRAPH 1" in seen["prompt"] and "opens with" in seen["prompt"]
     keys = nar["section_keys"]
     assert keys[0] == "news" and nar["paragraphs"][0][0]["ids"] == [3]
-    assert [k for k in dict.fromkeys(keys)] == ["news", "background", "happened", "numbers", "say", "related", "next"]
+    assert [k for k in dict.fromkeys(keys)] == ["news", "background", "happened", "say", "numbers", "next", "related"]
     assert set(nar["covers"]) == set(range(1, 13)) and essay_ok(nar, payload)
     assert nar["plan"]["planned"] >= 7 and nar["plan"]["written"] >= 7
     # the speakers' lines sit together: Rao's two lines, then the company's answer, then Sethi
@@ -3619,7 +3628,8 @@ def test_link_line_says_how_a_statement_connects_to_the_one_before():
     assert link_line(by[1], None) is None
     assert "same speaker as #5" in link_line(by[6], by[5])
     assert "answer to #5" in link_line(by[4], by[5])
-    assert "later than #8" in link_line(by[7], by[8]) and "9 October" in link_line(by[7], by[8])
+    # owner's "trying to fix grammar" (Oct 13 2026): a different time gets its own date, "later" only for the same subject
+    assert "at a different time than #8" in link_line(by[7], by[8]) and "9 October" in link_line(by[7], by[8])
     assert "same subject as #2" in link_line(by[3], by[2])          # "permit"
     assert link_line(by[8], by[1]) is None                          # a new point: no connective needed
 
@@ -4046,7 +4056,9 @@ def test_a_story_with_many_independent_outlets_is_ready_before_it_goes_quiet():
 
 def test_the_outlet_count_is_only_asked_when_the_cheap_checks_fail():
     from nishpaksh import editions
-    S = dataclasses.replace(editions.SETTINGS, settle_early_outlets=8, settle_early_min_minutes=60)
+    # the rule's own hours pinned: conftest sets settle_quiet_hours=0 for every test
+    S = dataclasses.replace(editions.SETTINGS, settle_quiet_hours=3, settle_max_hours=8, settle_early_outlets=8,
+                            settle_early_min_minutes=60)
     met = dt.datetime(2026, 10, 11, 6, 0)
     calls = []
 
@@ -4119,12 +4131,12 @@ def test_unused_seats_of_earlier_hours_are_there_for_the_desk(store):
     """Owner, Oct 11 2026: what an hour did not publish is added to the next hours."""
     from nishpaksh import desk
     at = _utc(4)                                              # 04:05 Pacific: five hours of seats open
-    assert desk.seats(store, at) == (6, 3)                    # capped at 3 hours' worth in one run (2 and 1 an hour)
+    assert desk.seats(store, at) == (6, 6)                    # capped at 3 hours' worth in one run (2 and 2 an hour since Oct 13 2026)
     for k in range(4):                                        # four published today
         store.exec(insert(published).values(story_id=800 + k, version=1, updated_at=at - dt.timedelta(minutes=k + 1),
                                             headline_en="h", headline_hi="h", payload_en={}, payload_hi={}))
     general, beat = desk.seats(store, at)
-    assert general == 6 and beat == 3                         # 10 and 5 open, minus 4: still more than a burst
+    assert general == 6 and beat == 6                         # 10 and 10 open, minus 4: still more than a burst
     for k in range(6):
         store.exec(insert(published).values(story_id=900 + k, version=1, updated_at=at - dt.timedelta(minutes=10 + k),
                                             headline_en="h", headline_hi="h", payload_en={}, payload_hi={}))
@@ -4191,7 +4203,7 @@ def test_carry_over_can_be_switched_off(store, monkeypatch):
     assert carry.left(10, 0, _utc(5)) == 10
     carry.Bank(store, _utc(5)).spend("search_stories", 3)
     assert store.quota_load("2026-10-11") == {}               # nothing booked either
-    assert desk.seats(store, _utc(5)) == (2, 1)               # the hour's own seats, as before
+    assert desk.seats(store, _utc(5)) == (2, 2)               # the hour's own seats, as before (2 beat seats since Oct 13 2026)
 
 
 def test_titles_say_whether_they_carry_their_own_scope():

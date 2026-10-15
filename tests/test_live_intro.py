@@ -7,13 +7,13 @@ from nishpaksh import live_intro
 
 
 def test_the_shipped_intro_words_are_valid_and_say_what_they_must():
+    # owner's own commit "changes in intro and presaved speeches" (Oct 12 2026): one short opening line per language,
+    # no "you can interrupt" sentence and no closing question any more
     d = live_intro.load()
     assert set(d) >= {"en", "hi", "pause_seconds"}
-    assert "interrupt" in d["en"][0].lower()          # tells them they can interrupt at any time
-    assert d["en"][1].rstrip().endswith("?")          # then asks what they would like to know
-    assert d["hi"][1].rstrip().endswith("?")
-    assert "interrupt" in d["recap_en"][0].lower() and "news" in d["recap_en"][1].lower()      # the recap guide's own words (owner, Oct 12 2026)
-    assert d["recap_en"][1].rstrip().endswith("?") and d["recap_hi"][1].rstrip().endswith("?")
+    for k in ("en", "hi", "recap_en", "recap_hi"):
+        assert 1 <= len(d[k]) <= 2 and all(x.strip() for x in d[k])
+    assert "article" in d["en"][0].lower() and "news" in d["recap_en"][0].lower()     # the recap guide's own words
     assert live_intro.words(d, "en", "recap") == d["recap_en"] and live_intro.words(d, "hi") == d["hi"]
     assert live_intro.words({"en": ["a", "b"], "hi": ["c", "d"]}, "en", "recap") == ["a", "b"]  # no recap words: the article's
 
@@ -33,7 +33,8 @@ def test_a_part_that_cannot_be_spoken_fails_loudly_instead_of_giving_half_an_int
 
 
 @pytest.mark.parametrize("bad", [
-    {"en": ["one"], "hi": ["a", "b"], "pause_seconds": 1},
+    {"en": [], "hi": ["a", "b"], "pause_seconds": 1},
+    {"en": ["a", "b", "c"], "hi": ["a"], "pause_seconds": 1},
     {"en": ["a", "b"], "hi": ["a", ""], "pause_seconds": 1},
     {"en": ["a", "b"], "hi": ["a", "b"], "pause_seconds": 9},
     {"en": ["a", "b"], "hi": ["a", "b"]},
@@ -66,10 +67,11 @@ def test_the_intro_job_uses_its_own_key_when_there_is_one(monkeypatch):
     assert live_intro.intro_keys(["a"]) == ["a"]                    # blank counts as not set
 
 
-def test_the_workflow_hands_the_job_the_intro_secret():
+def test_the_workflow_hands_the_job_the_gemini_keys():
+    # owner's "Update live-intro.yml" (Oct 11 2026): the job uses the ordinary keys, there is no separate intro secret
     import pathlib
     yml = (pathlib.Path(live_intro.__file__).resolve().parent.parent / ".github" / "workflows" / "live-intro.yml").read_text(encoding="utf-8")
-    assert "GEMINI_API_KEY_INTRO: ${{ secrets.GEMINI_API_KEY_INTRO }}" in yml
+    assert "GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}" in yml
 
 
 class _Clock:

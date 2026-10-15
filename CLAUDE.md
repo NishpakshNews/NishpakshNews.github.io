@@ -1204,6 +1204,18 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
 - Tests: `python -m pytest -q` (fake backend in `tests/fixtures.py`; add fakes for any new prompt).
 
 ## Open items
+- **The test suite is green again (Oct 16 2026, session 1 of the translation/learning plan).** It had failed on every one of the last
+  60 runs: 17 Python tests and 4 Node files lagged behind the owner's own later commits (section order, intro words and live-intro
+  keys, grammar wording, two beat seats, `who` on pages, the guide saying the intro itself, `playbackRate`). They were updated to
+  the decisions above, each with a comment naming the change. Three were real bugs, fixed: (1) `people._clean` / `_ok`: since the
+  titles registry "Supreme Court" / "Election Commission" were cleaned to nothing / "Commission" (their words are title words), so
+  readers following them got no notification; a phrase ending in an institution word (`people.BODY_END`) is a body and keeps its
+  name; (2) `desk.work`: with two beat seats, "empty" for the second seat overwrote the list of who took the first; now
+  `beat_seat` keeps the list and `beat_seat_empty` says how many stayed empty (ledger reads both); (3) `talk.js` `end()` did not
+  wake a start still waiting for the server or the intro (it returned 15-30 s later). The Node controller tests now start, then
+  open the fake socket (`openReady`), since `start()` returns only after the intro; their fake server ends the intro turn itself.
+  **Still clock-dependent:** `test_end_to_end` fails just after midnight IST (seen 00:15 IST, also on the untouched code; the
+  fixtures' `NOW` is the real clock in UTC, a step compares IST dates); passes the rest of the day. Not yet traced.
 - **Flaky tests (seen Oct 8 2026, before the split work too):** `test_a_later_development_links_to_its_story_and_gets_background`
   and `test_published_article_is_closed_and_only_its_colours_mature` fail about 1 run in 3-8; they pass alone.
   Find the nondeterminism (set order, wall clock) before trusting a red run.

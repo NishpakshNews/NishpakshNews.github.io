@@ -266,7 +266,13 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
         else:
             stats["skipped"][why] = stats["skipped"].get(why, 0) + 1
     if beat_room > 0:       # the seat stays empty (owner): say why
-        stats["beat_seat"] = "empty: no Domains or Sport story ready" if not beats else "empty: none could be written"
+        why = "empty: no Domains or Sport story ready" if not beats else "empty: none could be written"
+        if stats.get("beat_seat"):
+            # some beat seats were filled (there are two since Oct 13 2026): keep the list of who took them and say how
+            # many stayed empty beside it (the empty note used to overwrite the list)
+            stats["beat_seat_empty"] = f"{beat_room} {why}"
+        else:
+            stats["beat_seat"] = why
     return stats
 
 

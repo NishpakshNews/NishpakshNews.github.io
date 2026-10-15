@@ -11,7 +11,7 @@ function browser({ micFails = false, grantStatus = 200, grantBody, clip = false,
     constructor() { this.sampleRate = 48000; this.currentTime = 0; this.state = "running"; this.destination = {}; this.audioWorklet = { addModule: async () => {} }; }
     async resume() {}
     createBuffer(_c, n, rate) { return { duration: n / rate, copyToChannel() {} }; }
-    createBufferSource() { const s = { connect() {}, start(t) { s.at = t; }, stop() { s.stopped = true; }, onended: null }; w.sources.push(s); return s; }
+    createBufferSource() { const s = { connect() {}, start(t) { s.at = t; }, stop() { s.stopped = true; }, onended: null, playbackRate: { value: 1 } }; w.sources.push(s); return s; }
     createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
     createGain() { return { gain: {}, connect() {} }; }
     async decodeAudioData() { return { duration: 3 }; }

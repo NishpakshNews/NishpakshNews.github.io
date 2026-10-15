@@ -616,6 +616,7 @@ export function createTalk(opts) {
     ending = true;
     clearTimeout(quietTimer); clearInterval(thinkTimer); clearInterval(idleTimer); clearTimeout(maxTimer); clearTimeout(wrapTimer);
     try { introStop?.(); } catch { /* done */ }
+    try { readyWake?.(); introWake?.(); } catch { /* done */ }   // a start still waiting for the server or for the intro returns now, not 15-30 s later
     try { for (const s of playing) { s.onended = null; s.stop(); } } catch { /* done */ }
     playing.clear();
     try { ws && ws.readyState <= 1 && ws.close(1000); } catch { /* done */ }

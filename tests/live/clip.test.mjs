@@ -11,7 +11,7 @@ function browser({ micFails = false, grantStatus = 200, grantBody, clip = false,
     constructor() { this.sampleRate = 48000; this.currentTime = 0; this.state = "running"; this.destination = {}; this.audioWorklet = { addModule: async () => {} }; }
     async resume() {}
     createBuffer(_c, n, rate) { return { duration: n / rate, copyToChannel() {} }; }
-    createBufferSource() { const s = { connect() {}, start(t) { s.at = t; }, stop() { s.stopped = true; }, onended: null }; w.sources.push(s); return s; }
+    createBufferSource() { const s = { connect() {}, start(t) { s.at = t; }, stop() { s.stopped = true; }, onended: null, playbackRate: { value: 1 } }; w.sources.push(s); return s; }
     createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
     createGain() { return { gain: {}, connect() {} }; }
     async decodeAudioData() { return { duration: 3 }; }
@@ -57,7 +57,7 @@ const tick = (ms = 5) => new Promise((r) => setTimeout(r, ms));
 
 
 const msg = (ws, o) => ws.onmessage({ data: JSON.stringify(o) });
-const introText = (ws) => ws.sent.filter((m) => /Say these two sentences/.test(m.realtimeInput?.text || ""));
+const introText = (ws) => ws.sent.filter((m) => /[Ss]ay this one sentence aloud/.test(m.realtimeInput?.text || ""));
 
 test("the recording of the reader's voice plays at once, while the login is still going on, and the guide does not say the intro again", async () => {
   let give; const grantGate = new Promise((r) => { give = r; });
@@ -68,6 +68,7 @@ test("the recording of the reader's voice plays at once, while the login is stil
   assert.ok(w.fetched.some((u) => u.endsWith("/live/intro-Orus-en.m4a")), "the file of the chosen voice and language");
   assert.equal(w.sockets.length, 0, "no socket yet: the login has not answered");
   assert.equal(w.sources.filter((s) => s.at !== undefined).length, 1, "the recording is already playing");
+  await tick(1250);               // the card says "intro" only once the voice is heard: CLIP_LEAD_S (1.2 s) after scheduling (Oct 12 2026)
   assert.ok(ev.states.includes("intro"));
   give();
   await tick(30);

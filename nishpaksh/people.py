@@ -40,6 +40,8 @@ INSTITUTION = {"court", "commission", "ministry", "party", "council", "police", 
                "bank", "university", "assembly", "sabha", "corporation", "authority", "bureau", "agency", "office",
                "committee", "force", "army", "navy", "tribunal", "institute", "college", "hospital", "company", "group",
                "limited", "ltd", "india", "station", "district", "pradesh", "nadu", "bengal"}
+# the institution words that end a body's own name (not places: "Uttar Pradesh", "India" end other phrases)
+BODY_END = INSTITUTION - {"india", "pradesh", "nadu", "bengal", "district", "station", "group", "limited", "ltd", "company"}
 NAME = re.compile(r"(?:[A-Z][\w.&'()-]*\s+){0,4}[A-Z][\w'-]{2,}")
 
 
@@ -51,6 +53,14 @@ def _clean(phrase: str) -> str:
     # a possessive or a hyphenated descriptor in front ("Delhi's", "Liberian-flagged") is not part of the name
     while len(words) > 1 and (words[0].endswith("'s") or re.search(r"-[a-z]", words[0])):
         words = words[1:]
+    # a BODY keeps its whole name: "The Supreme Court", "Election Commission" end in an institution word, and since the
+    # titles registry (Oct 10 2026) their words are also title words ("Supreme Court judge", "Election Commissioner"),
+    # which stripped them to nothing, so readers following the Supreme Court were never notified. Only "The" goes.
+    if len(words) >= 2 and words[-1].lower() in BODY_END and words[-1][:1].isupper():
+        while words and words[0].lower() in NOT_NAMES:
+            words = words[1:]
+        if len(words) >= 2:
+            return " ".join(words)
     # everything up to the last title word goes, when a name of 2+ words is left after it
     last_title = max((k for k, w in enumerate(words) if w.lower() in TITLES), default=-1)
     if 0 <= last_title and len(words) - last_title - 1 >= 2:
@@ -81,7 +91,8 @@ def _ok(name: str) -> bool:
     words = name.split()
     if not words or name.lower() in GENERIC or len(name) < 4:
         return False
-    if all(w.lower() in NOT_NAMES or w.lower() in TITLES for w in words):
+    if all(w.lower() in NOT_NAMES or w.lower() in TITLES for w in words) and not (
+            len(words) >= 2 and words[-1].lower() in BODY_END):    # a body ("Supreme Court") is no title (see _clean)
         return False
     from .places import BY_NAME, _key
     if _key(name) in BY_NAME:

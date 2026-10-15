@@ -10,7 +10,7 @@ function browser({ micFails = false, grantStatus = 200, grantBody, clip = false,
     constructor() { this.sampleRate = 48000; this.currentTime = 0; this.state = "running"; this.destination = {}; this.audioWorklet = { addModule: async () => {} }; }
     async resume() {}
     createBuffer(_c, n, rate) { return { duration: n / rate, copyToChannel() {} }; }
-    createBufferSource() { const s = { connect() {}, start(t) { s.at = t; }, stop() { s.stopped = true; }, onended: null }; w.sources.push(s); return s; }
+    createBufferSource() { const s = { connect() {}, start(t) { s.at = t; }, stop() { s.stopped = true; }, onended: null, playbackRate: { value: 1 } }; w.sources.push(s); return s; }
     createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
     createGain() { return { gain: {}, connect() {} }; }
     async decodeAudioData() { return { duration: 3 }; }
@@ -19,7 +19,15 @@ function browser({ micFails = false, grantStatus = 200, grantBody, clip = false,
   class Tap { constructor() { this.port = {}; w.taps.push(this); } connect() {} disconnect() {} }
   class Sock {
     constructor(url) { this.url = url; this.readyState = 1; this.sent = []; w.sockets.push(this); }
-    send(m) { this.sent.push(JSON.parse(m)); }
+    send(m) {
+      const msg = JSON.parse(m);
+      this.sent.push(msg);
+      // like the real server: asked to say the intro (talk.js playIntro, since Oct 12 2026 the guide speaks it), the guide
+      // says it and ends its turn; talk.js waits for that turn's end before the microphone opens
+      if (/say this one sentence aloud/i.test(msg.realtimeInput?.text || "")) {
+        setTimeout(() => this.onmessage && this.onmessage({ data: JSON.stringify({ serverContent: { turnComplete: true } }) }), 5);
+      }
+    }
     close() { this.readyState = 3; }
   }
   Object.assign(globalThis, {
@@ -53,25 +61,36 @@ function make(extra = {}) {
   return { talk, ev };
 }
 const tick = (ms = 5) => new Promise((r) => setTimeout(r, ms));
+// Since Oct 12 2026 start() returns only once the intro has been said, which needs the server ready: a test starts the
+// conversation, then opens the fake socket and has the server say ready, then waits for start() (the fake server ends the
+// intro's turn by itself, see Sock.send)
+async function openReady(w, i = 0) {
+  await tick(20);
+  const ws = w.sockets[i];
+  ws.onopen();
+  await ws.onmessage({ data: JSON.stringify({ setupComplete: {} }) });
+  return ws;
+}
 
 test("happy path: intro, then the socket says ready, then the microphone opens and audio flows both ways", async () => {
   const w = browser({ clip: true });
   const { talk, ev } = make();
   const started = talk.start({ storyId: 7, lang: "en" });
-  // the intro recording is playing: end it by hand (the controller waits for its length on a timer, not for onended)
   await tick(20);
-  assert.deepEqual(ev.states, ["connecting", "intro"]);
+  assert.deepEqual(ev.states, ["connecting"]);                // "intro" only once the recording is heard (CLIP_LEAD_S)
   assert.match(w.sockets[0].url, /BidiGenerateContentConstrained\?access_token=auth_tokens%2Fabc$/);
   assert.equal(ev.grants[0].instruction, "RULES");
-  talk.skipIntro();
-  await started;
   // the socket opens: setup goes first, with the instruction from the grant
   const ws = w.sockets[0];
   ws.onopen();
   assert.equal(ws.sent[0].setup.systemInstruction.parts[0].text, "RULES");
   assert.equal(ws.sent[0].setup.model, "models/gemini-3.8-live");
-  assert.deepEqual(ev.states.slice(-1), ["intro"]);           // not listening before the server is ready
   await ws.onmessage({ data: JSON.stringify({ setupComplete: {} }) });
+  await tick(1250);
+  assert.equal(ev.states.at(-1), "intro");                    // the recording plays: not listening yet
+  assert.equal(w.taps.length, 0, "the microphone's audio is not sent while the intro plays");
+  talk.skipIntro();                                           // end the recording by hand (its length is a timer)
+  await started;
   await tick(20);
   assert.equal(ev.states.at(-1), "listening");
   // the reader's voice: 48 kHz float chunk becomes 16 kHz PCM on the socket
@@ -109,9 +128,9 @@ test("happy path: intro, then the socket says ready, then the microphone opens a
 test("with no recording yet the intro is skipped quietly (no browser voice here), and the conversation still starts", async () => {
   const w = browser();
   const { talk, ev } = make();
-  await talk.start({ storyId: 7, lang: "en" });
-  w.sockets[0].onopen();
-  await w.sockets[0].onmessage({ data: JSON.stringify({ setupComplete: {} }) });
+  const started = talk.start({ storyId: 7, lang: "en" });
+  await openReady(w);
+  await started;                                  // no recording: the guide was asked to say the intro and ended its turn
   await tick(20);
   assert.equal(ev.states.at(-1), "listening");
   talk.stop();
@@ -156,8 +175,10 @@ test("a blocked microphone stops before anything is asked of the server", async 
 test("the socket closing before it was ready is a refusal, with the reason", async () => {
   const w = browser();
   const { talk, ev } = make();
-  await talk.start({ storyId: 7, lang: "en" });
+  const started = talk.start({ storyId: 7, lang: "en" });
+  await tick(20);
   w.sockets[0].onclose({ code: 1007, reason: "bad setup" });
+  await started;                                  // the start waiting for the server returns at once
   assert.deepEqual(ev.errors, ["refused"]);
   assert.deepEqual(ev.ends, ["refused"]);
 });
@@ -165,8 +186,9 @@ test("the socket closing before it was ready is a refusal, with the reason", asy
 test("the server saying goAway ends the conversation cleanly", async () => {
   const w = browser();
   const { talk, ev } = make();
-  await talk.start({ storyId: 7, lang: "en" });
-  await w.sockets[0].onmessage({ data: JSON.stringify({ setupComplete: {} }) });
+  const started = talk.start({ storyId: 7, lang: "en" });
+  await openReady(w);
+  await started;
   await w.sockets[0].onmessage({ data: JSON.stringify({ goAway: { timeLeft: "10s" } }) });
   assert.deepEqual(ev.ends, ["goaway"]);
   assert.deepEqual(ev.errors, []);
@@ -175,9 +197,13 @@ test("the server saying goAway ends the conversation cleanly", async () => {
 test("a conversation can be started again after it ended", async () => {
   const w = browser();
   const { talk, ev } = make();
-  await talk.start({ storyId: 7, lang: "en" });
+  let started = talk.start({ storyId: 7, lang: "en" });
+  await openReady(w, 0);
+  await started;
   talk.stop();
-  await talk.start({ storyId: 8, lang: "en" });
+  started = talk.start({ storyId: 8, lang: "en" });
+  await openReady(w, 1);
+  await started;
   assert.equal(w.sockets.length, 2);
   assert.notEqual(talk.state, "ended");
   talk.stop();
@@ -187,7 +213,9 @@ test("a conversation can be started again after it ended", async () => {
 test("starting while a conversation is running does nothing", async () => {
   const w = browser();
   const { talk } = make();
-  await talk.start({ storyId: 7, lang: "en" });
+  const started = talk.start({ storyId: 7, lang: "en" });
+  await openReady(w);
+  await started;
   await talk.start({ storyId: 7, lang: "en" });
   assert.equal(w.sockets.length, 1);
   talk.stop();
@@ -236,6 +264,7 @@ test("closed and started again while the first start was still waiting: only the
   talk.stop();
   const second = talk.start({ storyId: 7, lang: "en" });
   give();
+  await openReady(w);
   await Promise.all([first, second]);
   await tick(10);
   assert.equal(w.sockets.length, 1);               // not two conversations
@@ -248,7 +277,8 @@ test("the reader's style goes to the function, the voice from the grant goes int
   const f = globalThis.fetch;
   globalThis.fetch = async (url, init) => { if (String(url).endsWith("live-token")) body = JSON.parse(init.body); return f(url, init); };
   const { talk } = make();
-  await talk.start({ storyId: 7, lang: "en", style: { voice: "Achird", pace: "slow", tone: "news", accent: "neutral" } });
+  const started = talk.start({ storyId: 7, lang: "en", style: { voice: "Achird", pace: "slow", tone: "news", accent: "neutral" } });
+  await tick(20);
   assert.deepEqual(body, { story_id: 7, lang: "en", style: { voice: "Achird", pace: "slow", tone: "news", accent: "neutral" } });
   const ws = w.sockets[0];
   talk.nudge("From now on, speak slowly.");                       // the server has not said ready yet
@@ -258,6 +288,7 @@ test("the reader's style goes to the function, the voice from the grant goes int
   assert.equal(setup.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName, "Achird");   // the controller sends the nested layout
   assert.equal(setup.generationConfig.speechConfig.languageCode, "en-IN");
   await ws.onmessage({ data: JSON.stringify({ setupComplete: {} }) });
+  await started;                                  // the intro is over: the guide is listening
   talk.nudge("From now on, speak slowly.");
   assert.deepEqual(ws.sent.at(-1), { realtimeInput: { text: "From now on, speak slowly." } });
   talk.stop();
@@ -267,23 +298,19 @@ test("the reader's style goes to the function, the voice from the grant goes int
   globalThis.fetch = f;
 });
 
-test("the speaker is kept awake from the tap until the intro is over, and the recording is scheduled well ahead (heard from mid-clip, Oct 12 2026)", async () => {
+test("the recording is scheduled well ahead of now (heard from mid-clip, Oct 12 2026)", async () => {
+  // the keep-alive hiss this test also checked was taken out in the owner's commit "changes in intro and presaved speeches"
   let give; const grantGate = new Promise((r) => { give = r; });
   const w = browser({ clip: true, grantGate });
   const { talk } = make();
   const started = talk.start({ storyId: 7, lang: "en", style: { voice: "Orus" } });
   await tick(30);
-  const hiss = w.sources.filter((s) => s.loop === true);
-  assert.equal(hiss.length, 1, "one looping keep-alive source, started on the tap");
-  assert.equal(hiss[0].at, undefined, "started at once, not scheduled");
-  assert.ok(!hiss[0].stopped, "still running while the recording has not played");
   const clip = w.sources.filter((s) => s.at !== undefined);
   assert.equal(clip.length, 1);
   assert.ok(clip[0].at >= 0.9, `the recording is scheduled >= 0.9 s ahead of now (was ${clip[0].at})`);
   give();
-  await tick(30);
+  await openReady(w);
   talk.skipIntro();
   await started;
-  assert.ok(hiss[0].stopped, "the hiss stops once the intro is over");
   talk.stop();
 });

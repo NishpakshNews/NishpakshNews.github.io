@@ -306,7 +306,8 @@ class FakeBrief:
         self.prompts.append(prompt)
         if "brief of the day" in prompt:
             return SimpleNamespace(data={"brief": self.brief})
-        return SimpleNamespace(data={"0": "हिंदी वाक्य।"})
+        # a translation keeps the sentence's numbers, or compose.translation_problem rightly refuses it (Oct 14 2026)
+        return SimpleNamespace(data={"0": "रेपो दर 5.5 प्रतिशत, बाज़ार 1.2 प्रतिशत।"})
 
 
 def test_the_brief_is_checked_by_code_and_keeps_the_leads_colours(tmp_path):
@@ -328,7 +329,7 @@ def test_the_brief_is_checked_by_code_and_keeps_the_leads_colours(tmp_path):
     a, b = sec["sents"]
     assert a["t"].startswith("The Reserve Bank") and a["c"] == "single"     # uses the second sentence: weakest colour
     assert b == {"t": "Police arrested two men in Pune, officials said.", "c": "developing", "id": 401}   # the lead
-    assert hi["sections"][0]["sents"][0]["t"] == "हिंदी वाक्य।"
+    assert hi["sections"][0]["sents"][0]["t"] == "रेपो दर 5.5 प्रतिशत, बाज़ार 1.2 प्रतिशत।"
     # what the recap's talk guide reads (live-token/recapbrief.ts): outlets and the lead's own sentences and colours
     st = {x["id"]: x for x in en["stories"]}
     assert st[400]["n"] == 4 and st[400]["h"] == "H400" and "sx" not in st[400]
@@ -368,3 +369,16 @@ def test_reader_tables_and_run_logs_go_to_the_readers_database(tmp_path):
     assert len(s.rows(select(follows))) == 1 and len(s.rows(select(diagnostics))) == 1
     with pytest.raises(RuntimeError, match="mixes"):
         s.rows(select(articles.c.id).where(articles.c.story_id.in_(select(follows.c.key))))
+
+
+def test_bodies_keep_their_whole_name_titles_do_not_eat_them():
+    """Since the titles registry (Oct 10 2026) "Supreme Court judge" and "Election Commissioner" made Supreme, Court and
+    Election title words, so "The Supreme Court" was cleaned to nothing and "Election Commission" to "Commission":
+    readers following them were never notified. A phrase ending in an institution word is a body and keeps its name."""
+    assert people._clean("The Supreme Court") == "Supreme Court"
+    assert people._clean("Election Commission") == "Election Commission"
+    assert people._clean("Delhi Police") == "Delhi Police"
+    assert people._clean("Chief Justice Surya Kant") == "Surya Kant"          # a person still loses the title
+    assert people._clean("Supreme Court judge Ujjal Bhuyan") == "Ujjal Bhuyan"
+    assert people._clean("The Court") == ""                                   # a bare body word is no name
+    assert people._ok("Supreme Court") and not people._ok("Chief Justice")
