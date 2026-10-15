@@ -1035,22 +1035,40 @@
   .crow { position: relative; z-index: 2; height: 30px; margin-bottom: 0; }
   .chrome .wm-ink { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: #fff; -webkit-text-fill-color: #fff;
                     text-shadow: 0 1px 2px rgba(0,0,0,0.35), 0 0 18px rgba(0,0,0,0.18); line-height: 30px; }
-  #back { box-shadow: none; background: #fff; }
-  #back svg { stroke: #1f2550; }
   .chrome .pill.light { background: rgba(18,12,30,0.34); border: 1px solid rgba(255,255,255,0.22); box-shadow: none; padding: 2px; height: 30px;
                         -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
   .chrome .pill.light button { width: 36px; min-width: 36px; height: 24px; padding: 0; border-radius: 999px; color: #fff; }
   .chrome .pill.light button[aria-pressed="true"] { background: #fff; color: #1f2550; }
-  /* the menu pill becomes the back button: on the home header, while the article grows out of the card, the pill folds
-     down to its white menu end and that end turns into the back circle (the article's own back button is in the same place) */
-  header.top .cback { position: absolute; left: 0; top: 0; z-index: 2; width: 30px; height: 30px; border-radius: 50%; border: 0; padding: 0; background: #fff; color: #1f2550;
-                      display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: 0; transform: scale(.82);
-                      transition: opacity 220ms ease, transform 380ms cubic-bezier(.3,.1,.2,1); }
-  header.top .cpill { transition: clip-path 380ms cubic-bezier(.3,.1,.2,1), -webkit-clip-path 380ms cubic-bezier(.3,.1,.2,1); clip-path: inset(0 0 0 0 round 15px); -webkit-clip-path: inset(0 0 0 0 round 15px); }
-  header.top .cpill svg { transition: opacity 160ms ease; }
-  html.reading header.top .cpill { clip-path: inset(0 calc(100% - 30px) 0 0 round 15px); -webkit-clip-path: inset(0 calc(100% - 30px) 0 0 round 15px); }
-  html.reading header.top .cpill svg { opacity: 0; }
-  html.reading header.top .cback { opacity: 1; transform: none; transition: opacity 240ms ease 140ms, transform 380ms cubic-bezier(.3,.1,.2,1) 80ms; }
+  /* the menu pill becomes the back button (owner, Oct 15 2026: "same size; the right side of the pill comes towards the left
+     and turns into the back button"). The back button is built like the pill's left end: the same 30px translucent rim
+     (1px edge, 2px inside) holding a white 24px centre. While the article grows out of the card, the pill's right side
+     slides left (clip-path, no relayout) until only that 30px end is left; the white menu segment's right side slides left
+     with it (36px wide -> a 24px circle); the menu icon / initial fades and the arrow fades in on the same centre. The
+     article's own back button (#back) is the same shape in the same place, so the hand-over cannot be seen. */
+  header.top .cback, .cfold .cback { position: absolute; left: 0; top: 0; z-index: 2; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.22);
+                      padding: 0; background: none; color: #1f2550; display: flex; align-items: center; justify-content: center;
+                      pointer-events: none; opacity: 0; transition: opacity 160ms ease; }
+  header.top .cpill, .cfold .cpill { transition: clip-path 380ms cubic-bezier(.3,.1,.2,1), -webkit-clip-path 380ms cubic-bezier(.3,.1,.2,1); clip-path: inset(0 0 0 0 round 15px); -webkit-clip-path: inset(0 0 0 0 round 15px); }
+  header.top .cpill .mbtn, .cfold .cpill .mbtn { transition: clip-path 380ms cubic-bezier(.3,.1,.2,1), -webkit-clip-path 380ms cubic-bezier(.3,.1,.2,1), color 140ms ease;
+                            clip-path: inset(0 0 0 0 round 12px); -webkit-clip-path: inset(0 0 0 0 round 12px); }
+  header.top .cpill svg, .cfold .cpill svg { transition: opacity 160ms ease; }
+  html.reading header.top .cpill, html.reading .cfold .cpill { clip-path: inset(0 calc(100% - 30px) 0 0 round 15px); -webkit-clip-path: inset(0 calc(100% - 30px) 0 0 round 15px); }
+  html.reading header.top .cpill .mbtn, html.reading .cfold .cpill .mbtn { clip-path: inset(0 12px 0 0 round 12px); -webkit-clip-path: inset(0 12px 0 0 round 12px); color: transparent; }
+  html.reading header.top .cpill svg, html.reading .cfold .cpill svg { opacity: 0; }
+  html.reading header.top .cback, html.reading .cfold .cback { opacity: 1; transition: opacity 200ms ease 200ms; }
+  /* the article's header is opaque from the first frame and covers the home header, so the fold runs on it too: a copy of
+     the menu pill (.cfold, made by syncFold as the article opens) stands where #back is and folds with html.reading; once it
+     is a circle (400 ms) #back takes over. Closing reverses it: the copy shows at once and unfolds back into the pill. */
+  .cfold { position: absolute; left: 0; top: 0; z-index: 3; width: 30px; height: 30px; pointer-events: none; opacity: 1; }
+  .cfold .cpill { position: absolute; left: 0; top: 0; }
+  html.reading .cfold { opacity: 0; transition: opacity 0s linear 400ms; }
+  #back { opacity: 0; }
+  html.reading #back { opacity: 1; transition: opacity 0s linear 400ms; }
+  #back { position: relative; width: 30px; height: 30px; padding: 0; border-radius: 50%; border: 1px solid rgba(255,255,255,0.22);
+          background: rgba(18,12,30,0.34); box-shadow: none; }
+  #back::before { content: ""; position: absolute; inset: 2px; border-radius: 50%; background: #fff; }
+  #back svg { position: relative; z-index: 1; width: 15px; height: 15px; stroke: #1f2550; }
+  #back:focus-visible { border-radius: 50%; }
   /* under the header row, in one indigo piece that hangs below it (it never pushes the article down): the article's section
      names, which come in as the article opens, and the frozen pane (bar, pills, definition), which comes in once the key
      card has scrolled up under them. The piece's gradient carries on exactly from the header's. */
@@ -2208,6 +2226,7 @@ async function openStory(id, fromCard, opts = {}) {
   }
   sheet.classList.remove("anim", "open", "leaving");
   sheet.classList.add("on");
+  if (!document.documentElement.classList.contains("reading")) { syncFold(); void sheet.offsetWidth; }   // the fold starts from the whole pill
   document.documentElement.classList.add("reading"); sections.inert = true;
   if (r) {
     lastOff = headOffset(fromCard);
@@ -4281,7 +4300,19 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
   if (row) { const b = document.createElement("span"); b.className = "cback"; b.setAttribute("aria-hidden", "true");
     b.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
     row.appendChild(b); }
+  const crow = chrome.querySelector(".crow");
+  if (crow) { const f = document.createElement("span"); f.className = "cfold"; f.id = "cfold"; f.setAttribute("aria-hidden", "true"); f.inert = true; crow.appendChild(f); }
 })();
+/* the copy of the menu pill that folds into the article's back button (see .cfold): taken from the home pill as it is now
+   (menu icon or the reader's initial), so both ends of the fold match */
+function syncFold() {
+  const f = $("cfold"), p = document.querySelector("header.top .cpill"), b = document.querySelector("header.top .cback");
+  if (!f || !p) return;
+  const c = p.cloneNode(true), a = b ? b.cloneNode(true) : null;
+  [c, a].forEach(n => { if (!n) return; n.removeAttribute("id"); n.querySelectorAll("[id]").forEach(e => e.removeAttribute("id")); });
+  c.querySelectorAll("button").forEach(e => { e.tabIndex = -1; e.removeAttribute("aria-label"); });
+  f.replaceChildren(c, ...(a ? [a] : []));
+}
 // where the header ends now (the row, plus the section names and the pane while they show)
 function headBottom() {
   const c = $("chrome").getBoundingClientRect().bottom, p = $("cpane");

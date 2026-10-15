@@ -1118,6 +1118,15 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   alike so its lines break the same while it glides). Seen in the browser: a short English headline at 27px gets wide gaps
   between words. `sw.js` np-main-50. Test: `tests/test_feed_order.py`.
 
+- **The back button is the menu pill's end; the pill folds into it (owner, Oct 15 2026).** `#back` was a solid white 30px
+  circle (with the focus ring, 34px), while the menu pill's white end is a 24px segment inside a translucent 30px rim. Now
+  `#back` is built like that end: the pill's rim (1px edge, `rgba(18,12,30,.34)`) and a white 24px centre (`#back::before`).
+  The fold: the pill's right side slides left (clip-path on `.cpill` to 30px, and on `.mbtn` from 36px to a 24px circle), the
+  menu icon / initial fades, the arrow fades in on the same centre. The article's header is opaque from its first frame and
+  covers the home header, so the same fold also runs on a copy of the pill in the article's header (`.cfold`, filled by
+  `syncFold()` from the home pill as the article opens); after 400 ms `#back` takes over. Closing shows the copy at once and
+  it unfolds back into the pill. `sw.js` np-main-51.
+
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →
 retract headline-only reads → Tavily reads blocked pages → wire copies → grouping (`stories.py`) →
