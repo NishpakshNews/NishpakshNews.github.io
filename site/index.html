@@ -287,11 +287,17 @@
   .alsolist li { margin: 6px 0; line-height: 1.5; }
   .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
   .tile { background: #fff; border-radius: 18px; padding: 14px 14px 12px; box-shadow: 0 3px 0 var(--edge); display: flex; flex-direction: column; gap: 6px; }
-  .tile.wide { grid-column: 1 / -1; }
-  .tile.lone { grid-column: 1 / -1; flex-direction: row; align-items: baseline; gap: 14px; }
-  .tile.lone b { flex: none; max-width: 45%; }
-  .tile b { font-family: var(--head); font-size: 26px; font-weight: 700; line-height: 1.05; color: #1f2550; overflow-wrap: anywhere; }
-  .tile div { font-size: 14px; line-height: 1.45; }
+  /* layout A (owner, Oct 15 2026): square at least, growing with a long sentence; the first of an odd count is wide */
+  .tiles { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .tile { aspect-ratio: 1 / 1; min-width: 0; gap: 10px; padding: 14px; }
+  .tile .ttxt { margin-top: auto; font-size: 14px; line-height: 1.5; }
+  .tile.wide { grid-column: 1 / -1; aspect-ratio: auto; flex-direction: row; align-items: center; gap: 16px; padding: 18px 16px; }
+  .tile.wide .fig { flex: 0 0 auto; max-width: 44%; }
+  .tile.wide .ttxt { margin: 0; font-size: 15px; }
+  .tile .fig { display: block; font-family: var(--head); font-weight: 700; line-height: 1; letter-spacing: -0.01em; color: #1f2550; overflow-wrap: anywhere; }
+  .tile .fig.l1 { font-size: 40px; } .tile .fig.l2 { font-size: 32px; } .tile .fig.l3 { font-size: 25px; }
+  .tile .fig small { font-size: .5em; font-weight: 600; letter-spacing: 0; margin-left: 2px; color: #46549a; }
+  .paper.fignotes { margin-top: 10px; }
   .quote .who { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #46549a; margin-bottom: 6px; }
   /* one quote mark per card, the section's symbol (owner, Oct 9 2026), not one per line: the lines are reported speech */
   .paper.quote { position: relative; padding-left: 46px; }
@@ -1201,6 +1207,23 @@
   .ctip .t2 { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 1.3; color: #6b6e84; }
   .ctip .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--c); opacity: 0.8; }
   @media (prefers-reduced-motion: reduce) { .cpane, .cp, .cp > div > *, .rspace, header.top .cpill, header.top .cback, .cseg, .csegs, .crail, .clabels .sl, .ctip { transition-duration: 1ms !important; transition-delay: 0ms !important; } .sent.flash .s { animation: none; } }
+
+  /* ---------- the section cards' wash (owner, Oct 15 2026; design "C · even spread", spread 15, softness 14, strength 14%) ----------
+     The numbered sections' text is justified (the last line of a paragraph left as it falls; the figures' tiles stay ragged,
+     too narrow to justify). Their colour is no longer a background on each sentence: a layer behind the card's text
+     (canvas.wash, painted by washCard) gives every sentence a soft shape reaching the same distance all round its words,
+     and where two sentences' shapes overlap the colours blend under each other's text. The lead keeps its own wash.
+     Tapping a colour (data-spot) hides the layer and the old per-sentence highlight takes over; the read-aloud's lit
+     sentence draws on top of it. */
+  .wcard { position: relative; isolation: isolate; }
+  .wcard > :not(canvas.wash) { position: relative; z-index: 1; }
+  .wcard.quote::before { z-index: 2; }
+  canvas.wash { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; border-radius: inherit; opacity: 0; transition: opacity 260ms ease; }
+  canvas.wash.on { opacity: 1; }
+  #sheet[data-spot] canvas.wash { opacity: 0; }
+  .wcard .s, .wcard .tile .s { background: transparent; box-shadow: none; padding: 0; border-radius: 0; }
+  #rise .paper.essay:not(.lead) p, #rise .paper.quote p { text-align: justify; text-align-last: start; -webkit-hyphens: auto; hyphens: auto; }
+  @media (prefers-reduced-motion: reduce) { canvas.wash { transition: none; } }
 </style>
 </head>
 <body>
@@ -1727,6 +1750,50 @@ function pageOrder(nar) {
   const paras = nar.paragraphs || [];
   return (nar.section_keys || []).length ? sectionGroups(nar).flatMap(g => g.items) : paras.map((_, k) => k);
 }
+/* "By the numbers", layout A (owner, Oct 15 2026): square cards two to a row, the figure on top and its sentence under it;
+   an odd count opens with one wide card for the first figure (number beside its sentence), so no card sits alone. A card
+   is square at least and grows with a long sentence. A sentence with no figure at all goes into a plain card under the
+   figures (it used to be a wide tile with no number). The figure is shown as the article writes it, never rewritten:
+   money and shares first, then scores ("2-1"), labels ("BS-VII", "Phase II"), plain numbers, then spelled numbers. */
+const FIG_W = "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety";
+const FIG_MONTH = "(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*";
+const FIG_SPELLED = new RegExp(`\\b(?:a dozen|dozen|(?:${FIG_W})(?:[- ](?:${FIG_W}))?(?: (?:hundred|thousand|lakh|crore|million|billion))?)\\b`, "i");
+const FIG_PLAIN = new RegExp(`(?<![\\w.])(?:\\d{1,3}(?:,\\d{2,3})+(?:\\.\\d+)?|(?!(?:19|20)\\d\\d(?!\\d))\\d+(?:\\.\\d+)?)(?![\\w-])(?!\\s${FIG_MONTH}\\b)(?<!\\b${FIG_MONTH}\\s\\d+)`, "i");
+const FIG_PATTERNS = [
+  /(?:[$₹€£]|\bRs\.?\s?|\bINR\s?|\bUSD\s?)\d[\d,]*(?:\.\d+)?(?:\s?(?:lakh|crore|million|billion|trillion|bn|mn|cr|लाख|करोड़))?/i,
+  /(?<![\w.])\d[\d,]*(?:\.\d+)?(?:[-–]\d[\d,]*(?:\.\d+)?)?\s?(?:%|per\s?cent|percent|प्रतिशत|फीसदी)/i,
+  /(?<![\w.])\d[\d,]*(?:\.\d+)?\s(?:lakh|crore|million|billion|trillion|लाख|करोड़)(?:\s(?:rupees|dollars|रुपये|रुपए|डॉलर))?/i,
+  /(?<![\w.-])\d+-\d+(?![\w-])/,
+  /\b[A-Z]{2,}-[IVX]{1,4}\b|\b(?:Phase|Section|Article|Class|Schedule|Stage|Part)\s[IVX]{1,4}\b/,
+  FIG_PLAIN,
+  FIG_SPELLED
+];
+function figureOf(text) {
+  for (const re of FIG_PATTERNS) {
+    const m = (text || "").match(re);
+    if (!m) continue;
+    let f = m[0].trim().replace(/[.,]+$/, "");
+    // a lone digit counts only when it counts something ("4 wickets"), never a date or a list number
+    if (re === FIG_PLAIN && /^\d$/.test(f) && !/^\d\s?(?:runs|wickets|goals|points|people|seats|members|states|years|days|phases|medals|times)\b/i.test(text.slice(m.index))) continue;
+    if (re === FIG_SPELLED) f = f.charAt(0).toUpperCase() + f.slice(1);
+    return f;
+  }
+  return null;
+}
+function figHtml(f) {
+  const unit = f.match(/^(.*?\d)\s?(per\s?cent|percent|lakh|crore|million|billion|trillion|प्रतिशत|फीसदी|लाख|करोड़)(\s(?:rupees|dollars|रुपये|रुपए|डॉलर))?$/i);
+  const main = unit ? unit[1] : f, tail = unit ? unit[2] + (unit[3] || "") : "";
+  const len = main.length + (tail ? 2 : 0);
+  return `<b class="fig ${len <= 4 ? "l1" : len <= 8 ? "l2" : "l3"}">${esc(main)}${tail ? `<small>${esc(tail)}</small>` : ""}</b>`;
+}
+function figuresHtml(items, sent) {
+  const withFig = [], plain = [];
+  for (const x of items) { const f = figureOf(x.text || (x.parts || []).map(p => p.text).join(" ")); (f ? withFig : plain).push([x, f]); }
+  const tiles = withFig.map(([x, f], i) =>
+    `<div class="tile${withFig.length % 2 === 1 && i === 0 ? " wide" : ""}">${figHtml(f)}<div class="ttxt">${sent(x)}</div></div>`).join("");
+  return (tiles ? `<div class="tiles">${tiles}</div>` : "") +
+         (plain.length ? `<div class="paper essay fignotes">${plain.map(([x]) => `<p>${sent(x)}</p>`).join("")}</div>` : "");
+}
 function essayBody(nar, t) {
   const names = Object.fromEntries((nar.sources || []).map(s => [s.n, s.outlet]));
   const link = a => `<a href="#src-${a}" data-src="${a}" title="${esc(names[a] || "")}">${a}</a>`;
@@ -1738,8 +1805,11 @@ function essayBody(nar, t) {
       ? x.parts.map((p, i) => `<span class="s ${esc(cls(p.class))}">${esc(p.text)}${i === x.parts.length - 1 ? sp : ""}</span>`).join(" ")
       : `<span class="s ${esc(cls(x.class))}">${esc(x.text)}${sp}</span>`);
   };
-  const sent = x => `<span class="sent">${body(x)}</span>`;   // one per sentence: lit while read aloud (2.1)
   const paras = nar.paragraphs || [], keys = nar.section_keys || [], who = nar.who || [];
+  // every sentence carries its place (paragraph.sentence) so audio lighting finds it whatever order the page shows it in
+  const keyOf = new Map();
+  paras.forEach((para, k) => (para || []).forEach((x, i) => keyOf.set(x, `${k}.${i}`)));
+  const sent = x => `<span class="sent"${keyOf.has(x) ? ` data-k="${keyOf.get(x)}"` : ""}>${body(x)}</span>`;   // one per sentence: lit while read aloud (2.1)
   if (!keys.length) return `<div class="paper essay">${paras.map(p => "<p>" + p.map(sent).join(" ") + "</p>").join("")}</div>`;
   const groups = sectionGroups(nar);
   let no = 0;
@@ -1748,17 +1818,7 @@ function essayBody(nar, t) {
     if (g.key === "news") return `<div class="paper essay lead">${ps.map(p => "<p>" + p.map(sent).join(" ") + "</p>").join("")}</div>`;
     no += 1;
     const head = `<div class="sechead" data-sec="${esc(g.key)}"><span>${String(no).padStart(2, "0")}</span><h3>${esc(t.sections[g.key] || "")}</h3></div>`;
-    if (g.key === "numbers") {
-      const items = ps.flat(), withFig = items.map(x => (x.text || "").match(FIGURE));
-      const lastFig = withFig.reduce((a, m, i) => m ? i : a, -1), nFig = withFig.filter(Boolean).length;
-      const tiles = items.map((x, i) => {
-        const m = withFig[i];
-        if (m && nFig % 2 === 1 && i === lastFig) return `<div class="tile lone"><b>${esc(m[0].trim().replace(/[.,]+$/, ""))}</b><div>${sent(x)}</div></div>`;
-        return m ? `<div class="tile"><b>${esc(m[0].trim().replace(/[.,]+$/, ""))}</b><div>${sent(x)}</div></div>`
-                 : `<div class="tile wide"><div>${sent(x)}</div></div>`;
-      }).join("");
-      return head + `<div class="tiles">${tiles}</div>`;
-    }
+    if (g.key === "numbers") return head + figuresHtml(ps.flat(), sent);
     if (g.key === "say") {
       return head + g.items.map(k => {
         const label = lang === "en" && who[k] ? `<div class="who">${esc(who[k])}</div>` : "";
@@ -2814,7 +2874,7 @@ function markSentences(row) {
   const p = (lang === "hi" && row.payload_hi) || row.payload_en || {};
   const nar = p.narrative || {}, paras = nar.paragraphs || [];
   const flat = pageOrder(nar).flatMap(k => (paras[k] || []).map((_, i) => `${k}.${i}`));
-  $("rise").querySelectorAll(".sent").forEach((el, i) => { if (flat[i]) el.dataset.k = flat[i]; });
+  $("rise").querySelectorAll(".sent").forEach((el, i) => { if (!el.dataset.k && flat[i]) el.dataset.k = flat[i]; });
   if (player.key === `${row.story_id}-${lang}`) light(true);
   if (/[?&]listen=1/.test(location.hash)) setTimeout(() => openAudio(), 500);
 }
@@ -4517,6 +4577,96 @@ placeOverCard = function (r, off = lastOff) {
     st.setProperty("--ky", `${r.top + off.k.y - a.top}px`);
   }
 };
+
+/* ---------- the section cards' wash (owner, Oct 15 2026; see the style block of the same name) ----------
+   Each card of a numbered section gets a canvas behind its text. For every sentence, its own line boxes, grown by
+   WASH.spread on every side and blurred by WASH.soft, make a soft shape; where shapes overlap, the colours mix in
+   proportion to their strength, so a colour runs on under the next sentence's text with no seam. The colour is the
+   sentence's own (--sc) mixed into white at WASH.tint. Painting waits until the opening animation is over, then goes
+   one card at a time while the reader is idle, cards in view first; a card is painted again when its size changes
+   (language switch, rotation, fonts). */
+const WASH = {spread: 15, soft: 14, tint: 0.14};
+const washScratch = document.createElement("canvas");
+const washColours = {};
+function washColour(el) {
+  const key = el.className;
+  if (!washColours[key]) {
+    const v = getComputedStyle(el).getPropertyValue("--sc").trim();
+    const m = v.match(/^#([0-9a-f]{6})$/i);
+    const c = m ? [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16)) : null;
+    washColours[key] = c ? c.map(x => 255 * (1 - WASH.tint) + x * WASH.tint) : null;
+  }
+  return washColours[key];
+}
+function washCard(card) {
+  const w = card.offsetWidth, h = card.offsetHeight;
+  if (!w || !h) return;
+  let cv = card.querySelector(":scope > canvas.wash");
+  if (!cv) { cv = document.createElement("canvas"); cv.className = "wash"; cv.setAttribute("aria-hidden", "true"); card.prepend(cv); }
+  const cr = card.getBoundingClientRect(), k = cr.width / w || 1;      // k undoes any transform on the way (the opening glide)
+  const dpr = Math.min(2, window.devicePixelRatio || 1), PW = Math.round(w * dpr), PH = Math.round(h * dpr);
+  washScratch.width = PW; washScratch.height = PH;
+  const sx = washScratch.getContext("2d", {willReadFrequently: true});
+  const layers = [];
+  card.querySelectorAll(".s").forEach(el => {
+    const c = washColour(el), rects = [...el.getClientRects()].filter(r => r.width >= 1);
+    if (!c || !rects.length) return;
+    sx.setTransform(1, 0, 0, 1, 0, 0); sx.filter = "none"; sx.clearRect(0, 0, PW, PH);
+    sx.setTransform(dpr, 0, 0, dpr, 0, 0); sx.filter = `blur(${WASH.soft * dpr}px)`; sx.fillStyle = "#000";
+    const d = WASH.spread;
+    for (const r of rects) sx.fillRect((r.left - cr.left) / k - d, (r.top - cr.top) / k - d, r.width / k + 2 * d, r.height / k + 2 * d);
+    const px = sx.getImageData(0, 0, PW, PH).data, a = new Uint8Array(PW * PH);
+    for (let i = 0, j = 3; i < a.length; i++, j += 4) a[i] = px[j];
+    layers.push({a, c});
+  });
+  cv.width = PW; cv.height = PH; cv.style.width = w + "px"; cv.style.height = h + "px";
+  const ctx = cv.getContext("2d"), out = ctx.createImageData(PW, PH), o = out.data;
+  for (let i = 0; i < PW * PH; i++) {
+    let sum = 0, r = 0, g = 0, b = 0, keep = 1;
+    for (const L of layers) { const a = L.a[i]; if (!a) continue; const f = a / 255; sum += f; r += f * L.c[0]; g += f * L.c[1]; b += f * L.c[2]; keep *= 1 - f; }
+    if (!sum) continue;
+    const j = i * 4; o[j] = r / sum; o[j + 1] = g / sum; o[j + 2] = b / sum; o[j + 3] = 255 * (1 - keep);
+  }
+  ctx.putImageData(out, 0, 0);
+  card.dataset.washed = `${w}x${h}`;
+  requestAnimationFrame(() => cv.classList.add("on"));
+}
+const washQueue = new Set();
+let washTimer = 0, washReadyAt = 0;
+const washIdle = window.requestIdleCallback ? (f => requestIdleCallback(f, {timeout: 600})) : (f => setTimeout(f, 60));
+function washPump() {
+  washTimer = 0;
+  if (!washQueue.size) return;
+  const wait = washReadyAt - performance.now();
+  if (wait > 0) { washTimer = setTimeout(washPump, wait); return; }
+  washIdle(() => {
+    // the first card in view (or nearest below it) first
+    const view = sheetScroll.getBoundingClientRect();
+    const order = [...washQueue].filter(c => c.isConnected).sort((a, b) =>
+      Math.abs(a.getBoundingClientRect().top - view.top) - Math.abs(b.getBoundingClientRect().top - view.top));
+    washQueue.clear();
+    const card = order.shift();
+    order.forEach(c => washQueue.add(c));
+    if (card && card.dataset.washed !== `${card.offsetWidth}x${card.offsetHeight}`) { try { washCard(card); } catch (e) { /* the plain text stays */ } }
+    if (washQueue.size) washTimer = setTimeout(washPump, 0);
+  });
+}
+function washLater(card, delay = 0) {
+  washQueue.add(card);
+  washReadyAt = Math.max(washReadyAt, performance.now() + delay);
+  if (!washTimer) washTimer = setTimeout(washPump, 0);
+}
+const washSizes = new ResizeObserver(es => es.forEach(e => {
+  const c = e.target;
+  if (c.isConnected && c.offsetWidth && c.dataset.washed !== `${c.offsetWidth}x${c.offsetHeight}`) washLater(c, 120);
+}));
+function setupWash() {
+  const cards = $("rise").querySelectorAll(".paper.essay:not(.lead), .paper.quote, .tile");
+  cards.forEach(c => { c.classList.add("wcard"); washSizes.observe(c); washLater(c, 560); });   // after the opening glide
+}
+const fillSheetWash = fillSheet;
+fillSheet = function (row, card) { fillSheetWash(row, card); setupWash(); };
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => $("rise").querySelectorAll(".wcard").forEach(c => { delete c.dataset.washed; washLater(c); }));
 </script>
 </body>
 </html>

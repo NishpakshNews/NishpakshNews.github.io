@@ -1085,6 +1085,21 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   video and talk buttons follow the lead (`leadFirst`: moved inside `#rise`, so every `#rise` query still finds every
   sentence). The card's soft colour is the grade that colours most of the lead's text (`--leadc`, set in `leadFirst`; indigo until the lead is known). `sw.js` np-main-46.
 
+- **Section cards: the even wash and the figures' layout A (owner, Oct 15 2026; designed on two artifact pages, approved).**
+  (1) The numbered sections' text is justified, the last line of each paragraph left as it falls (tiles stay ragged). Their
+  colour is no longer a background on each sentence: `washCard` paints a canvas behind each card (`.wcard`: essay, quote,
+  tile, figure notes; not the lead): every sentence's line boxes grown by `WASH.spread` (15 px) on every side and blurred by
+  `WASH.soft` (14 px), the colour its own `--sc` mixed into white at `WASH.tint` (14%); where two sentences overlap the
+  colours mix by strength, so a colour runs under its neighbour's text with no seam ("C · even spread"). Painted after the
+  opening glide (560 ms), one card per idle slot, cards in view first, again when a card's size changes; tapping a colour
+  hides the layer (the old spot highlight takes over); the read-aloud's lit sentence draws on top. (2) "By the numbers"
+  (`figuresHtml`, `figureOf`): square cards two to a row (square at least, taller for a long sentence), figure on top; an odd
+  count opens with one wide card (number beside its sentence); a sentence with no figure goes into a plain card under them
+  (it was a wide tile with no number). `figureOf` finds money, shares (ranges too), scale words, scores ("2-1"), labels
+  ("BS-VII", "Phase II"), plain numbers (not years, not a date's day, a lone digit only when it counts something) and spelled
+  numbers ("Fourteen", "A dozen"), shown as written. Every `.sent` now carries its `data-k` from `essayBody` (figures can be
+  shown in another order than stored); `markSentences` keeps a key already given. `sw.js` np-main-48.
+
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →
 retract headline-only reads → Tavily reads blocked pages → wire copies → grouping (`stories.py`) →
