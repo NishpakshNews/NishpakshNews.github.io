@@ -1055,7 +1055,7 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   grade, a gap where a section starts, the lines on screen lit; hold it for every section's name and a tooltip under the
   finger, drag to move, tap to go. The headline box stays white like the card (no indigo box). Card swipe motion and
   the card-to-article morph are unchanged. Use `headBottom()` / `pinnedTop()` wherever code needs where the header ends.
-  `sw.js` np-main-42. Next (owner): face-aware picture crops for the cards and the article.
+  The headline box stays white, so its picture ends before the headline (`.hbox.has-pic` padding 196px). `sw.js` np-main-43. Next (owner): face-aware picture crops for the cards and the article.
 
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →

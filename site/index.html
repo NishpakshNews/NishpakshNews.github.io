@@ -1113,6 +1113,10 @@
   .share { color: var(--ink-soft); }
   .share:active { background: rgba(0,0,0,0.06); }
 
+  /* the picture ends before the headline: with the box white, the headline sits under the picture, never over it
+     (the picture dissolves to white by its own bottom edge) */
+  .hbox.has-pic { padding-top: 196px; }
+  .hbox .hpic .hsharp.s2 { -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent 94%); mask-image: linear-gradient(to bottom, #000 50%, transparent 94%); }
   /* every sentence in every section carries its colour: the figures' tiles and the quotes too */
   .tile .s, .quote .s { --lift: 0.26em; --feather: 9px; --wash: color-mix(in srgb, var(--sc) var(--tint), #fff);
                         background: var(--wash); border-radius: 0; padding: var(--lift) 4px; box-shadow: 0 0 var(--feather) 1px var(--wash);
