@@ -1039,6 +1039,24 @@ every outlet that covered it, and colours every sentence by how well it is suppo
     Skipped by the owner: "what changed since you last read", corrections log, outlet pages, perspective sorts. Not
     features (pipeline discussion later): search grounding for sources, transcripts as evidence, Embedding 2.
 
+- **Design pass: one header, one shape, the colour rail (owner, Oct 15 2026; designed on canvases and a prototype, approved, in
+  `site/index.html`, block "design pass" at the end of the first style block and of the main script).** The header is joined
+  to the top edge (no floating card), full width, 15px bottom corners (the pills' curve), one indigo `--chrome-grad`
+  (#1f2550 at the edge, #2b3570 at 98px + safe area, flat after) for the home header, the article's header and its pane;
+  the sections bar mirrors it. Every control 30px fully round, every card 20px. **The article's header IS the home
+  header** (`.chrome`: back | wordmark | language at exactly the home row's place; opening an article tidies the home
+  header first); while the article grows out of the card the home menu pill folds into a back circle (`.cback`,
+  `html.reading`). Under the header row hangs one indigo piece (`#cpane`, absolute, never pushes the article): the
+  section names (`.cp.rr`, in as the article opens; `.rspace` keeps room for them; `#sheet.hasrail`) and the frozen pane
+  (`.cp.pp`: the pin's bar, pills and definition, opened while the key card is out of view; the pin's own `on` class
+  still decides, `.chrome.pinned` follows it). A tapped colour's definition carries a ‹ n/N › stepper (`paintStep`,
+  `[data-gstep]`). **Every sentence in every section carries its wash** (tiles and quotes too; `SPOTSEL`). The reading
+  line is replaced by **the colour rail** (`.crail`, `buildCRail`): one mark per sentence in reading order, coloured by
+  grade, a gap where a section starts, the lines on screen lit; hold it for every section's name and a tooltip under the
+  finger, drag to move, tap to go. The headline box stays white like the card (no indigo box). Card swipe motion and
+  the card-to-article morph are unchanged. Use `headBottom()` / `pinnedTop()` wherever code needs where the header ends.
+  `sw.js` np-main-42. Next (owner): face-aware picture crops for the cards and the article.
+
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →
 retract headline-only reads → Tavily reads blocked pages → wire copies → grouping (`stories.py`) →

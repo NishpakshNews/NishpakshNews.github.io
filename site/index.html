@@ -983,6 +983,178 @@
     .tkfloat.speaking .wave i { animation: none; transform: scaleY(0.7); }
     .tkstage i { transition-duration: 1ms; }
   }
+
+  /* ======================= design pass (owner, Oct 15 2026; prototype "Nishpaksh_Prototype") =======================
+     One system for every screen:
+     - shape: every control 30px and fully round (r 15); chrome edges (header, the article's header and its pane, the
+       sections bar) the same 15px corner as the pills; every card 20px; gaps 12px
+     - colour: one indigo for all chrome, #1f2550 at the screen edge (the status bar, theme-color) falling to #2b3570
+       over the home header's full height (98px), flat after that, so the home header, the tidied header and the article's
+       header (pinned or not) are the same colours at the same heights
+     - the header is joined to the top edge (no floating card) and keeps the wordmark in one place on every screen
+     - the article's header IS the home page's header: back | wordmark | language; once the key card has scrolled up
+       under it, it grows to hold the frozen pane (section names, the bar, the pills, the definition and a ‹ › stepper)
+     - every sentence in every section (tiles and quotes too) carries its colour wash
+     - a colour rail at the right edge: one mark per sentence, the lines on screen lit; hold for every section's name
+     - the headline box stays white like the card; the reading line is replaced by the rail */
+  :root { --chrome-grad: linear-gradient(180deg, #1f2550 0px, #2b3570 calc(98px + env(safe-area-inset-top, 0px)), #2b3570 100%); }
+
+  /* the home header: from the top edge, full width, soft 22px bottom corners */
+  #app { padding-top: 0; }
+  header.top { margin: 0 calc(-1 * var(--padr)) 0 calc(-1 * var(--padl));
+               padding: calc(env(safe-area-inset-top, 0px) + 14px) calc(var(--padr) + 2px) 14px calc(var(--padl) + 2px); }
+  header.top .greeting { left: calc(var(--padl) + 2px); top: calc(env(safe-area-inset-top, 0px) + 54px); }
+  .hpill { right: calc(var(--padr) + 2px); top: calc(env(safe-area-inset-top, 0px) + 54px); }
+  header.top .hbg { border-radius: 0; overflow: visible; }
+  .hbw { border-radius: 0 0 15px 15px; box-shadow: 0 10px 24px -6px rgba(22,26,56,0.35), 0 2px 0 rgba(22,26,56,0.08); }
+  #hbgr { height: calc(98px + env(safe-area-inset-top, 0px)); background: var(--chrome-grad); background-size: 100% 100%; }
+  @media (min-width: 700px) { #app { padding-top: 0; } }
+  /* the sections bar: the header's mirror */
+  nav.sections { background: linear-gradient(0deg, #1f2550 0%, #2b3570 100%); border-radius: 15px 15px 0 0; box-shadow: 0 -8px 22px -6px rgba(22,26,56,0.30); }
+  .sb .face { border-radius: 999px; }
+  /* cards and boxes: one 20px corner */
+  .card, .state { border-radius: 20px; }
+  .tile { border-radius: 20px; }
+  .hbox, .hbox .layer { border-radius: 20px; }
+  .hbox .hpic { border-radius: 20px 20px 0 0; }
+
+  /* the article's header: the same indigo, the same row, the same place, the same height as the home header */
+  .chrome { opacity: 1; background: var(--chrome-grad); color: #fff; border-radius: 0 0 15px 15px; z-index: 3;
+            box-shadow: 0 10px 24px -6px rgba(22,26,56,0.35), 0 2px 0 rgba(22,26,56,0.08);
+            padding: calc(env(safe-area-inset-top, 0px) + 14px) calc(max(14px, env(safe-area-inset-right)) + 2px) 14px calc(max(14px, env(safe-area-inset-left)) + 2px);
+            transition: box-shadow 300ms ease, border-radius 0s linear 0s; }
+  .chrome.stuck { background: var(--chrome-grad); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  #sheet .chrome, #sheet.anim .chrome, #sheet.open .chrome, #sheet.anim:not(.open) .chrome { opacity: 1; }
+  @media (min-width: 700px) { .chrome { padding-top: calc(env(safe-area-inset-top, 0px) + 14px); } }
+  .crow { position: relative; z-index: 2; height: 30px; margin-bottom: 0; }
+  .chrome .wm-ink { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: #fff; -webkit-text-fill-color: #fff;
+                    text-shadow: 0 1px 2px rgba(0,0,0,0.35), 0 0 18px rgba(0,0,0,0.18); line-height: 30px; }
+  #back { box-shadow: none; background: #fff; }
+  #back svg { stroke: #1f2550; }
+  .chrome .pill.light { background: rgba(18,12,30,0.34); border: 1px solid rgba(255,255,255,0.22); box-shadow: none; padding: 2px; height: 30px;
+                        -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  .chrome .pill.light button { width: 36px; min-width: 36px; height: 24px; padding: 0; border-radius: 999px; color: #fff; }
+  .chrome .pill.light button[aria-pressed="true"] { background: #fff; color: #1f2550; }
+  /* the menu pill becomes the back button: on the home header, while the article grows out of the card, the pill folds
+     down to its white menu end and that end turns into the back circle (the article's own back button is in the same place) */
+  header.top .cback { position: absolute; left: 0; top: 0; z-index: 2; width: 30px; height: 30px; border-radius: 50%; border: 0; padding: 0; background: #fff; color: #1f2550;
+                      display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: 0; transform: scale(.82);
+                      transition: opacity 220ms ease, transform 380ms cubic-bezier(.3,.1,.2,1); }
+  header.top .cpill { transition: clip-path 380ms cubic-bezier(.3,.1,.2,1), -webkit-clip-path 380ms cubic-bezier(.3,.1,.2,1); clip-path: inset(0 0 0 0 round 15px); -webkit-clip-path: inset(0 0 0 0 round 15px); }
+  header.top .cpill svg { transition: opacity 160ms ease; }
+  html.reading header.top .cpill { clip-path: inset(0 calc(100% - 30px) 0 0 round 15px); -webkit-clip-path: inset(0 calc(100% - 30px) 0 0 round 15px); }
+  html.reading header.top .cpill svg { opacity: 0; }
+  html.reading header.top .cback { opacity: 1; transform: none; transition: opacity 240ms ease 140ms, transform 380ms cubic-bezier(.3,.1,.2,1) 80ms; }
+  /* under the header row, in one indigo piece that hangs below it (it never pushes the article down): the article's section
+     names, which come in as the article opens, and the frozen pane (bar, pills, definition), which comes in once the key
+     card has scrolled up under them. The piece's gradient carries on exactly from the header's. */
+  .cpane { position: absolute; left: 0; right: 0; top: calc(100% - 15px); z-index: 1; padding: 15px calc(max(14px, env(safe-area-inset-right)) + 2px) 0 calc(max(14px, env(safe-area-inset-left)) + 2px);
+           background: var(--chrome-grad); background-size: 100% calc(100% + 43px + env(safe-area-inset-top, 0px)); background-position: 0 calc(-43px - env(safe-area-inset-top, 0px));
+           border-radius: 0 0 15px 15px; box-shadow: 0 10px 24px -6px rgba(22,26,56,0.35), 0 2px 0 rgba(22,26,56,0.08); visibility: hidden; opacity: 0;
+           transition: opacity 200ms ease, visibility 0s linear 200ms; }
+  .chrome.paned .cpane { visibility: visible; opacity: 1; transition: opacity 120ms ease, visibility 0s; }
+  .chrome.paned { box-shadow: none; transition: box-shadow 120ms ease; }
+  .cp { display: grid; grid-template-rows: 0fr; }
+  .cp > div { overflow: hidden; min-height: 0; }
+  .cp > div > * { opacity: 0; transform: translateY(-6px); }
+  /* the section names: in as the article opens, after the card has grown (soothing, not slow) */
+  .cp.rr { transition: grid-template-rows 240ms cubic-bezier(.4,0,.2,1); }
+  .cp.rr > div > * { transition: opacity 160ms ease, transform 240ms ease; }
+  #sheet.open.hasrail .cp.rr { grid-template-rows: 1fr; transition: grid-template-rows 560ms cubic-bezier(.22,.9,.24,1) 320ms; }
+  #sheet.open.hasrail .cp.rr > div > * { opacity: 1; transform: none; transition: opacity 420ms ease 520ms, transform 560ms cubic-bezier(.22,.9,.24,1) 480ms; }
+  /* the frozen pane: unrolls once the key card is out of view */
+  .cp.pp { transition: grid-template-rows 320ms cubic-bezier(.4,0,.2,1); }
+  .cp.pp > div > * { transition: opacity 180ms ease, transform 320ms ease; }
+  .chrome.pinned .cp.pp { grid-template-rows: 1fr; transition: grid-template-rows 520ms cubic-bezier(.22,.9,.24,1); }
+  .chrome.pinned .cp.pp > div > * { opacity: 1; transform: none; transition: opacity 380ms ease 140ms, transform 520ms cubic-bezier(.22,.9,.24,1) 80ms; }
+  .cpane .rail { margin: 12px calc(-1 * max(14px, env(safe-area-inset-left)) - 2px) 0; padding: 0 calc(max(14px, env(safe-area-inset-right)) + 2px) 0 calc(max(14px, env(safe-area-inset-left)) + 2px); }
+  /* the 14px under each part sits inside it, so it opens and closes with it (nothing shows before the part does) */
+  .cpane .rail { margin-bottom: 14px !important; }
+  .cpane .pin, .cpane .pin.on { padding-bottom: 14px; }
+  /* the article keeps room for the section names under the header, so they never cover the headline */
+  .rspace { height: 0; transition: height 560ms cubic-bezier(.22,.9,.24,1) 320ms; }
+  #sheet.hasrail .rspace { height: 56px; }
+  .rail button { min-height: 30px; height: 30px; padding: 0 12px; font-size: 12.5px; border-radius: 999px; background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.9); box-shadow: none; }
+  .rail button.on { background: #fff; color: #1f2550; }
+  .readline { display: none; }
+  .pin, .pin.on { position: static; padding: 0; margin: 0; border-radius: 0; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none;
+                  opacity: 1; transform: none; visibility: visible; pointer-events: auto; clip-path: none; -webkit-clip-path: none; transition: none; }
+  .pin > .pbar, .pin > .prow, .pin.on > .pbar, .pin.on > .prow { opacity: 1; transform: none; transition: none; }
+  .pin .pbar { height: 5px; gap: 2px; margin: 0 0 10px; }
+  .pin .pbar span { border-radius: 3px; }
+  .prow { gap: 6px; flex-wrap: nowrap; }
+  .pchip { flex: none; min-height: 30px; height: 30px; padding: 0 10px 0 4px; gap: 5px; border-radius: 999px; font-size: 13px; background: color-mix(in srgb, var(--c) 17%, #fff); }
+  .pchip .gg, .kpill .gg { width: 22px; height: 22px; font-size: 12px; }
+  .pchip.on { box-shadow: 0 0 0 2px #fff; }
+  .pinfo { margin-left: auto; width: 30px; height: 30px; }
+  .pinfo b { width: 30px; height: 30px; background: rgba(255,255,255,0.12); color: #fff; box-shadow: none; font-size: 15px; }
+  .pin .gdef { color: rgba(255,255,255,0.86); }
+  .pin .gdef b { color: #fff !important; }
+  .pin .gdef.on { margin: 10px 0 0; font-size: 13px; }
+  /* pills and section names share out the whole width (they still wrap, or scroll for the section names, when they do not fit) */
+  .kchips .kpill { flex: 1 1 auto; justify-content: center; }
+  .cpane .rail button { flex: 1 0 auto; }
+  .prow .pchip { flex: 1 1 0; min-width: 0; justify-content: center; }
+  /* the key card's pills: the same shape */
+  .kpill { min-height: 30px; height: 30px; padding: 0 10px 0 4px; gap: 5px; border-radius: 999px; }
+  /* the definition with a ‹ › stepper: walk through the lit lines one by one */
+  .gdef.on { display: flex; align-items: center; gap: 10px; max-height: 160px; }
+  .gdef .gdt { flex: 1; min-width: 0; }
+  .gstep { flex: none; display: flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+  .gstep button { width: 30px; height: 30px; border-radius: 50%; border: 0; padding: 0; cursor: pointer; display: flex; align-items: center; justify-content: center;
+                  background: #1f2550; color: #fff; }
+  .gstep span { min-width: 38px; text-align: center; }
+  .pin .gstep button { background: rgba(255,255,255,0.16); }
+  /* the headline box stays white, as on the card */
+  .hbox { margin-top: 12px; }
+  .hbox .layer { background: var(--card); }
+  #sheet.open .hbox { color: var(--ink); }
+  #sheet.open .hbox h1 { text-shadow: none; }
+  .share { color: var(--ink-soft); }
+  .share:active { background: rgba(0,0,0,0.06); }
+
+  /* every sentence in every section carries its colour: the figures' tiles and the quotes too */
+  .tile .s, .quote .s { --lift: 0.26em; --feather: 9px; --wash: color-mix(in srgb, var(--sc) var(--tint), #fff);
+                        background: var(--wash); border-radius: 0; padding: var(--lift) 4px; box-shadow: 0 0 var(--feather) 1px var(--wash);
+                        -webkit-box-decoration-break: clone; box-decoration-break: clone; transition: color 200ms ease, background-color 200ms ease, box-shadow 200ms ease; }
+  .tile .s::after, .quote .s::after { content: " "; }
+  #sheet[data-spot] .tile .s, #sheet[data-spot] .quote .s { color: #a8abaf; background: transparent; text-decoration: none; box-shadow: none; }
+  #sheet[data-spot] .tile .s.spot-on, #sheet[data-spot] .quote .s.spot-on { color: var(--st); background: color-mix(in srgb, var(--sc) 24%, transparent); box-shadow: 0 0 0 2px var(--sc); border-radius: 4px; }
+  #sheet[data-spot] .sent.cur .s.spot-on { box-shadow: 0 0 0 3px var(--sc); background: color-mix(in srgb, var(--sc) 30%, transparent); }
+  /* a tapped colour's lines: a stronger wash that stays inside its own line (no ring, so wrapped lines never overlap);
+     the line the stepper is on gets a thin inset edge */
+  #sheet[data-spot] .essay .s.spot-on, #sheet[data-spot] .tile .s.spot-on, #sheet[data-spot] .quote .s.spot-on {
+    padding: 1px 3px; border-radius: 4px; box-shadow: none; background: color-mix(in srgb, var(--sc) 22%, #fff); }
+  #sheet[data-spot] .sent.cur .s.spot-on { background: color-mix(in srgb, var(--sc) 34%, #fff); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--sc) 70%, #fff); }
+  .sent.flash .s { animation: npflash 1400ms ease; }
+  @keyframes npflash { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 25%, 60% { box-shadow: 0 0 0 3px var(--sc); } }
+
+  /* the colour rail: the bar again, one mark per sentence, in the right margin; the lines on screen are lit */
+  .crail { position: absolute; z-index: 4; width: 14px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); touch-action: none; cursor: pointer;
+           opacity: 0; pointer-events: none; transition: opacity 110ms ease; }
+  #sheet.open .crail.has { opacity: 1; pointer-events: auto; transition: opacity 360ms ease 360ms; }
+  .csegs { position: absolute; right: 3px; top: 0; bottom: 0; width: 8px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; transition: width 220ms cubic-bezier(.3,.1,.2,1); }
+  .cseg { flex: 1 1 0; min-height: 2px; width: 4px; border-radius: 2px; opacity: 0.22; transition: opacity 220ms ease, width 220ms cubic-bezier(.3,.1,.2,1); }
+  .cseg.inview { opacity: 0.62; width: 6px; }
+  .cseg.brk { margin-top: 5px; }
+  .crail.scrub .csegs { width: 11px; } .crail.scrub .cseg { width: 6px; } .crail.scrub .cseg.inview { width: 10px; opacity: 0.7; }
+  .crail.scrub .cseg.finger { width: 11px; opacity: 0.95; box-shadow: 0 0 0 2px #fff, 0 0 0 3px rgba(31,37,80,0.28); }
+  #sheet[data-spot] .cseg { opacity: 0.1; } #sheet[data-spot] .cseg.hit { opacity: 0.45; } #sheet[data-spot] .cseg.hit.inview { opacity: 0.8; }
+  #sheet[data-spot] .cseg.hit.cur { opacity: 0.95; width: 10px; box-shadow: 0 0 0 1.5px #fff, 0 0 0 2.5px color-mix(in srgb, var(--c) 55%, #fff); }
+  .clabels { position: absolute; z-index: 5; bottom: 16px; pointer-events: none; }
+  .clabels .sl { position: absolute; right: 0; display: flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border-radius: 11px; white-space: nowrap;
+                 background: rgba(255,255,255,0.86); color: #6b6e84; font-size: 11px; font-weight: 500; box-shadow: 0 1px 4px rgba(22,26,56,0.08);
+                 -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); opacity: 0; transition: opacity 220ms ease; }
+  .clabels .sl b { color: #8a90b8; font-weight: 600; }
+  .scrubbing .clabels .sl { opacity: 1; } .scrubbing .clabels .sl.near, .scrubbing .clabels .sl.act { opacity: 0; }
+  .ctip { position: absolute; z-index: 6; transform: translateY(-50%); display: flex; flex-direction: column; gap: 2px; background: rgba(255,255,255,0.96); color: #3d4060; border-radius: 14px;
+          padding: 6px 11px 7px; box-shadow: 0 4px 14px rgba(22,26,56,0.12), 0 0 0 1px rgba(31,37,80,0.06); pointer-events: none; opacity: 0; transition: opacity 200ms ease; white-space: nowrap; }
+  .ctip.on { opacity: 1; }
+  .ctip .t1 { display: flex; align-items: baseline; gap: 5px; font-size: 12.5px; font-weight: 600; line-height: 1.3; }
+  .ctip .t1 .no { color: #8a90b8; font-size: 11px; }
+  .ctip .t2 { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 1.3; color: #6b6e84; }
+  .ctip .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--c); opacity: 0.8; }
+  @media (prefers-reduced-motion: reduce) { .cpane, .cp, .cp > div > *, .rspace, header.top .cpill, header.top .cback, .cseg, .csegs, .crail, .clabels .sl, .ctip { transition-duration: 1ms !important; transition-delay: 0ms !important; } .sent.flash .s { animation: none; } }
 </style>
 </head>
 <body>
@@ -1716,7 +1888,7 @@ $("rail").addEventListener("click", e => {
   if (!b) return;
   const h = $("rise").querySelectorAll(".sechead")[Number(b.dataset.i)];
   if (h) sheetScroll.scrollTo({top: h.getBoundingClientRect().top - sheetScroll.getBoundingClientRect().top + sheetScroll.scrollTop
-                                        - $("chrome").offsetHeight - 8, behavior: "smooth"});
+                                        - pinnedTop() - 8, behavior: "smooth"});
 });
 function onSheetScroll() {
   const sc = sheetScroll, max = Math.max(1, sc.scrollHeight - sc.clientHeight);
@@ -1726,10 +1898,13 @@ function onSheetScroll() {
   // the colour bar and chips stay in view: once the grade block has gone under the top, its pinned copy slides in
   const gc = $("kbody").querySelector(".kchips");
   // a little hysteresis (shows at +4px, hides again only at +28px) so a hand resting at the edge cannot make it flicker
-  const pinEl = $("pin"), gap = gc ? gc.getBoundingClientRect().bottom - $("chrome").getBoundingClientRect().bottom : 1e9;
+  // design pass: measured against the header row and the section names under it, not the pane that opens below them
+  const rrH = sheet.classList.contains("hasrail") ? $("chrome").querySelector(".cp.rr").getBoundingClientRect().height : 0;
+  const headB = $("chrome").getBoundingClientRect().bottom + rrH;
+  const pinEl = $("pin"), gap = gc ? gc.getBoundingClientRect().bottom - headB : 1e9;
   pinEl.classList.toggle("on", !!gc && pinEl.firstElementChild !== null && gap < (pinEl.classList.contains("on") ? 28 : 4));
   if (sc.scrollTop > 60) collapseHint();
-  const line = $("chrome").getBoundingClientRect().bottom + 24;
+  const line = headBottom() + 24;
   let on = -1;
   $("rise").querySelectorAll(".sechead").forEach((h, i) => { if (h.getBoundingClientRect().top <= line) on = i; });
   const chips = $("rail").querySelectorAll("button");
@@ -1749,11 +1924,12 @@ function abarHtml(b) {
 }
 /* tap a colour: only those sentences stay lit (owner, Oct 15 2026); the bar and both chip rows follow; a second tap clears it */
 let spot = null;
+const SPOTSEL = ".essay .s, .tile .s, .quote .s";     // every section's sentences (design pass, Oct 15 2026)
 function setSpot(st) { spot = spot === st ? null : st; paintSpot(); }
 function paintSpot() {
   const t = T[lang];
   if (spot) sheet.dataset.spot = spot; else delete sheet.dataset.spot;
-  $("rise").querySelectorAll(".essay .s").forEach(el => el.classList.toggle("spot-on", !!spot && el.classList.contains(spot)));
+  $("rise").querySelectorAll(SPOTSEL).forEach(el => el.classList.toggle("spot-on", !!spot && el.classList.contains(spot)));
   sheet.querySelectorAll(".gchip, .pchip, .kpill").forEach(b => { const on = b.dataset.st === spot; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on ? "true" : "false"); });
   sheet.querySelectorAll("#abar span, #pin .pbar span").forEach(s => s.classList.toggle("dim", !!spot && s.dataset.st !== spot));
   sheet.querySelectorAll(".gdef").forEach(d => {
@@ -1761,10 +1937,10 @@ function paintSpot() {
     else d.classList.remove("on");
   });
   // if none of the lit sentences is on screen, glide to the first one (under the pinned bar)
-  const first = spot && $("rise").querySelector(".essay .s.spot-on");
+  const first = spot && $("rise").querySelector(".s.spot-on");
   if (first && openId) {
-    const r = first.getBoundingClientRect(), top = $("chrome").getBoundingClientRect().bottom + 110;
-    const seen = [...$("rise").querySelectorAll(".essay .s.spot-on")].some(el => { const q = el.getBoundingClientRect(); return q.top >= top && q.bottom <= innerHeight - 20; });
+    const r = first.getBoundingClientRect(), top = Math.max(headBottom(), $("chrome").getBoundingClientRect().bottom + 110) + 20;
+    const seen = [...$("rise").querySelectorAll(".s.spot-on")].some(el => { const q = el.getBoundingClientRect(); return q.top >= top && q.bottom <= innerHeight - 20; });
     if (!seen) sheetScroll.scrollTo({top: sheetScroll.scrollTop + r.top - top, behavior: REDUCED.matches ? "auto" : "smooth"});
   }
 }
@@ -1830,7 +2006,7 @@ function cardRectFor(id) {
   return r.height ? r : null;
 }
 function setClip(r) {
-  const v = r ? `inset(${r.top}px ${innerWidth - r.right}px ${innerHeight - r.bottom}px ${r.left}px round 24px)` : "inset(0px 0px 0px 0px round 0px)";
+  const v = r ? `inset(${r.top}px ${innerWidth - r.right}px ${innerHeight - r.bottom}px ${r.left}px round 20px)` : "inset(0px 0px 0px 0px round 0px)";
   sheet.style.clipPath = v; sheet.style.webkitClipPath = v;
 }
 function headOffset(cardEl) {   // where the card's headline sits inside the card
@@ -1884,6 +2060,8 @@ async function openStory(id, fromCard, opts = {}) {
   if (TK.ui !== "closed" && id !== TK.storyId) tkLeave();      // a conversation is about one article
   const card = cards.find(c => String(c.id) === id);
   openId = id;
+  try { if (!tidied) tidy(); } catch (e) { /* not ready yet (a story link at start-up) */ }   // design pass: the article's header is the tidied home header
+  sheet.classList.add("hasrail");      // room for the section names from the start; taken back if the article has none
   tkWarm();
   sheetScroll.scrollTop = 0;
   const pending = loadStory(id);
@@ -2518,7 +2696,7 @@ function tidy() {
   const hbw = $("hbw"), hbgr = $("hbgr"), hNew = card.offsetHeight;
   const parts = [...card.querySelectorAll(":scope > h2, :scope > .text, :scope > .pic, :scope > .edge, :scope > .kk")];
   const back = document.createElement("div");
-  back.style.cssText = `position:absolute;left:0;right:0;top:0;height:${hNew}px;background:var(--card);border-radius:24px;` +
+  back.style.cssText = `position:absolute;left:0;right:0;top:0;height:${hNew}px;background:var(--card);border-radius:20px;` +
     `box-shadow:0 4px 0 var(--edge);transform-origin:50% 100%;transform:scaleY(${hOld / hNew});will-change:transform;pointer-events:none`;
   slot.style.position = "relative";
   card.style.position = "relative"; card.style.zIndex = "1"; card.style.background = "transparent"; card.style.boxShadow = "none";
@@ -3883,7 +4061,7 @@ function flAnchor() { if (TK.recap) return null; const b = $("rise").querySelect
 function flTarget() {
   const a = flAnchor(), cs = TK.probe ? getComputedStyle(TK.probe) : null;
   const sr = cs ? parseFloat(cs.paddingRight) || 0 : 0, sb = cs ? parseFloat(cs.paddingBottom) || 0 : 0;
-  const chromeB = $("chrome").getBoundingClientRect().bottom;
+  const chromeB = headBottom();
   const x = a && a.width ? a.left : (innerWidth + Math.min(560, innerWidth)) / 2 - Math.max(14, sr) - 4 - FL;     // the article's column edge
   const lift = pbar.classList.contains("on") ? 68 : 0;                                                          // above the audio player
   const rest = innerHeight - Math.max(18, sb + 14) - FL - lift;
@@ -3948,6 +4126,174 @@ if (/^#\/story\//.test(location.hash)) openedFromDeck = false;
 if ("serviceWorker" in navigator && location.protocol === "https:") {
   addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 }
+
+/* ======================= design pass (owner, Oct 15 2026): the pane in the header, the stepper, the colour rail ======================= */
+(function () {
+  const chrome = $("chrome"), pin = $("pin");
+  /* under the header row, one indigo piece hangs below the header: the section names (in as the article opens) and the
+     frozen pane (in while the key card is out of view; the pin's own "on" class still decides when) */
+  const cp = document.createElement("div");
+  cp.className = "cpane"; cp.id = "cpane";
+  cp.innerHTML = '<div class="cp rr"><div></div></div><div class="cp pp"><div></div></div>';
+  cp.querySelector(".rr > div").appendChild($("rail"));
+  const ppin = cp.querySelector(".pp > div");
+  [chrome.querySelector(".readline"), pin].forEach(el => { if (el) ppin.appendChild(el); });
+  chrome.appendChild(cp);
+  const sp = document.createElement("div"); sp.className = "rspace"; chrome.after(sp);     // room for the section names
+  const paned = () => chrome.classList.toggle("paned", (sheet.classList.contains("open") && sheet.classList.contains("hasrail")) || pin.classList.contains("on"));
+  new MutationObserver(() => { chrome.classList.toggle("pinned", pin.classList.contains("on")); paned(); }).observe(pin, {attributes: true, attributeFilter: ["class"]});
+  new MutationObserver(paned).observe(sheet, {attributes: true, attributeFilter: ["class"]});
+  /* the home header's back circle, for the menu pill to turn into while the article opens */
+  const row = document.querySelector("header.top .wmrow");
+  if (row) { const b = document.createElement("span"); b.className = "cback"; b.setAttribute("aria-hidden", "true");
+    b.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
+    row.appendChild(b); }
+})();
+// where the header ends now (the row, plus the section names and the pane while they show)
+function headBottom() {
+  const c = $("chrome").getBoundingClientRect().bottom, p = $("cpane");
+  return p && $("chrome").classList.contains("paned") ? Math.max(c, p.getBoundingClientRect().bottom) : c;
+}
+// the header's height with the section names and the pane open (whether or not they are now): where a line lands when we go to it
+function pinnedTop() {
+  const ch = $("chrome"), cr = ch.querySelector(".crow");
+  const rr = ch.querySelector(".cp.rr > div"), pp = ch.querySelector(".cp.pp > div");
+  return cr.offsetTop + cr.offsetHeight + 14 + (sheet.classList.contains("hasrail") && rr ? rr.scrollHeight : 0) + (pp ? pp.scrollHeight + 14 : 0);
+}
+function toSent(el, smooth) {
+  const top = el.getBoundingClientRect().top - sheetScroll.getBoundingClientRect().top + sheetScroll.scrollTop - pinnedTop() - 22;
+  sheetScroll.scrollTo({top: Math.max(0, top), behavior: smooth && !REDUCED.matches ? "smooth" : "auto"});
+}
+/* the stepper: with a colour tapped, ‹ › walk through its lines one by one (in the key card and in the pane) */
+let gIdx = -1;
+function spotSents() { return spot ? [...$("rise").querySelectorAll(".sent")].filter(s => s.querySelector(".s.spot-on")) : []; }
+const STEP_SVG = d => `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d < 0 ? "M15 18l-6-6 6-6" : "M9 18l6-6-6-6"}"/></svg>`;
+function paintStep() {
+  const list = spotSents(), n = list.length, w = lang === "hi" ? "पंक्तियाँ" : (n === 1 ? "line" : "lines");
+  $("rise").querySelectorAll(".sent.cur").forEach(e => e.classList.remove("cur"));
+  if (gIdx >= 0 && list[gIdx]) list[gIdx].classList.add("cur");
+  sheet.querySelectorAll(".gstep span").forEach(s => { s.textContent = gIdx >= 0 ? `${gIdx + 1}/${n}` : `${n} ${w}`; });
+  crailSpot(list);
+}
+const paintSpotBase = paintSpot;
+paintSpot = function () {
+  gIdx = -1;
+  paintSpotBase();
+  if (spot) sheet.querySelectorAll(".gdef.on").forEach(d => {
+    d.innerHTML = `<span class="gdt">${d.innerHTML}</span><span class="gstep"><button type="button" data-gstep="-1" aria-label="${lang === "hi" ? "पिछली पंक्ति" : "Previous line"}">${STEP_SVG(-1)}</button><span></span><button type="button" data-gstep="1" aria-label="${lang === "hi" ? "अगली पंक्ति" : "Next line"}">${STEP_SVG(1)}</button></span>`;
+  });
+  paintStep();
+};
+sheet.addEventListener("click", e => {
+  const b = e.target.closest("[data-gstep]");
+  if (!b) return;
+  const list = spotSents();
+  if (!list.length) return;
+  const d = Number(b.dataset.gstep);
+  if (gIdx < 0) {
+    // the first step goes to the first lit line below the header (from the key card: the first one)
+    const top = headBottom();
+    const k = list.findIndex(el => el.getBoundingClientRect().bottom > top + 8);
+    gIdx = d > 0 ? Math.max(0, k) : list.length - 1;
+  } else gIdx = (gIdx + d + list.length) % list.length;
+  paintStep(); toSent(list[gIdx], true);
+});
+
+/* the colour rail: one mark per sentence in reading order, coloured by its grade, a small gap where a section starts.
+   The lines on screen are lit. Hold it: every section's name appears beside it, the one under the finger becomes a
+   tooltip with the grade of that line, and dragging moves through the article; a tap goes to the line. */
+const crail = document.createElement("div"), clab = document.createElement("div"), ctip = document.createElement("div");
+crail.className = "crail"; crail.innerHTML = '<div class="csegs"></div>'; crail.setAttribute("aria-hidden", "true");
+clab.className = "clabels"; ctip.className = "ctip";
+sheet.append(crail, clab, ctip);
+const CR = {sents: [], secs: []};
+function gradesOf(sent) {
+  const out = [];
+  sent.querySelectorAll(".s").forEach(s => { const g = GRADE_ORDER.find(k => s.classList.contains(k)) || "unverified"; if (!out.includes(g)) out.push(g); });
+  return out.length ? out : ["unverified"];
+}
+function buildCRail() {
+  CR.sents = []; CR.secs = [];
+  $("rise").querySelectorAll(".sechead, .sent").forEach(n => {
+    if (n.classList.contains("sechead")) {
+      CR.secs.push({no: (n.querySelector("span") || {}).textContent || "", label: (n.querySelector("h3") || {}).textContent || "", first: CR.sents.length});
+    } else {
+      if (n.closest("details")) return;
+      if (!CR.secs.length) CR.secs.push({no: "", label: lang === "hi" ? "ख़बर" : "The news", first: 0});
+      CR.sents.push({el: n, sec: CR.secs.length - 1, g: gradesOf(n)});
+    }
+  });
+  CR.secs = CR.secs.filter((s, i) => CR.sents.some(x => x.sec === i) || false).length === CR.secs.length ? CR.secs : CR.secs;   // sections with no lines keep their place
+  crail.firstChild.innerHTML = CR.sents.map((x, i) => {
+    const bg = x.g.length > 1 ? `linear-gradient(180deg,${x.g.map(g => `var(--bar-${BARKEY[g]})`).join(",")})` : `var(--bar-${BARKEY[x.g[0]]})`;
+    const brk = i > 0 && CR.secs[x.sec].first === i ? " brk" : "";
+    return `<div class="cseg${brk}" style="background:${bg};--c:var(--bar-${BARKEY[x.g[0]]})"></div>`;
+  }).join("");
+  clab.innerHTML = CR.secs.map((s, n) => CR.sents.some(x => x.sec === n) ? `<div class="sl" data-s="${n}">${s.no ? `<b>${esc(s.no)}</b>` : ""}${esc(s.label)}</div>` : "").join("");
+  crail.classList.toggle("has", CR.sents.length > 1);
+  placeCRail(); syncCRail(); crailSpot(spotSents());
+}
+function clearCRail() { CR.sents = []; CR.secs = []; crail.firstChild.innerHTML = ""; clab.innerHTML = ""; crail.classList.remove("has"); }
+function placeCRail() {
+  const col = sheet.querySelector(".col"); if (!col) return;
+  const cb = headBottom(), c = col.getBoundingClientRect(), x = c.right - 15;
+  crail.style.top = clab.style.top = `${cb + 10}px`;
+  crail.style.left = `${x}px`;
+  clab.style.right = ctip.style.right = `${innerWidth - x + 10}px`;
+}
+function syncCRail() {
+  if (!CR.sents.length) return;
+  const top = headBottom() + 4, bot = innerHeight, segs = crail.firstChild.children;
+  CR.sents.forEach((x, i) => { const r = x.el.getBoundingClientRect(); if (segs[i]) segs[i].classList.toggle("inview", r.bottom > top && r.top < bot); });
+}
+function crailSpot(list) {
+  const segs = crail.firstChild.children, cur = gIdx >= 0 && list[gIdx];
+  CR.sents.forEach((x, i) => { if (!segs[i]) return; segs[i].classList.toggle("hit", !!spot && x.g.includes(spot)); segs[i].classList.toggle("cur", !!cur && x.el === cur); });
+}
+const buildRailBase = buildRail;
+buildRail = function () { buildRailBase(); sheet.classList.toggle("hasrail", $("rail").children.length > 0); buildCRail(); };
+const fillSheetBase = fillSheet;
+fillSheet = function (row, card) { fillSheetBase(row, card); if (!row) clearCRail(); };
+(function () {
+  let raf = 0;
+  const kick = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; placeCRail(); syncCRail(); }); };
+  sheetScroll.addEventListener("scroll", kick, {passive: true});
+  addEventListener("resize", kick);
+  if (window.ResizeObserver) { const ro = new ResizeObserver(kick); ro.observe($("chrome")); ro.observe($("cpane")); }
+  let drag = null;
+  const segAt = y => { const segs = crail.firstChild.children; let best = 0, bd = 1e9; for (let i = 0; i < segs.length; i++) { const r = segs[i].getBoundingClientRect(), d = Math.abs((r.top + r.bottom) / 2 - y); if (d < bd) { bd = d; best = i; } } return best; };
+  const placeLabels = () => { const segs = crail.firstChild.children; let last = -1e9; clab.querySelectorAll(".sl").forEach(el => { const s = CR.secs[Number(el.dataset.s)], seg = segs[s.first]; if (!seg) return; const y = Math.max(seg.offsetTop, last + 26); el.style.top = `${y}px`; el.dataset.y = y; last = y; }); };
+  const showTip = (i, y) => {
+    const x = CR.sents[i], s = CR.secs[x.sec], g = x.g[0], t = T[lang];
+    ctip.innerHTML = `<div class="t1">${s.no ? `<span class="no">${esc(s.no)}</span>` : ""}<span>${esc(s.label)}</span></div><div class="t2"><span class="dot" style="--c:var(--bar-${BARKEY[g]})"></span><span>${esc(t.kShort[g])}${x.g[1] ? " + " + esc(t.kShort[x.g[1]]) : ""}</span></div>`;
+    const yy = Math.max(headBottom() + 24, Math.min(innerHeight - 30, y));
+    ctip.style.top = `${yy}px`; ctip.classList.add("on");
+    const segs = crail.firstChild.children; for (let n = 0; n < segs.length; n++) segs[n].classList.toggle("finger", n === i);
+    const ly = yy - clab.getBoundingClientRect().top;
+    clab.querySelectorAll(".sl").forEach(el => { el.classList.toggle("near", Math.abs(Number(el.dataset.y) + 11 - ly) < 30); el.classList.toggle("act", Number(el.dataset.s) === x.sec); });
+  };
+  const flash = el => { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1500); };
+  crail.addEventListener("pointerdown", e => {
+    if (!CR.sents.length) return;
+    crail.setPointerCapture(e.pointerId);
+    drag = {y: e.clientY, moved: false, i: segAt(e.clientY)};
+    crail.classList.add("scrub"); sheet.classList.add("scrubbing"); placeLabels(); showTip(drag.i, e.clientY);
+  });
+  crail.addEventListener("pointermove", e => {
+    if (!drag) return;
+    if (Math.abs(e.clientY - drag.y) > 4) drag.moved = true;
+    const i = segAt(e.clientY); showTip(i, e.clientY);
+    if (drag.moved && i !== drag.i) { drag.i = i; toSent(CR.sents[i].el, false); }
+  });
+  const end = () => {
+    if (!drag) return;
+    const d = drag; drag = null;
+    crail.classList.remove("scrub"); sheet.classList.remove("scrubbing"); ctip.classList.remove("on");
+    crail.querySelectorAll(".cseg.finger").forEach(e => e.classList.remove("finger"));
+    if (!d.moved && CR.sents[d.i]) { toSent(CR.sents[d.i].el, true); flash(CR.sents[d.i].el); }
+  };
+  crail.addEventListener("pointerup", end); crail.addEventListener("pointercancel", end);
+})();
 </script>
 </body>
 </html>
