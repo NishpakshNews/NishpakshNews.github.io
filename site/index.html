@@ -1115,10 +1115,49 @@
 
   /* the picture ends before the headline: with the box white, the headline sits under the picture, never over it
      (the picture dissolves to white by its own bottom edge) */
-  .hbox.has-pic { padding-top: 196px; }
   .hbox .hpic .hsharp.s2 { -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent 94%); mask-image: linear-gradient(to bottom, #000 50%, transparent 94%); }
   .card .pic img { transition: object-position 1200ms cubic-bezier(.45,0,.25,1); }
   @media (prefers-reduced-motion: reduce) { .card .pic img { transition: none; } }
+  /* the article's top, in the card's order (owner, Oct 15 2026: the bar came down past the headline while the headline
+     went up, and the opening jittered): the picture, then the bar section straight under it (one white piece, as on
+     the card), then the headline, its sources line and the lead as ONE card of a different kind: a pale indigo paper with
+     a fine edge instead of the white cards' shadow, the card's kicker and the share button on its top row, the lead in
+     the headline's serif. Different from every other card, never bold. */
+  :root { --leadbg: #f3f4fa; --leadedge: rgba(70,84,154,0.14); }
+  .hbox { padding: 0; color: var(--ink); border-radius: 0; }
+  .hbox .layer { display: none; }
+  .hbox.has-pic { padding-top: 200px; }
+  .hbox .hpic { background: var(--card); border-radius: 20px 20px 0 0; }
+  .hbox > .kcard { margin: 0; }
+  .hbox.has-pic > .kcard::before { border-radius: 0 0 20px 20px; box-shadow: 0 3px 0 var(--edge); }
+  .hbox.has-pic > .kcard { padding-top: 6px; }
+  #sheet:not(.open) .kcard::before, #sheet:not(.open) .khead, #sheet:not(.open) .kbody { opacity: 0; }
+  #sheet.anim.open .kcard::before, #sheet.anim.open .khead, #sheet.anim.open .kbody { transition: opacity 260ms ease 200ms; }
+  .hcard { position: relative; margin-top: 12px; padding: 12px 16px 0; }
+  .hcard::before, .rise > .paper.lead::before { content: ""; position: absolute; inset: 0; background: var(--leadbg); border: 1px solid var(--leadedge); pointer-events: none; z-index: 0; }
+  .hcard::before { border-bottom: 0; border-radius: 20px 20px 0 0; }
+  .hcard > * { position: relative; z-index: 1; }
+  #sheet:not(.open) .hcard::before { opacity: 0; }
+  #sheet.anim.open .hcard::before { transition: opacity 280ms ease 160ms; }
+  .hrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 30px; }
+  .hrow .kk { margin: 0; }
+  /* the kicker travels from the card's like the headline does (transform only); the share button fades in */
+  #hkick { transform: translate(var(--kx, 0px), var(--ky, 0px)); }
+  #sheet.anim #hkick { transition: transform 460ms var(--ease); will-change: transform; }
+  #sheet.open #hkick { transform: none; }
+  #sheet:not(.open) .hrow .share { opacity: 0; }
+  #sheet.anim.open .hrow .share { transition: opacity 260ms ease 260ms; }
+  .hrow .share { margin: 0 -6px 0 auto; width: 34px; height: 34px; color: #46549a; }
+  .hbox h1 { margin: 6px 0 0; }      /* as bold and as big as the card's headline */
+  #sheet.open .hbox h1 { text-shadow: none; }
+  .hbox .meta { margin: 0; padding: 10px 0 0; color: var(--muted); }
+  .rise > .paper.lead { position: relative; margin-top: 0; background: none; box-shadow: none; border-radius: 0; padding: 14px 16px 18px;
+                        font-size: 19.5px; line-height: 1.6; }
+  .rise > .paper.lead::before { border-top: 0; border-radius: 0 0 20px 20px; }
+  .rise > .paper.lead > * { position: relative; z-index: 1; }
+  .rise > .paper.lead .s { --wash: color-mix(in srgb, var(--sc) var(--tint), var(--leadbg)); }
+  html.hi .rise > .paper.lead { font-size: 19px; line-height: 1.8; }
+  .rise > .paper.lead + .acts { margin-top: 22px; }
   /* every sentence in every section carries its colour: the figures' tiles and the quotes too */
   .tile .s, .quote .s { --lift: 0.26em; --feather: 9px; --wash: color-mix(in srgb, var(--sc) var(--tint), #fff);
                         background: var(--wash); border-radius: 0; padding: var(--lift) 4px; box-shadow: 0 0 var(--feather) 1px var(--wash);
@@ -4412,6 +4451,48 @@ placeOverCard = function (r, off = lastOff) {
   st.setProperty("--it", `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) scale(${m.toFixed(4)})`);
   st.setProperty("--it2", `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) scale(${m.toFixed(4)}) scale(1.15)`);
   st.setProperty("--bl", `${(16 / (k * m)).toFixed(2)}px`);
+};
+
+/* the article's top in the card's order (owner, Oct 15 2026): the bar section straight under the picture, then the
+   headline, its sources line and the lead as one card (the card's kicker and the share button on its top row; the
+   read-aloud and the talk button follow the lead) */
+(function () {
+  const h1 = $("sheet-h"), meta = hbox.querySelector(".meta"), share = $("share");
+  const hc = document.createElement("div"); hc.className = "hcard";
+  const row = document.createElement("div"); row.className = "hrow"; row.innerHTML = '<div class="kk" id="hkick"></div>';
+  hbox.insertBefore($("kcard"), h1);
+  h1.before(hc); row.appendChild(share); hc.append(row, h1, meta);
+})();
+function leadFirst() {
+  const r = $("rise"), lead = r.querySelector(":scope > .paper.lead"), acts = r.querySelector(":scope > .acts");
+  if (lead && acts && acts.compareDocumentPosition(lead) & Node.DOCUMENT_POSITION_FOLLOWING) lead.after(acts);
+}
+const fillSheetLead = fillSheet;
+fillSheet = function (row, card) {
+  fillSheetLead(row, card);
+  leadFirst();
+  const b = row ? barCounts(((row.payload_en || {}).narrative || {}).paragraphs) : card && card.bar;
+  const k = b ? kickerHtml(b) : "";
+  $("hkick").innerHTML = k ? k.replace(/^<div class="kk">|<\/div>$/g, "") : "";
+};
+
+// the kicker's place on the card, and its glide into (and back out of) the article, like the headline's
+const headOffsetKick = headOffset;
+headOffset = function (cardEl) {
+  const o = headOffsetKick(cardEl), kk = cardEl && cardEl.querySelector(".kk");
+  if (kk) { const a = cardEl.getBoundingClientRect(), b = kk.getBoundingClientRect(); o.k = {x: b.left - a.left, y: b.top - a.top}; }
+  return o;
+};
+const placeOverCardKick = placeOverCard;
+placeOverCard = function (r, off = lastOff) {
+  const st = hbox.style, k = $("hkick");
+  st.setProperty("--kx", "0px"); st.setProperty("--ky", "0px");
+  placeOverCardKick(r, off);
+  if (off && off.k && k && k.firstChild) {
+    const a = k.getBoundingClientRect();
+    st.setProperty("--kx", `${r.left + off.k.x - a.left}px`);
+    st.setProperty("--ky", `${r.top + off.k.y - a.top}px`);
+  }
 };
 </script>
 </body>

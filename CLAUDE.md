@@ -1073,6 +1073,15 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   NOT RUN on real outlet pictures (no network in the sandbox): tested on two photos and on stub feeds in the browser.
   `sw.js` np-main-44.
 
+- **The article's top in the card's order (owner, Oct 15 2026: the bar travelled down past the headline while the headline
+  went up, and the opening jittered).** Now: the picture, the colour section straight under it (`#kcard` moved into
+  `.hbox`, one white piece with the picture, as on the card), then ONE card of a different kind (`.hcard` + the lead
+  `.paper.lead`): pale indigo paper with a fine indigo edge (`--leadbg`, `--leadedge`) instead of the white cards' shadow;
+  its top row carries the card's kicker (`#hkick`, glides from the card's kicker like the headline: `--kx/--ky`) and the
+  share button (upper right); the headline stays bold at the card's size; the lead in the headline's serif. The read-aloud,
+  video and talk buttons follow the lead (`leadFirst`: moved inside `#rise`, so every `#rise` query still finds every
+  sentence). `sw.js` np-main-45.
+
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →
 retract headline-only reads → Tavily reads blocked pages → wire copies → grouping (`stories.py`) →
