@@ -1074,7 +1074,15 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   group or the main face (42% down its 200 px box) and never drifts; `placeOverCard` starts the glide from the card's
   crop at that moment (mid-drift too), so nothing jumps. A picture can only slide, never zoom out below cover.
   NOT RUN on real outlet pictures (no network in the sandbox): tested on two photos and on stub feeds in the browser.
-  `sw.js` np-main-44.
+  `sw.js` np-main-44. **Follow-up (owner, Oct 15 2026: "works perfectly"):** the EYES sit a third of the way down the frame
+  (card and article; `fc` gains a 4th value, the eye line from YuNet's eye landmarks; older entries: just above the face's
+  centre); only FOREGROUND faces count (`focus.foreground`: height at least 0.45 of the largest and Laplacian sharpness at least
+  0.3 of the sharpest of those, so out-of-focus background faces drop; main face first by size and sharpness); cache entries
+  carry `v` (`focus.VERSION` 2) and older ones are looked at again. **Tilt (owner: "gyroscope aware"):** the card in view's
+  picture moves up to 10 px behind its frame with the phone's tilt (`deviceorientation`, smoothed, the resting angle re-learned
+  slowly, picture drawn at 1.07 so no edge shows, `html.tilt-on` once a sensor reports); off for reduced motion and while an
+  article is open; iPhone permission asked once on the first tap. `cardPicNow` measures the crop inside the frame, so the opening
+  glide still starts exactly where the tilted picture is. `sw.js` np-main-49.
 
 - **The article's top in the card's order (owner, Oct 15 2026: the bar travelled down past the headline while the headline
   went up, and the opening jittered).** Now: the picture, the colour section straight under it (`#kcard` moved into

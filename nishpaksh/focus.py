@@ -38,7 +38,10 @@ BUDGET = 60             # seconds an export may spend looking (the notifications
 SIDE = 960              # the picture is shrunk to this longest side before looking (at 640 two people side by side were missed)
 FACE_SCORE = 0.6        # YuNet's own score; a helmeted batsman scored 0.70, patterns stay well below
 MIN_FACE = 0.035        # a face smaller than this share of the picture's shorter side is crowd, not subject
-MIN_SHARE = 0.25        # faces much smaller than the largest are background people: left out
+MIN_SHARE = 0.45        # faces much smaller than the largest are background people: left out (owner, Oct 15 2026: "the ones in
+                        # the foreground matter")
+MIN_SHARP = 0.3         # a face far blurrier than the sharpest large face is out of focus, i.e. background
+VERSION = 2             # cache entries of another version are looked at again (2: eyes, foreground by size and sharpness)
 CACHE_DAYS = 10
 UA = "Mozilla/5.0 (compatible; NishpakshBot/1.0; +https://nishpakshnews.github.io)"
 
@@ -74,14 +77,42 @@ def _decode(cv2, data: bytes):
     return img, w, h
 
 
-def faces(cv2, img) -> list[tuple[float, float, float, float]]:
-    """(x, y, w, h) boxes in pixels of `img`."""
+def faces(cv2, img) -> list[tuple[float, float, float, float, float]]:
+    """(x, y, w, h, eyes_y) in pixels of `img`; eyes_y from YuNet's two eye landmarks."""
     h, w = img.shape[:2]
     det = cv2.FaceDetectorYN.create(str(MODEL), "", (w, h), FACE_SCORE, 0.3, 50)
     _, found = det.detect(img)
     if found is None:
         return []
-    return [(float(f[0]), float(f[1]), float(f[2]), float(f[3])) for f in found]
+    return [(float(f[0]), float(f[1]), float(f[2]), float(f[3]), float(f[5] + f[7]) / 2) for f in found]
+
+
+def sharpness(cv2, img, box) -> float:
+    """How in focus a face is: the variance of the Laplacian over it (a blurred background face scores far lower)."""
+    x, y, bw, bh = (int(round(v)) for v in box[:4])
+    h, w = img.shape[:2]
+    crop = img[max(0, y):min(h, y + bh), max(0, x):min(w, x + bw)]
+    if crop.size == 0:
+        return 0.0
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    gray = cv2.resize(gray, (64, 64), interpolation=cv2.INTER_AREA)   # the same scale for every face
+    return float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+
+def foreground(boxes, sharp: list[float] | None = None):
+    """The faces that are the picture's subject: near the largest in size and not far blurrier than the sharpest of those;
+    ordered by size (and sharpness), the main face first."""
+    if not boxes:
+        return []
+    big = max(b[3] for b in boxes)
+    idx = [i for i, b in enumerate(boxes) if b[3] >= MIN_SHARE * big]
+    if sharp:
+        top = max(sharp[i] for i in idx) or 1.0
+        idx = [i for i in idx if sharp[i] >= MIN_SHARP * top]
+        idx.sort(key=lambda i: boxes[i][3] * (0.6 + 0.4 * sharp[i] / top), reverse=True)
+    else:
+        idx.sort(key=lambda i: boxes[i][3], reverse=True)
+    return [boxes[i] for i in idx]
 
 
 def people(cv2, img) -> list[tuple[float, float, float, float]]:
@@ -99,11 +130,12 @@ def people(cv2, img) -> list[tuple[float, float, float, float]]:
     return out
 
 
-def head_of(box: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
-    """The head guessed from a person's box: HOG boxes have margin; the head is the top ~1/6, centred."""
+def head_of(box: tuple[float, float, float, float]) -> tuple[float, float, float, float, float]:
+    """The head guessed from a person's box: HOG boxes have margin; the head is the top ~1/6, centred; eyes 40% down it."""
     x, y, w, h = box
     hh = h * 0.16
-    return (x + w / 2 - hh / 2, y + h * 0.06, hh, hh)
+    top = y + h * 0.06
+    return (x + w / 2 - hh / 2, top, hh, hh, top + hh * 0.4)
 
 
 def summarise(boxes, w: int, h: int, kind: str) -> dict:
@@ -114,10 +146,12 @@ def summarise(boxes, w: int, h: int, kind: str) -> dict:
     keep = [b for b in boxes if b[3] >= MIN_FACE * short]
     if not keep:
         return {}
-    keep.sort(key=lambda b: b[2] * b[3], reverse=True)
-    big = keep[0][3]
-    keep = [b for b in keep if b[3] >= MIN_SHARE * big][:MAX_FACES]
-    fc = [[round(float(x + bw / 2) / w, 3), round(float(y + bh / 2) / h, 3), round(float(bh) / h, 3)] for x, y, bw, bh in keep]
+    keep = keep[:MAX_FACES]               # already the foreground, main face first (foreground())
+    fc = []
+    for b in keep:
+        x, y, bw, bh = b[:4]
+        ey = b[4] if len(b) > 4 else y + bh * 0.4
+        fc.append([round(float(x + bw / 2) / w, 3), round(float(y + bh / 2) / h, 3), round(float(bh) / h, 3), round(float(ey) / h, 3)])
     return {"fc": fc, "ar": round(w / h, 3), "fk": kind}
 
 
@@ -129,13 +163,13 @@ def look(data: bytes) -> dict:
     if img is None:
         return {}
     h, w = img.shape[:2]
-    found = faces(cv2, img)
+    found = [b for b in faces(cv2, img) if b[3] >= MIN_FACE * min(w, h)]
     if found:
-        return summarise(found, w, h, "face")
+        return summarise(foreground(found, [sharpness(cv2, img, b) for b in found]), w, h, "face")
     ppl = people(cv2, img)
     if ppl:
-        ppl.sort(key=lambda b: b[2] * b[3], reverse=True)
-        return summarise([head_of(b) for b in ppl[:MAX_FACES]], w, h, "person")
+        heads = [head_of(b) for b in ppl]
+        return summarise(foreground(heads), w, h, "person")
     return {}
 
 
@@ -164,6 +198,8 @@ def attach(pics: dict[str, dict], root: pathlib.Path, max_new: int = MAX_NEW, fe
             continue
         in_use.add(src)
         got = cache.get(src)
+        if got is not None and got.get("v") != VERSION:
+            got = None                         # looked at by an older version: look again
         if got is None:
             if stats["looked"] >= max_new or time.monotonic() > until:
                 stats["waiting"] += 1
@@ -178,7 +214,7 @@ def attach(pics: dict[str, dict], root: pathlib.Path, max_new: int = MAX_NEW, fe
             except Exception as e:  # noqa: BLE001 - a bad picture never stops the feed
                 log.warning("focus: %s: %s", src[:80], e)
                 f = {}
-            got = {"f": f, "t": now}
+            got = {"f": f, "t": now, "v": VERSION}
             cache[src] = got
             if f:
                 stats["found"] += 1
