@@ -541,6 +541,20 @@
   #sheet[data-spot] .essay .s { color: #a8abaf; background: transparent; text-decoration: none; }
   #sheet[data-spot] .essay .s.spot-on { color: var(--st); background: color-mix(in srgb, var(--sc) 24%, transparent); box-shadow: 0 0 0 2px var(--sc); }
   #sheet[data-spot] .essay .s.spot-on.developing { text-decoration: underline dotted #7fc4bb; text-underline-offset: 4px; }
+  /* continuous colour wash (owner, Oct 15 2026): the sentence colours run on without white lines between them.
+     1. the wash grows up and down (padding-block) to fill the whole line height, so lines of text touch
+     2. the wash is the colour mixed into white (opaque), so where lines or sentences overlap nothing doubles up
+     3. a soft shadow of the same colour feathers every edge; where two colours meet they blend into each other
+     tune: --feather is the softness, --lift is how far the wash reaches above and below the text */
+  .essay .s, .card .text .s { --lift: 0.26em; --feather: 9px;
+                              --wash: color-mix(in srgb, var(--sc) var(--tint), #fff);
+                              background: var(--wash); border-radius: 0; padding: var(--lift) 4px;
+                              box-shadow: 0 0 var(--feather) 1px var(--wash); }
+  /* the space between two sentences now sits inside the coloured one, so no white shows between them on a line */
+  .essay .s::after, .card .text .s::after { content: " "; }
+  .sent.lit .s { box-shadow: 0 0 5px 1px color-mix(in srgb, currentColor 14%, transparent); }
+  #sheet[data-spot] .essay .s { box-shadow: none; }
+  #sheet[data-spot] .essay .s.spot-on { border-radius: 4px; }
   .abar span, .pbar span { transition: opacity 200ms ease; }
   .abar span.dim, .pbar span.dim { opacity: 0.28; }
   .rise > .key.grade { display: block; margin: 12px 4px 0; font-size: 13px; }
@@ -621,6 +635,23 @@
   .pchip { min-height: 40px; border-radius: 99px; background: color-mix(in srgb, var(--c) 16%, #fff); }
   .pchip.on { background: var(--c); }
   .pchip .gg { width: 16px; height: 16px; font-size: 10.5px; }
+  /* the pinned colour bar and legends (owner, Oct 15 2026: slower and smoother): the pane unrolls from the top edge like
+     a window blind rather than popping in; the bar and the chips follow it one after the other; going away is quicker
+     than arriving but also eased. --pin-in / --pin-out are the two durations. */
+  .pin { --pin-in: 720ms; --pin-out: 420ms; --pin-ease: cubic-bezier(.22,.9,.24,1);
+         transform-origin: 50% 0; transform: translateY(-26px) scaleY(.94);
+         clip-path: inset(0 0 100% 0 round 0 0 20px 20px); -webkit-clip-path: inset(0 0 100% 0 round 0 0 20px 20px);
+         transition: opacity var(--pin-out) ease, transform var(--pin-out) var(--pin-ease),
+                     clip-path var(--pin-out) var(--pin-ease), -webkit-clip-path var(--pin-out) var(--pin-ease),
+                     visibility 0s linear var(--pin-out); }
+  .pin.on { transform: none; clip-path: inset(0 0 -40px 0 round 0 0 20px 20px); -webkit-clip-path: inset(0 0 -40px 0 round 0 0 20px 20px);
+            transition: opacity 560ms ease, transform var(--pin-in) var(--pin-ease),
+                        clip-path var(--pin-in) var(--pin-ease), -webkit-clip-path var(--pin-in) var(--pin-ease); }
+  .pin > .pbar, .pin > .prow { opacity: 0; transform: translateY(-8px); transition: opacity 200ms ease, transform 200ms ease; }
+  .pin.on > .pbar, .pin.on > .prow { opacity: 1; transform: none; transition: opacity 480ms ease, transform 620ms var(--pin-ease); }
+  .pin.on > .pbar { transition-delay: 140ms; }
+  .pin.on > .prow { transition-delay: 260ms; }
+  @media (prefers-reduced-motion: reduce) { .pin > .pbar, .pin > .prow { transition-duration: 1ms !important; transition-delay: 0ms !important; } .pin { clip-path: none; -webkit-clip-path: none; } .pin.on { clip-path: none; -webkit-clip-path: none; } }
   .glabel { margin-top: 10px; font-size: 13px; font-weight: 600; color: var(--est); line-height: 1.3; }
   .glabel.none { color: var(--muted); }
   .card .glabel + .foot { margin-top: 6px; }
@@ -1694,7 +1725,9 @@ function onSheetScroll() {
   $("chrome").classList.toggle("stuck", sc.scrollTop > 8);
   // the colour bar and chips stay in view: once the grade block has gone under the top, its pinned copy slides in
   const gc = $("kbody").querySelector(".kchips");
-  $("pin").classList.toggle("on", !!gc && $("pin").firstElementChild !== null && gc.getBoundingClientRect().bottom < $("chrome").getBoundingClientRect().bottom + 4);
+  // a little hysteresis (shows at +4px, hides again only at +28px) so a hand resting at the edge cannot make it flicker
+  const pinEl = $("pin"), gap = gc ? gc.getBoundingClientRect().bottom - $("chrome").getBoundingClientRect().bottom : 1e9;
+  pinEl.classList.toggle("on", !!gc && pinEl.firstElementChild !== null && gap < (pinEl.classList.contains("on") ? 28 : 4));
   if (sc.scrollTop > 60) collapseHint();
   const line = $("chrome").getBoundingClientRect().bottom + 24;
   let on = -1;
