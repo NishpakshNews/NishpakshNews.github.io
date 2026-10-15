@@ -1127,6 +1127,13 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   it unfolds back into the pill. The copy sits right after `#back`, never last in `.crow`: `.crow > :last-child` is what
   right-aligns the language pill (appended last, it stretched the article's EN/हिं switch). `sw.js` np-main-51.
 
+- **The home card's text has the section cards' wash (owner, Oct 15 2026).** Each card's `.text` becomes a `.wcard` and gets the
+  same `washCard` canvas (spread 15, softness 14, 14%), painted only for cards on screen or next to it (`deckWash`,
+  IntersectionObserver on the track, rootMargin one card) and only when the deck has been still for 250 ms (`washPump` waits:
+  `paintDepth` tilts the slots mid-swipe, which would skew the shapes). `renderDeck` is wrapped (`setupDeckWash`), so a deck built
+  again is painted again. The text box reaches into the card's 22px side padding (negative margin, same padding: the words do
+  not move) and fades in over its top 14px, so the wash's soft edge is not cut straight. `sw.js` np-main-53.
+
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →
 retract headline-only reads → Tavily reads blocked pages → wire copies → grouping (`stories.py`) →

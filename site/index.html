@@ -1243,6 +1243,10 @@
   canvas.wash.on { opacity: 1; }
   #sheet[data-spot] canvas.wash { opacity: 0; }
   .wcard .s, .wcard .tile .s { background: transparent; box-shadow: none; padding: 0; border-radius: 0; }
+  /* the home card's text gets the same wash (owner, Oct 15 2026). Its box clips (overflow hidden, the fade at the bottom), so it
+     reaches out into the card's side padding and a little above, giving the wash's soft edge room; the words stay where they were. */
+  .card .text.wcard { margin-left: -22px; margin-right: -22px; padding-left: 22px; padding-right: 22px; margin-top: -4px; padding-top: 14px; }
+  .card .text.wcard { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 22%, transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 22%, transparent 100%); }   /* the wash fades out above the first line, not cut straight */
   #rise .paper.essay:not(.lead) p, #rise .paper.quote p { text-align: justify; text-align-last: start; -webkit-hyphens: auto; hyphens: auto; }
   /* Edge to edge on the home cards and the article's top too (owner, Oct 15 2026): the card's text and the article's lead
      (not the headlines, see below), justified like the section cards, the last line left as it falls. Headlines are never
@@ -4730,6 +4734,8 @@ function washPump() {
     washQueue.clear();
     const card = order.shift();
     order.forEach(c => washQueue.add(c));
+    // a home card is painted only once the deck is at rest: while swiping, its slot is tilted (paintDepth) and the shapes would skew
+    if (card && card.closest(".track") && Date.now() - lastScroll < 250) { washQueue.add(card); washTimer = setTimeout(washPump, 300); return; }
     if (card && card.dataset.washed !== `${card.offsetWidth}x${card.offsetHeight}`) { try { washCard(card); } catch (e) { /* the plain text stays */ } }
     if (washQueue.size) washTimer = setTimeout(washPump, 0);
   });
@@ -4750,6 +4756,16 @@ function setupWash() {
 const fillSheetWash = fillSheet;
 fillSheet = function (row, card) { fillSheetWash(row, card); setupWash(); };
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => $("rise").querySelectorAll(".wcard").forEach(c => { delete c.dataset.washed; washLater(c); }));
+/* the home cards: the same wash behind each card's text, painted for the cards on screen and next to it (the deck holds
+   every card, so painting them all would be wasted work); a card built again (refresh, language, section) is painted again */
+const deckWash = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) washLater(e.target, 120); }), {root: track, rootMargin: "100% 0px"});
+function setupDeckWash() {
+  track.querySelectorAll(".card .text").forEach(t => { if (t.classList.contains("wcard")) return; t.classList.add("wcard"); deckWash.observe(t); washSizes.observe(t); });
+}
+const renderDeckWash = renderDeck;
+renderDeck = function (...a) { const r = renderDeckWash.apply(this, a); setupDeckWash(); return r; };
+setupDeckWash();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => track.querySelectorAll(".card .text.wcard").forEach(c => { if (c.dataset.washed) { delete c.dataset.washed; washLater(c); } }));
 </script>
 </body>
 </html>
