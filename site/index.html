@@ -422,9 +422,16 @@
   #intro { display: none; }
   html.launch #intro { display: flex; position: fixed; inset: 0; z-index: 30; align-items: center; justify-content: center;
                        background: #1f2550; transition: opacity 360ms ease 160ms, visibility 0s linear 520ms; }
-  html.launch #intro img { width: min(52vw, 300px); height: auto; transition: opacity 160ms ease, transform 200ms ease; }
+  /* the tagline hangs under the mark (owner, Oct 15 2026); the mark stays exactly where it was. Everything scales from the
+     mark's width W: tagline .075 W, gap .11 W, in the greeting's upright serif (Newsreader), white at 85%. Fixed English in
+     both languages, like the mark, so the iPhone splash images (splash/*.png) are the same picture. */
+  html.launch #intro .intro-in { --w: min(52vw, 300px); position: relative; width: var(--w); transition: opacity 160ms ease, transform 200ms ease; }
+  html.launch #intro img { display: block; width: 100%; height: auto; }
+  .intro-tag { position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: calc(var(--w, 300px) * 0.11);
+               white-space: nowrap; color: rgba(255,255,255,0.85); font-family: "Newsreader", Georgia, serif; font-weight: 500;
+               font-size: calc(var(--w, 300px) * 0.075); line-height: 1.2; letter-spacing: 0.02em; text-shadow: 0 1px 2px rgba(0,0,0,0.25); }
   html.launch.ready #intro { opacity: 0; visibility: hidden; }
-  html.launch.ready #intro img { opacity: 0; transform: scale(0.96); }
+  html.launch.ready #intro .intro-in { opacity: 0; transform: scale(0.96); }
   .greeting { transition: opacity 220ms ease; }
   .greeting.swap { opacity: 0; }
   @media (prefers-reduced-motion: reduce) {
@@ -439,11 +446,11 @@
   header.top { position: relative; isolation: isolate; background: none; padding: 14px 16px; gap: 0; }
   /* the indigo: O (rounded, clips) > W (its bottom edge moves) > G (the gradient, held still). Only transforms move while the
      header tidies (clip-path repainted the gradient every frame and it jittered on phones, Oct 10 2026); the gradient is
-     drawn over the full 122px header in both states, so nothing changes when the animation ends. */
+     drawn over the full 98px header in both states, so nothing changes when the animation ends. */
   header.top .hbg { position: absolute; left: 0; right: 0; top: 0; height: 100%; border-radius: 22px; overflow: hidden; z-index: -1; pointer-events: none; }
   .hbw, .hbgr { position: absolute; left: 0; right: 0; top: 0; height: 100%; }
   .hbw { overflow: hidden; border-radius: 0 0 22px 22px; }
-  .hbgr { height: 122px; background-size: 100% 122px; }
+  .hbgr { height: 98px; background-size: 100% 98px; }
   .wmrow { position: relative; height: 30px; display: flex; align-items: center; justify-content: center; }
   .wmrow .wordmark { line-height: 30px; padding: 0 78px; border: 0; background: none; color: inherit; cursor: pointer; }
   /* the menu and the refresh button share one pill, made like the language pill: a dark translucent pill, white
@@ -463,18 +470,12 @@
   @keyframes rspin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .rbtn.spin svg { animation-duration: 2400ms; } }
   .hit { position: relative; } .hit::after { content: ""; position: absolute; inset: -7px; }
-  .gspace { height: 64px; }
+  .gspace { height: 40px; }  /* 14 + 30 (wordmark row) + 40 + 14 = 98: the greeting row (top 54, 30 high) ends 14px above the bottom edge, as the wordmark row starts 14px below the top */
   header.top .greeting { position: absolute; left: 16px; right: 120px; top: 54px; line-height: 30px; height: 30px; white-space: nowrap;
                          overflow: hidden; text-overflow: ellipsis; transition: opacity 200ms ease; }
   .hpill { position: absolute; right: 16px; top: 54px; z-index: 1; transition: transform 420ms cubic-bezier(.4,0,.2,1) 30ms; }
   header.tidy .gspace { height: 0; }
   header.tidy .greeting { opacity: 0; pointer-events: none; }
-  /* the tagline (owner, Oct 15 2026): one line under the greeting, fading away with it */
-  header.top .tagline { position: absolute; left: 16px; right: 16px; top: 86px; height: 22px; line-height: 22px; white-space: nowrap; overflow: hidden;
-                        text-overflow: ellipsis; font-family: "Newsreader", Georgia, serif; font-style: italic; font-weight: 500; font-size: 15px;
-                        opacity: 0.9; transition: opacity 200ms ease; }
-  html.hi header.top .tagline { font-family: "Tiro Devanagari Hindi", serif; font-style: normal; font-size: 14px; }
-  header.tidy .tagline { opacity: 0; pointer-events: none; }
   header.tidy .hpill { transform: translateY(-40px); }
   .pill { height: 30px; padding: 2px; font-size: 12.5px; align-items: center; }
   .pill button, .pill.light button { min-height: 0; height: 24px; padding: 0 9px; }
@@ -907,7 +908,7 @@
 </style>
 </head>
 <body>
-<div id="intro" aria-hidden="true"><img src="mark.png" alt=""></div>
+<div id="intro" aria-hidden="true"><div class="intro-in"><img src="mark.png" alt=""><div class="intro-tag" id="introtag">News, in true colours</div></div></div>
 <div id="app">
   <header class="top" id="top">
     <div class="hbg" id="hbg" aria-hidden="true"><div class="hbw" id="hbw"><div class="hbgr brand" id="hbgr"></div></div></div>
@@ -917,7 +918,6 @@
     </div>
     <div class="gspace"></div>
     <div class="greeting lift" id="greet">Hello.</div>
-    <div class="tagline lift" id="tagline">Where every story shows its true colours.</div>
     <div class="pill hpill" role="group" aria-label="Language">
       <button type="button" data-lang="en" aria-pressed="true">EN</button><button type="button" data-lang="hi" aria-pressed="false" lang="hi">हिं</button>
     </div>
@@ -1016,7 +1016,7 @@ const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;      // the long names
 const GLYPH = {established: "✓", developing: "…", partial: "½", single: "1", disputed: "≠", false: "✕", unverified: "?"};
 const BAR2ST = {e: "established", v: "developing", p: "partial", o: "single", d: "disputed", r: "false", u: "unverified"};
 Object.assign(T.en, {
-  howTo: "How to read the colours", gsum: (e, n) => `${e} of ${n} statements confirmed`, tagline: "Where every story shows its true colours.",
+  howTo: "How to read the colours", gsum: (e, n) => `${e} of ${n} statements confirmed`,
   kShort: {established: "Confirmed", developing: "Developing", unverified: "Unverified", partial: "Partly confirmed", single: "One report", disputed: "Disputed", false: "False"},
   kDef: {established: "3+ independent outlets, 2+ original sources, nobody denies it, and it has held for 6 hours.",
          developing: "Meets the confirmed rule but has not held for 6 hours yet.",
@@ -1037,7 +1037,7 @@ Object.assign(T.en, {
     h3: "Tap a colour to see why.", p3: "The key sits under every headline and stays pinned as you read. Tap a colour to light up just those sentences."}
 });
 Object.assign(T.hi, {
-  howTo: "रंग कैसे पढ़ें", gsum: (e, n) => `${n} में से ${e} कथन पुष्ट`, tagline: "जहाँ हर ख़बर अपना असली रंग दिखाती है।",
+  howTo: "रंग कैसे पढ़ें", gsum: (e, n) => `${n} में से ${e} कथन पुष्ट`,
   kShort: {established: "पुष्ट", developing: "विकसित", unverified: "अपुष्ट", partial: "आंशिक पुष्टि", single: "एक ही रिपोर्ट", disputed: "विवादित", false: "असत्य"},
   kDef: {established: "कम से कम 3 स्वतंत्र समाचार माध्यम, 2 मूल स्रोत, किसी ने खंडन नहीं किया, और 6 घंटे से टिका हुआ।",
          developing: "पुष्ट की शर्तें पूरी हैं, पर अभी 6 घंटे नहीं हुए।",
@@ -2121,7 +2121,6 @@ function applyLang() {
   document.documentElement.classList.toggle("hi", lang === "hi");
   $("wm").textContent = T[lang].wordmark; $("wm2").textContent = T[lang].wordmark;
   $("greet").textContent = greeted ? greeting() : T[lang].hello;
-  $("tagline").textContent = T[lang].tagline;
   $("back").setAttribute("aria-label", T[lang].back);
   $("share").setAttribute("aria-label", T[lang].share);
   $("wm").setAttribute("aria-label", `${T[lang].wordmark}: ${T[lang].latest}`);
