@@ -1057,6 +1057,22 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   the card-to-article morph are unchanged. Use `headBottom()` / `pinnedTop()` wherever code needs where the header ends.
   The headline box stays white, so its picture ends before the headline (`.hbox.has-pic` padding 196px). `sw.js` np-main-43. Next (owner): face-aware picture crops for the cards and the article.
 
+- **Pictures framed on their faces (owner, Oct 15 2026; `focus.py`, site block "pictures framed on their faces").** Card
+  pictures were filled from their centre and cut most faces. At every feed export each picture the cards show is
+  downloaded once (6 s, 4 MB), looked at and thrown away (linked, never copied, as agreed): OpenCV YuNet faces
+  (`config/models/face_detection_yunet_2023mar.onnx`, MIT; score 0.6, a helmeted batsman scored 0.70; worked at 960 px,
+  at 640 two people side by side were missed), else OpenCV's people detector with the head guessed at the top of the body
+  (owner: "yes"; it can be wrong), else nothing (centre crop as before). Stored on the card as `img.fc` [[cx, cy, size],
+  largest first, at most 6], `img.ar`, `img.fk` (face / person); cached per link in `focus.json` on the feed branch; at
+  most 30 new pictures and 60 s an export; any failure gives no focus and never stops the feed. `opencv-python-headless`
+  is pinned below 5 (OpenCV 5 dropped the people detector). Site: a card's picture is slid (object-position) so the faces
+  sit 36% down its frame; faces that fit together are framed together; when they cannot, the card in view drifts face to
+  face (6 s each, 1.2 s glide; home cards only, owner; still for reduced motion). The article's picture is framed on the
+  group or the main face (42% down its 200 px box) and never drifts; `placeOverCard` starts the glide from the card's
+  crop at that moment (mid-drift too), so nothing jumps. A picture can only slide, never zoom out below cover.
+  NOT RUN on real outlet pictures (no network in the sandbox): tested on two photos and on stub feeds in the browser.
+  `sw.js` np-main-44.
+
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →
 retract headline-only reads → Tavily reads blocked pages → wire copies → grouping (`stories.py`) →

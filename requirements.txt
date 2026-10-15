@@ -12,3 +12,4 @@ networkx>=3.2
 pytest>=8.0
 snowballstemmer>=2.2
 pywebpush>=2.0
+opencv-python-headless>=4.9,<5   # focus.py: faces in card pictures (OpenCV 5 dropped the people detector)

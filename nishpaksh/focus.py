@@ -1,0 +1,194 @@
+"""Where a card's picture should be looked at: its faces (owner, Oct 15 2026).
+
+A card's picture is the outlet's own share picture, LINKED, never copied (owner, Oct 9 2026). Filled into the card
+from its centre, the faces of most news pictures (portraits, people high in the frame) were cut. So at every feed
+export each picture the cards show is downloaded ONCE, looked at, and thrown away; only where its faces are is kept,
+as a few numbers on the card (`img.fc`, `img.ar`, `img.fk`), and the site crops to them.
+
+- Faces: OpenCV's YuNet detector (config/models/face_detection_yunet_2023mar.onnx, MIT licence, 230 KB, CPU only,
+  no API quota).
+- No face (a helmet, a face turned away): OpenCV's people detector; the head is guessed at the top of the body,
+  centred (owner: "yes, guess the head"). It can be wrong; the alternative was the centre crop, which is wrong more.
+- Nothing found: no focus; the card keeps the centre crop as before.
+
+Kept per picture link in `focus.json` on the feed branch (next to manifest.json), so a picture is looked at once;
+at most MAX_NEW new pictures a run (the rest the next run). A failure of any kind gives no focus and never stops
+the export; without OpenCV the feed goes out exactly as before.
+
+A focus is {"fc": [[cx, cy, s], ...], "ar": w/h, "fk": "face"|"person"}: centres and sizes (a face's height) as
+fractions of the picture, largest first, at most MAX_FACES; {} = looked, nothing found.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import pathlib
+import time
+import urllib.request
+
+log = logging.getLogger(__name__)
+
+MODEL = pathlib.Path(__file__).resolve().parent.parent / "config" / "models" / "face_detection_yunet_2023mar.onnx"
+CACHE = "focus.json"
+MAX_NEW = 30            # new pictures looked at per export
+MAX_FACES = 6
+MAX_BYTES = 4_000_000
+TIMEOUT = 6
+BUDGET = 60             # seconds an export may spend looking (the notifications wait for the feed step)
+SIDE = 960              # the picture is shrunk to this longest side before looking (at 640 two people side by side were missed)
+FACE_SCORE = 0.6        # YuNet's own score; a helmeted batsman scored 0.70, patterns stay well below
+MIN_FACE = 0.035        # a face smaller than this share of the picture's shorter side is crowd, not subject
+MIN_SHARE = 0.25        # faces much smaller than the largest are background people: left out
+CACHE_DAYS = 10
+UA = "Mozilla/5.0 (compatible; NishpakshBot/1.0; +https://nishpakshnews.github.io)"
+
+
+def _cv():
+    try:
+        import cv2  # noqa: PLC0415 - optional dependency, loaded only here
+        import numpy  # noqa: F401, PLC0415
+        return cv2
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def fetch(url: str) -> bytes | None:
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "image/*"})
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:  # noqa: S310 - http(s) links only (feed.pictures)
+            data = r.read(MAX_BYTES + 1)
+        return data if 0 < len(data) <= MAX_BYTES else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _decode(cv2, data: bytes):
+    import numpy as np  # noqa: PLC0415
+    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    if img is None or img.shape[0] < 40 or img.shape[1] < 40:
+        return None, 0, 0
+    h, w = img.shape[:2]
+    k = SIDE / max(h, w)
+    if k < 1:
+        img = cv2.resize(img, (round(w * k), round(h * k)), interpolation=cv2.INTER_AREA)
+    return img, w, h
+
+
+def faces(cv2, img) -> list[tuple[float, float, float, float]]:
+    """(x, y, w, h) boxes in pixels of `img`."""
+    h, w = img.shape[:2]
+    det = cv2.FaceDetectorYN.create(str(MODEL), "", (w, h), FACE_SCORE, 0.3, 50)
+    _, found = det.detect(img)
+    if found is None:
+        return []
+    return [(float(f[0]), float(f[1]), float(f[2]), float(f[3])) for f in found]
+
+
+def people(cv2, img) -> list[tuple[float, float, float, float]]:
+    """(x, y, w, h) boxes of whole people (OpenCV's HOG people detector)."""
+    hog = cv2.HOGDescriptor()
+    hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+    h, w = img.shape[:2]
+    k = min(1.0, 480 / max(h, w))
+    small = cv2.resize(img, (round(w * k), round(h * k))) if k < 1 else img
+    boxes, weights = hog.detectMultiScale(small, winStride=(8, 8), padding=(8, 8), scale=1.05)
+    out = []
+    for (x, y, bw, bh), wt in zip(boxes, list(weights) if len(boxes) else []):
+        if float(wt) >= 0.5:
+            out.append((x / k, y / k, bw / k, bh / k))
+    return out
+
+
+def head_of(box: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+    """The head guessed from a person's box: HOG boxes have margin; the head is the top ~1/6, centred."""
+    x, y, w, h = box
+    hh = h * 0.16
+    return (x + w / 2 - hh / 2, y + h * 0.06, hh, hh)
+
+
+def summarise(boxes, w: int, h: int, kind: str) -> dict:
+    """Boxes (pixels of a w x h picture) -> the stored focus. Small and background faces are left out."""
+    if not boxes or not w or not h:
+        return {}
+    short = min(w, h)
+    keep = [b for b in boxes if b[3] >= MIN_FACE * short]
+    if not keep:
+        return {}
+    keep.sort(key=lambda b: b[2] * b[3], reverse=True)
+    big = keep[0][3]
+    keep = [b for b in keep if b[3] >= MIN_SHARE * big][:MAX_FACES]
+    fc = [[round(float(x + bw / 2) / w, 3), round(float(y + bh / 2) / h, 3), round(float(bh) / h, 3)] for x, y, bw, bh in keep]
+    return {"fc": fc, "ar": round(w / h, 3), "fk": kind}
+
+
+def look(data: bytes) -> dict:
+    cv2 = _cv()
+    if cv2 is None or not MODEL.exists():
+        return {}
+    img, _, _ = _decode(cv2, data)
+    if img is None:
+        return {}
+    h, w = img.shape[:2]
+    found = faces(cv2, img)
+    if found:
+        return summarise(found, w, h, "face")
+    ppl = people(cv2, img)
+    if ppl:
+        ppl.sort(key=lambda b: b[2] * b[3], reverse=True)
+        return summarise([head_of(b) for b in ppl[:MAX_FACES]], w, h, "person")
+    return {}
+
+
+def load_cache(root: pathlib.Path) -> dict:
+    try:
+        data = json.loads((root / CACHE).read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def attach(pics: dict[str, dict], root: pathlib.Path, max_new: int = MAX_NEW, fetcher=fetch, looker=look,
+           budget: float = BUDGET) -> dict:
+    """Add the focus to every picture in `pics` (story id -> img) from the cache, looking at up to `max_new` new ones.
+    Writes the cache back (only the pictures in use and those looked at in the last CACHE_DAYS days). Returns stats."""
+    stats = {"cached": 0, "looked": 0, "found": 0, "waiting": 0, "failed": 0}
+    if _cv() is None and looker is look:
+        return stats
+    cache = load_cache(root)
+    now = int(time.time())
+    until = time.monotonic() + budget
+    in_use = set()
+    for img in pics.values():
+        src = img.get("src") or ""
+        if not src.startswith("http"):
+            continue
+        in_use.add(src)
+        got = cache.get(src)
+        if got is None:
+            if stats["looked"] >= max_new or time.monotonic() > until:
+                stats["waiting"] += 1
+                continue
+            data = fetcher(src)
+            stats["looked"] += 1
+            if data is None:
+                stats["failed"] += 1
+                continue                       # not cached: tried again next export
+            try:
+                f = looker(data)
+            except Exception as e:  # noqa: BLE001 - a bad picture never stops the feed
+                log.warning("focus: %s: %s", src[:80], e)
+                f = {}
+            got = {"f": f, "t": now}
+            cache[src] = got
+            if f:
+                stats["found"] += 1
+        else:
+            stats["cached"] += 1
+        if got.get("f"):
+            img.update(got["f"])
+    keep = {k: v for k, v in cache.items() if k in in_use or now - int(v.get("t") or 0) < CACHE_DAYS * 86400}
+    try:
+        (root / CACHE).write_text(json.dumps(keep, separators=(",", ":")), encoding="utf-8")
+    except OSError:
+        pass
+    return stats

@@ -1117,6 +1117,8 @@
      (the picture dissolves to white by its own bottom edge) */
   .hbox.has-pic { padding-top: 196px; }
   .hbox .hpic .hsharp.s2 { -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent 94%); mask-image: linear-gradient(to bottom, #000 50%, transparent 94%); }
+  .card .pic img { transition: object-position 1200ms cubic-bezier(.45,0,.25,1); }
+  @media (prefers-reduced-motion: reduce) { .card .pic img { transition: none; } }
   /* every sentence in every section carries its colour: the figures' tiles and the quotes too */
   .tile .s, .quote .s { --lift: 0.26em; --feather: 9px; --wash: color-mix(in srgb, var(--sc) var(--tint), #fff);
                         background: var(--wash); border-radius: 0; padding: var(--lift) 4px; box-shadow: 0 0 var(--feather) 1px var(--wash);
@@ -4298,6 +4300,119 @@ fillSheet = function (row, card) { fillSheetBase(row, card); if (!row) clearCRai
   };
   crail.addEventListener("pointerup", end); crail.addEventListener("pointercancel", end);
 })();
+
+/* ======================= pictures framed on their faces (owner, Oct 15 2026) =======================
+   The feed carries where a picture's faces are (`img.fc`: [cx, cy, size] as fractions, largest first; `img.ar`: its
+   shape; nishpaksh/focus.py). A card's picture is slid so the faces sit in the upper middle of its clear part (above
+   where it fades to white). Several faces that fit together are framed together; when they cannot all be in view at
+   once, the card in view drifts slowly from face to face (home cards only; still for reduced motion). The article's
+   picture is framed on the main face (or the group) and never drifts; the opening and closing glide start from
+   wherever the card's picture is at that moment, so nothing jumps. Without a focus a picture is centred, as before. */
+const FOCUS_Y_CARD = 0.36, FOCUS_Y_ART = 0.42, DRIFT_MS = 6000;
+function focusOf(id) {
+  const c = (pool || []).find(x => String(x.id) === String(id)) || (cards || []).find(x => String(x.id) === String(id));
+  const im = c && c.img;
+  return im && Array.isArray(im.fc) && im.fc.length ? {fc: im.fc, ar: Number(im.ar) || 0} : null;
+}
+// the offset (px, <= 0) that puts image point `f` (0..1) at `target` px of a frame `frame` px long, for an image `len` px long
+function slide(frame, len, f, target) {
+  if (len <= frame + 0.5) return (frame - len) / 2;
+  return Math.max(frame - len, Math.min(0, target - f * len));
+}
+// where to look, for a frame W x H: one point for the faces together, or one per face when they do not fit together
+function framings(fo, W, H, ty) {
+  const ar = fo.ar || 1, cover = Math.max(W / ar, H) , iw = cover * ar, ih = cover;   // the picture at cover size
+  const fc = fo.fc;
+  const box = fc.reduce((b, [x, y, s]) => {
+    const hw = (s * ih * 0.45) / iw, hh = s * 0.65;         // a face is about as wide as 0.9 of its height
+    return [Math.min(b[0], x - hw), Math.min(b[1], y - hh), Math.max(b[2], x + hw), Math.max(b[3], y + hh)];
+  }, [1, 1, 0, 0]);
+  const fits = (box[2] - box[0]) * iw <= W * 0.94 && (box[3] - box[1]) * ih <= H * 0.86;
+  const pts = fits || fc.length === 1 ? [[(box[0] + box[2]) / 2, (box[1] + box[3]) / 2]] : fc.map(([x, y]) => [x, y]);
+  return {iw, ih, pts: pts.map(([x, y]) => [slide(W, iw, x, W / 2), slide(H, ih, y, H * ty)])};
+}
+function placeCardPic(cardEl, step) {
+  const pic = cardEl && cardEl.querySelector(".pic"), fo = cardEl && focusOf(cardEl.dataset.id);
+  if (!pic || !fo) return;
+  const W = pic.clientWidth, H = pic.clientHeight;
+  if (!W || !H) return;
+  const fr = framings(fo, W, H, FOCUS_Y_CARD);
+  const [ox, oy] = fr.pts[(step || 0) % fr.pts.length];
+  const pos = `${(fr.iw - W > 0.5 ? ox / (W - fr.iw) * 100 : 50).toFixed(2)}% ${(fr.ih - H > 0.5 ? oy / (H - fr.ih) * 100 : 50).toFixed(2)}%`;
+  pic.querySelectorAll("img").forEach(im => { im.style.objectPosition = pos; });
+  pic.dataset.drift = fr.pts.length > 1 ? "1" : "";
+}
+let driftStep = 0, driftCard = null;
+function placeAllCardPics() { track.querySelectorAll("a.card").forEach(el => placeCardPic(el, 0)); driftStep = 0; }
+const renderDeckBase = renderDeck;
+renderDeck = function (...a) { const r = renderDeckBase.apply(this, a); placeAllCardPics(); return r; };
+addEventListener("resize", () => placeAllCardPics());
+setInterval(() => {
+  if (REDUCED.matches || openId || document.hidden) return;
+  const el = track.querySelector(`.slot[data-i="${current}"] a.card`);
+  if (el !== driftCard) { if (driftCard) placeCardPic(driftCard, 0); driftCard = el; driftStep = 0; return; }
+  const pic = el && el.querySelector(".pic");
+  if (!pic || pic.dataset.drift !== "1") return;
+  driftStep += 1; placeCardPic(el, driftStep);
+}, DRIFT_MS);
+// the card picture's offset now (mid-drift too), in px of its frame, and the picture's own size
+function cardPicNow(cardEl) {
+  const im = cardEl && cardEl.querySelector(".pic img.sharp");
+  if (!im || !im.naturalWidth) return null;
+  const P = im.getBoundingClientRect(), iw = im.naturalWidth, ih = im.naturalHeight, sc = Math.max(P.width / iw, P.height / ih);
+  const [px, py] = getComputedStyle(im).objectPosition.split(/\s+/);
+  const pct = (v, free) => v && v.endsWith("%") ? free * parseFloat(v) / 100 : v ? parseFloat(v) : free / 2;
+  return {ox: pct(px, P.width - iw * sc), oy: pct(py, P.height - ih * sc), sc, iw, ih};
+}
+const headOffsetBase = headOffset;
+headOffset = function (cardEl) { const o = headOffsetBase(cardEl); if (o.pic) o.pic.now = cardPicNow(cardEl); return o; };
+// the article's picture: laid out at cover size in its 200px box, framed on the main face (or the group)
+fitPic = function () {
+  const imgs = [...$("hpic").querySelectorAll("img")], img = imgs[0], W = hbox.getBoundingClientRect().width;
+  if (!img || !img.naturalWidth || !W) return null;
+  const iw = img.naturalWidth, ih = img.naturalHeight, s = Math.max(W / iw, 200 / ih), w = iw * s, h = ih * s;
+  const fo = focusOf(openId);
+  let L = (W - w) / 2, T = (200 - h) / 2;
+  if (fo) {
+    const fr = framings({fc: fo.fc, ar: iw / ih}, W, 200, FOCUS_Y_ART);
+    [L, T] = fr.pts[0];
+    if (fr.pts.length > 1) {        // faces that do not fit together: the main face (largest) alone
+      const [x, y] = fo.fc[0];
+      L = slide(W, w, x, W / 2); T = slide(200, h, y, 200 * FOCUS_Y_ART);
+    }
+  }
+  for (const el of imgs) Object.assign(el.style, {width: `${w}px`, height: `${h}px`, left: `${L}px`, top: `${T}px`, objectFit: "fill"});
+  return {iw, ih, s, W, L, T, w, h};
+};
+// the glide: the article's picture starts (and ends) exactly where the card's is, wherever the card's crop was
+placeOverCard = function (r, off = lastOff) {
+  const st = hbox.style, h1 = $("sheet-h");
+  st.setProperty("--hw", off.w ? `${off.w}px` : "none");
+  st.setProperty("--tx", "0px"); st.setProperty("--ty", "0px"); st.setProperty("--pt", "none");
+  const a = h1.getBoundingClientRect(), H = hbox.getBoundingClientRect();
+  st.setProperty("--tx", `${r.left + off.x - a.left}px`);
+  st.setProperty("--ty", `${r.top + off.y - a.top}px`);
+  const pic = off.pic && hbox.classList.contains("has-pic");
+  hbox.classList.toggle("morph", !!pic);
+  const clear = () => { st.setProperty("--it", "none"); st.removeProperty("--it2"); st.removeProperty("--bl"); };
+  if (!pic) { clear(); return; }
+  const P = {left: r.left + off.pic.x, top: r.top + off.pic.y, w: off.pic.w, h: off.pic.h};
+  const k = Math.max(P.w / H.width, P.h / 200);
+  const tx = P.left + (P.w - H.width * k) / 2 - H.left, ty = P.top - H.top;
+  st.setProperty("--pt", `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scale(${k.toFixed(4)})`);
+  const f = fitPic(), now = off.pic.now;
+  if (!f) { clear(); return; }
+  // the card shows picture point u at P + o + sc*u; inside the moved box the article's image (laid out at L,T, size
+  // w x h, its own transform about its centre) must show the same point at the same place
+  const sc = now ? now.sc : Math.max(P.w / f.iw, P.h / f.ih);
+  const ox = now ? now.ox : (P.w - f.iw * sc) / 2, oy = now ? now.oy : (P.h - f.ih * sc) / 2;
+  const m = sc / (k * f.s);
+  const dx = (P.left + ox - H.left - tx) / k - f.L - f.w / 2 + m * f.w / 2;
+  const dy = (P.top + oy - H.top - ty) / k - f.T - f.h / 2 + m * f.h / 2;
+  st.setProperty("--it", `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) scale(${m.toFixed(4)})`);
+  st.setProperty("--it2", `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) scale(${m.toFixed(4)}) scale(1.15)`);
+  st.setProperty("--bl", `${(16 / (k * m)).toFixed(2)}px`);
+};
 </script>
 </body>
 </html>

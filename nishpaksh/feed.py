@@ -274,6 +274,11 @@ def export(store: Store, root: str | pathlib.Path) -> int:
     now = utcnow().isoformat(timespec="seconds")
     order = [str(r["story_id"]) for r in rows if str(r["story_id"]) in manifest]
     pics = pictures(store, manifest)      # every export: a picture found later still reaches its card
+    try:                                  # where each picture's faces are (focus.py); never stops the export
+        from . import focus
+        log.info("feed: focus %s", focus.attach(pics, root))
+    except Exception as e:  # noqa: BLE001
+        log.warning("feed: focus skipped: %s", e)
     extra = extras(store, manifest)       # audio made and videos found since (not in the article's payload)
     for lang in ("en", "hi"):
         cards = [dict(manifest[sid][lang], **({"img": pics[sid]} if sid in pics else {}), **extra.get(sid, {}))
