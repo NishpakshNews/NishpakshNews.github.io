@@ -1123,7 +1123,8 @@
      the card), then the headline, its sources line and the lead as ONE card of a different kind: a pale indigo paper with
      a fine edge instead of the white cards' shadow, the card's kicker and the share button on its top row, the lead in
      the headline's serif. Different from every other card, never bold. */
-  :root { --leadbg: #f3f4fa; --leadedge: rgba(70,84,154,0.14); }
+  /* the card takes the colour that dominates its lead's text (by length), very soft; indigo until the lead is known */
+  #sheet { --leadc: #46549a; --leadbg: color-mix(in srgb, var(--leadc) 8%, #fff); --leadedge: color-mix(in srgb, var(--leadc) 26%, #fff); }
   .hbox { padding: 0; color: var(--ink); border-radius: 0; }
   .hbox .layer { display: none; }
   .hbox.has-pic { padding-top: 200px; }
@@ -4466,6 +4467,11 @@ placeOverCard = function (r, off = lastOff) {
 function leadFirst() {
   const r = $("rise"), lead = r.querySelector(":scope > .paper.lead"), acts = r.querySelector(":scope > .acts");
   if (lead && acts && acts.compareDocumentPosition(lead) & Node.DOCUMENT_POSITION_FOLLOWING) lead.after(acts);
+  // the card's soft colour = the grade that colours most of the lead's text
+  const len = {};
+  if (lead) lead.querySelectorAll(".s").forEach(s => { const g = GRADE_ORDER.find(k => s.classList.contains(k)); if (g) len[g] = (len[g] || 0) + s.textContent.length; });
+  const top = Object.keys(len).sort((a, b) => len[b] - len[a])[0];
+  if (top) sheet.style.setProperty("--leadc", `var(--bar-${BARKEY[top]})`); else sheet.style.removeProperty("--leadc");
 }
 const fillSheetLead = fillSheet;
 fillSheet = function (row, card) {

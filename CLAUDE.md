@@ -1080,7 +1080,7 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   its top row carries the card's kicker (`#hkick`, glides from the card's kicker like the headline: `--kx/--ky`) and the
   share button (upper right); the headline stays bold at the card's size; the lead in the headline's serif. The read-aloud,
   video and talk buttons follow the lead (`leadFirst`: moved inside `#rise`, so every `#rise` query still finds every
-  sentence). `sw.js` np-main-45.
+  sentence). The card's soft colour is the grade that colours most of the lead's text (`--leadc`, set in `leadFirst`; indigo until the lead is known). `sw.js` np-main-46.
 
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →
