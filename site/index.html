@@ -1252,6 +1252,9 @@
      (not the headlines, see below), justified like the section cards, the last line left as it falls. Headlines are never
      hyphenated (a broken word reads badly in large type); the card and the article justify the headline alike, so its
      lines still break the same while it glides from one to the other. */
+  /* headline fitted to the card (owner, Oct 15 2026, canvas "C4 · Fewest lines, biggest size"): fitHead sets its size and
+     its lines, one span each; the card and the article get the same lines, so the glide between them cannot re-wrap */
+  .card h2 .hl, .hbox h1 .hl { display: block; white-space: nowrap; }
   .card h2, .hbox h1 { text-align: start; text-wrap: pretty; }   /* headlines NOT justified (owner, Oct 15 2026: with 3-5 large
      words a line, justifying stretched the spaces unevenly, "some fit, others ugly"); ordinary spacing, lines evened by
      text-wrap: pretty where the browser supports it */
@@ -4762,6 +4765,75 @@ const deckWash = new IntersectionObserver(es => es.forEach(e => { if (e.isInters
 function setupDeckWash() {
   track.querySelectorAll(".card .text").forEach(t => { if (t.classList.contains("wcard")) return; t.classList.add("wcard"); deckWash.observe(t); washSizes.observe(t); });
 }
+/* ---------- headlines fitted to the card (owner, Oct 15 2026; canvas "Headline alignment", option C4) ----------
+   Justifying a headline stretched its spaces unevenly; left-aligned, short lines left a ragged edge. Now each headline gets
+   the size, from 3px below the usual (27px, Hindi 24px) to 7px above, that puts it in the fewest lines with those lines
+   closest to the full width (a lone last word costs extra). Word spacing is never stretched. Lines are fixed by code (one
+   span each), measured with the page's own font on a canvas; the article's headline is fitted at the card headline's width,
+   so both carry the same lines and size and the opening glide never re-wraps. */
+const HFIT = {dMin: -3, dMax: 7, step: 0.25, lineCost: 0.05, grow: 0.004, lastW: 0.6, orphan: 0.2};
+const hfitPlans = new Map(), hfitWords = new Map(), hfitCtx = document.createElement("canvas").getContext("2d");
+function hfitPlan(text, weight, family, base, lsEm, W) {
+  const key = [text, weight, family, base, lsEm, W].join("|");
+  if (hfitPlans.has(key)) return hfitPlans.get(key);
+  const words = text.split(/\s+/).filter(Boolean);
+  const width = (s, fs) => {
+    const k = `${weight}|${family}|${fs}|${s}`;
+    let w = hfitWords.get(k);
+    if (w === undefined) { hfitCtx.font = `${weight} ${fs}px ${family}`; w = hfitCtx.measureText(s).width; hfitWords.set(k, w); }
+    return w + lsEm * fs * [...s].length;
+  };
+  let best = null;
+  for (let fs = base + HFIT.dMin; fs <= base + HFIT.dMax + 1e-6; fs += HFIT.step) {
+    const sp = width(" ", fs), lines = [];
+    let cur = [], w = 0;
+    for (const wd of words) {
+      const ww = width(wd, fs), nw = cur.length ? w + sp + ww : ww;
+      if (cur.length && nw > W) { lines.push({words: cur, w}); cur = [wd]; w = ww; } else { cur.push(wd); w = nw; }
+    }
+    if (cur.length) lines.push({words: cur, w});
+    if (lines.some(l => l.w > W + 0.5)) continue;          // one word wider than the card at this size
+    const n = lines.length;
+    let score = HFIT.lineCost * n - HFIT.grow * (fs - base);
+    lines.forEach((l, i) => { const s = (W - l.w) / W; score += (i === n - 1 ? HFIT.lastW : 1) * s * s; });
+    if (n > 1 && lines[n - 1].words.length === 1) score += HFIT.orphan;
+    if (!best || score < best.score) best = {score, fs, lines: lines.map(l => l.words.join(" "))};
+  }
+  hfitPlans.set(key, best);
+  return best;
+}
+function fitHead(el, W) {
+  if (!el) return;
+  const text = el.querySelector(":scope > .hl") ? el.dataset.h : (el.textContent || "").trim();
+  if (!text) return;
+  el.dataset.h = text;
+  el.style.removeProperty("font-size");
+  const cs = getComputedStyle(el), base = parseFloat(cs.fontSize);
+  W = Math.floor((W || el.clientWidth) - 2);
+  if (!base || W < 60) { el.textContent = text; return; }
+  const ls = cs.letterSpacing === "normal" ? 0 : parseFloat(cs.letterSpacing) / base;
+  const plan = hfitPlan(text, cs.fontWeight, cs.fontFamily, base, Math.round(ls * 10000) / 10000, W);
+  if (!plan) { el.textContent = text; return; }
+  el.style.fontSize = plan.fs + "px";
+  el.replaceChildren(...plan.lines.map(l => { const s = document.createElement("span"); s.className = "hl"; s.textContent = l + " "; return s; }));
+}
+function cardHeadWidth(id) {
+  const h = (id != null && track.querySelector(`.card[data-id="${CSS.escape(String(id))}"] h2`)) || track.querySelector(".card h2");
+  return h ? h.clientWidth : 0;
+}
+function fitDeckHeads() { track.querySelectorAll(".card h2").forEach(h => fitHead(h, h.clientWidth)); }
+function fitSheetHead() {
+  const h = $("sheet-h"), w = cardHeadWidth(openId);
+  if (w) fitHead(h, w); else requestAnimationFrame(() => fitHead(h, h.clientWidth));
+}
+const renderDeckFit = renderDeck;
+renderDeck = function (...a) { const r = renderDeckFit.apply(this, a); fitDeckHeads(); return r; };
+const fillSheetFit = fillSheet;
+fillSheet = function (...a) { fillSheetFit.apply(this, a); fitSheetHead(); };
+let hfitResize = 0;
+window.addEventListener("resize", () => { clearTimeout(hfitResize); hfitResize = setTimeout(() => { fitDeckHeads(); if (openId) fitSheetHead(); }, 200); });
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { hfitPlans.clear(); hfitWords.clear(); fitDeckHeads(); if (openId) fitSheetHead(); });
+fitDeckHeads();
 const renderDeckWash = renderDeck;
 renderDeck = function (...a) { const r = renderDeckWash.apply(this, a); setupDeckWash(); return r; };
 setupDeckWash();

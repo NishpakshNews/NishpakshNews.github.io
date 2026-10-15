@@ -1134,6 +1134,14 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   again is painted again. The text box reaches into the card's 22px side padding (negative margin, same padding: the words do
   not move) and fades in over its top 14px, so the wash's soft edge is not cut straight. `sw.js` np-main-53.
 
+- **Headlines fitted to the card (owner, Oct 15 2026; option C4 of the "Headline alignment" canvas).** After justified headlines
+  (uneven spaces) and plain left (ragged), `fitHead` sets each headline's size from 3px below the usual (27px, Hindi 24px,
+  24/22 on small screens) to 7px above, choosing the fewest lines with those lines nearest the full width (a lone last word
+  costs extra); spaces are never stretched (`HFIT`, `hfitPlan`: canvas measureText with the element's own computed font,
+  letter spacing included, cached). Lines are fixed as `span.hl` (block, nowrap). The article's headline (`#sheet-h`) is fitted
+  at the card headline's width (`cardHeadWidth`), so the opening glide never re-wraps. Run on every deck build
+  (`renderDeck` wrapped), every `fillSheet`, on resize and again when the fonts have loaded. `sw.js` np-main-54.
+
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →
 retract headline-only reads → Tavily reads blocked pages → wire copies → grouping (`stories.py`) →
