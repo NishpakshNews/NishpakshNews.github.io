@@ -1113,10 +1113,9 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   showed What happened. `feed.page_order` (the Python twin of the site's `pageOrder` / `sectionGroups`, same `SEC_ORDER`) and
   `feed._card_text(paragraphs, keys)` now take the paragraphs in the page's order; the Hindi card uses its own section keys, else
   the English ones. The site's fallback `cardText(paras, keys)` does the same (`ROW_SELECT` reads `sk` = section_keys).
-  `FEED_VERSION` 4 rewrites every card at the next export. The card's headline and text and the article's headline and lead are
-  justified like the section cards (last line as it falls; headlines never hyphenated; card and article justify the headline
-  alike so its lines break the same while it glides). Seen in the browser: a short English headline at 27px gets wide gaps
-  between words. `sw.js` np-main-50. Test: `tests/test_feed_order.py`.
+  `FEED_VERSION` 4 rewrites every card at the next export. The card's text and the article's lead are justified like the section
+  cards (last line as it falls). Headlines are NOT (owner, same evening: "some fit, others ugly due to uneven space"; 3-5
+  large words a line): left-aligned, ordinary spacing, `text-wrap: pretty`. `sw.js` np-main-50. Test: `tests/test_feed_order.py`.
 
 - **The back button is the menu pill's end; the pill folds into it (owner, Oct 15 2026).** `#back` was a solid white 30px
   circle (with the focus ring, 34px), while the menu pill's white end is a 24px segment inside a translucent 30px rim. Now
@@ -1125,7 +1124,8 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   menu icon / initial fades, the arrow fades in on the same centre. The article's header is opaque from its first frame and
   covers the home header, so the same fold also runs on a copy of the pill in the article's header (`.cfold`, filled by
   `syncFold()` from the home pill as the article opens); after 400 ms `#back` takes over. Closing shows the copy at once and
-  it unfolds back into the pill. `sw.js` np-main-51.
+  it unfolds back into the pill. The copy sits right after `#back`, never last in `.crow`: `.crow > :last-child` is what
+  right-aligns the language pill (appended last, it stretched the article's EN/हिं switch). `sw.js` np-main-51.
 
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →

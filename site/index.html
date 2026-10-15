@@ -1244,11 +1244,13 @@
   #sheet[data-spot] canvas.wash { opacity: 0; }
   .wcard .s, .wcard .tile .s { background: transparent; box-shadow: none; padding: 0; border-radius: 0; }
   #rise .paper.essay:not(.lead) p, #rise .paper.quote p { text-align: justify; text-align-last: start; -webkit-hyphens: auto; hyphens: auto; }
-  /* Edge to edge on the home cards and the article's top too (owner, Oct 15 2026): the card's headline and text, the
-     article's headline and lead, justified like the section cards, the last line left as it falls. Headlines are never
+  /* Edge to edge on the home cards and the article's top too (owner, Oct 15 2026): the card's text and the article's lead
+     (not the headlines, see below), justified like the section cards, the last line left as it falls. Headlines are never
      hyphenated (a broken word reads badly in large type); the card and the article justify the headline alike, so its
      lines still break the same while it glides from one to the other. */
-  .card h2, .hbox h1 { text-align: justify; text-align-last: start; -webkit-hyphens: manual; hyphens: manual; }
+  .card h2, .hbox h1 { text-align: start; text-wrap: pretty; }   /* headlines NOT justified (owner, Oct 15 2026: with 3-5 large
+     words a line, justifying stretched the spaces unevenly, "some fit, others ugly"); ordinary spacing, lines evened by
+     text-wrap: pretty where the browser supports it */
   .card .text p, #rise .paper.lead p { text-align: justify; text-align-last: start; -webkit-hyphens: auto; hyphens: auto; }
   @media (prefers-reduced-motion: reduce) { canvas.wash { transition: none; } }
 </style>
@@ -4301,7 +4303,7 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
     b.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
     row.appendChild(b); }
   const crow = chrome.querySelector(".crow");
-  if (crow) { const f = document.createElement("span"); f.className = "cfold"; f.id = "cfold"; f.setAttribute("aria-hidden", "true"); f.inert = true; crow.appendChild(f); }
+  if (crow) { const f = document.createElement("span"); f.className = "cfold"; f.id = "cfold"; f.setAttribute("aria-hidden", "true"); f.inert = true; $("back").after(f); }   // never last: .crow > :last-child is the language pill's right alignment
 })();
 /* the copy of the menu pill that folds into the article's back button (see .cfold): taken from the home pill as it is now
    (menu icon or the reader's initial), so both ends of the fold match */
