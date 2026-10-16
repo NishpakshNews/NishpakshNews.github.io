@@ -241,6 +241,86 @@ def queue_articles(store: Store, now: dt.datetime | None = None) -> int:
     return made
 
 
+# -- colour changes (owner, Oct 16 2026) ----------------------------------------------------------------------
+# A published article's words never change but its colours do, as later reports come in. A reader may ask (follows of
+# kind "colour", key = the colour) to be told when lines of a live article turn established, developing, disputed
+# or false: one notification per article per clock hour, counting what changed ("3 lines now established").
+COLOURS = ("established", "developing", "disputed", "false")
+COLOUR_WORDS = {
+    "en": {"established": "established", "developing": "developing", "disputed": "sources now disagree",
+           "false": "shown false", "line": lambda n: "line" if n == 1 else "lines", "now": "now",
+           "title": "Colours changed"},
+    "hi": {"established": "स्थापित", "developing": "विकसित हो रही", "disputed": "स्रोतों में मतभेद",
+           "false": "असत्य सिद्ध", "line": lambda n: "पंक्ति" if n == 1 else "पंक्तियाँ", "now": "अब",
+           "title": "रंग बदले"},
+}
+
+
+def line_classes(payload: dict | None) -> dict[str, str]:
+    """{"p.s[.k]": colour class} of an article's sentences (and their coloured parts)."""
+    out = {}
+    for p, para in enumerate(((payload or {}).get("narrative") or {}).get("paragraphs") or []):
+        for s, x in enumerate(para):
+            if x.get("struck"):
+                continue
+            parts = x.get("parts") or []
+            if len(parts) > 1:
+                for k, part in enumerate(parts):
+                    if not part.get("struck"):
+                        out[f"{p}.{s}.{k}"] = str(part.get("class") or "")
+            else:
+                out[f"{p}.{s}"] = str(x.get("class") or "")
+    return out
+
+
+def colour_changes(before: dict[str, str], now: dict[str, str]) -> dict[str, int]:
+    """How many lines turned into each of COLOURS (a line that was already that colour does not count)."""
+    out: dict[str, int] = {}
+    for k, c in now.items():
+        if c in COLOURS and k in before and before[k] != c:
+            out[c] = out.get(c, 0) + 1
+    return out
+
+
+def queue_colours(store: Store, now: dt.datetime | None = None) -> int:
+    """Notifications for colour changes on live articles since the last look (the first sight of an article only
+    records its colours)."""
+    now = now or utcnow()
+    fl = store.rows(select(follows.c.reader, follows.c.key).where(follows.c.kind == "colour"))
+    seen = _state(store, "colours")
+    rows = store.rows(select(published.c.story_id, published.c.headline_en, published.c.headline_hi,
+                             published.c.payload_en))
+    fresh: dict[str, dict] = {}
+    made = 0
+    wants: dict[str, set[str]] = {}
+    for f in fl:
+        if f["key"] in COLOURS:
+            wants.setdefault(str(f["reader"]), set()).add(f["key"])
+    langs = _reader_langs(store, list(wants))
+    hour = (now + IST).strftime("%Y-%m-%dT%H")
+    for r in rows:
+        sid = str(r["story_id"])
+        cur = line_classes(r["payload_en"])
+        fresh[sid] = cur
+        if sid not in seen or not wants:
+            continue
+        changes = colour_changes(seen[sid], cur)
+        if not changes:
+            continue
+        for reader, kinds in wants.items():
+            mine = {c: n for c, n in changes.items() if c in kinds}
+            if not mine:
+                continue
+            lang = langs.get(reader, "en")
+            w = COLOUR_WORDS[lang]
+            body = " · ".join(f"{n} {w['line'](n)} {w['now']} {w[c]}" for c, n in mine.items())
+            head = (r["headline_hi"] if lang == "hi" else None) or r["headline_en"] or ""
+            made += add_notification(store, reader, "colour", f"{sid}@{hour}", f"{w['title']}: {head}", body,
+                                     story_url(r["story_id"], lang), r["story_id"])
+    _set_state(store, "colours", fresh)
+    return made
+
+
 # -- the daily recap ------------------------------------------------------------------------------------------
 def make_recap(store: Store, now: dt.datetime | None = None, force: bool = False, router=None) -> str | None:
     """The day's brief (owner, Oct 10 2026, `recap.py`): every article published since the last recap, told in one
@@ -374,6 +454,10 @@ def run(store: Store, now: dt.datetime | None = None, router=None, send: bool = 
     own step after the feed is published, so a reader who taps one finds the article on the home page (Oct 10 2026)."""
     now = now or utcnow()
     out = {"queued": queue_articles(store, now)}
+    try:
+        out["colours"] = queue_colours(store, now)
+    except Exception as e:  # noqa: BLE001 - colour alerts never stop the others
+        log.warning("colour notifications failed: %s", e)
     try:
         out["recap"] = make_recap(store, now, router=router)
     except Exception as e:  # noqa: BLE001 - the recap never stops notifications

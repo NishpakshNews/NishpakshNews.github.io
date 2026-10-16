@@ -543,6 +543,10 @@
   .essay .s.struck, .card .text .s.struck { color: #8a8d91; background: transparent; text-decoration: line-through;
                                             text-decoration-color: #8a8d91; }
   .updates .uline { margin: 0 0 8px; }
+  .latestin { display: block; margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; text-decoration: none;
+              background: color-mix(in srgb, var(--bar-v, #2a9d8f) 12%, transparent); color: inherit; }
+  .latestin span { display: block; font-size: 0.78em; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.75; }
+  .latestin b { font-weight: 600; }
   .updates .uwas { display: block; font-size: 0.85em; color: #8a8d91; margin-top: 2px; }
   .essay .s, .card .text .s { background: color-mix(in srgb, var(--sc) var(--tint), transparent); padding: 1px 3px; border-radius: 4px;
                               -webkit-box-decoration-break: clone; box-decoration-break: clone;
@@ -1971,7 +1975,12 @@ function articleHtml(row) {
     Object.entries(p.perspectives || {}).map(([k, v]) => `<b>${esc(k)}</b> ${esc((v || []).join(", "))}`).join("<br>");
   const thread = (title, list) => list && list.length ? `<div class="sec">${esc(title)}</div><div class="paper"><ul class="thread">${list.map(x =>
       `<li><a href="#/story/${encodeURIComponent(x.story_id)}" data-story="${esc(x.story_id)}">${esc(x.headline)}</a></li>`).join("")}</ul></div>` : "";
-  return `<div class="acts"><button type="button" data-act="audio" aria-label="${esc(t.listen)}">${ICON.audio}</button><button type="button" data-act="video" aria-label="${esc(t.videos)}">${ICON.video}</button>
+  // "Latest in this story" (owner, Oct 16 2026): a page that later developments followed points to the newest one first
+  const kids = p.children || [];
+  const newest = kids.length ? kids[kids.length - 1] : null;
+  const latestBar = newest ? `<a class="latestin" href="#/story/${encodeURIComponent(newest.story_id)}" data-story="${esc(newest.story_id)}">` +
+    `<span>${esc(t.latestIn || "Latest in this story")}</span><b>${esc(newest.headline)}</b></a>` : "";
+  return `${latestBar}<div class="acts"><button type="button" data-act="audio" aria-label="${esc(t.listen)}">${ICON.audio}</button><button type="button" data-act="video" aria-label="${esc(t.videos)}">${ICON.video}</button>
       <div class="talkpeek" data-act="talk" aria-hidden="true"><div class="tpin"><span>${esc(t.talkBanner)}</span></div></div><button type="button" class="talkbtn" data-act="talk" aria-label="${esc(t.talkName)}">${ICON.talk}</button></div>
     ${essayHtml(nar, t)}
     ${updatesHtml(p, t)}
@@ -3390,7 +3399,8 @@ Object.assign(T.en, {notes: "Notifications", myAudio: "My audio", noNotes: "Noth
   of: (a, b) => `${a} of ${b}`, wordsIntro: "We tell you when an article names it.", wordPh: "A word or a name, e.g. Supreme Court", followBtn: "Follow",
   recapAt: "Today's summary is written at", recapTime: "11:00 pm", recapIn: x => `in ${x}`, recapAbout: "A short summary of the day's news, section by section: Politics, Justice, Business, World and Life. One line for each story, in the colours of its article. Tap a line to read the full article.",
   recapMaking: "Today's summary is being written. It will be here in a few minutes.", notifyMe: "Notify me when it is ready", listenRecap: "Listen",
-  articles: n => `${n} stories today`, hm: (h, m) => `${h} h ${m} min`, recapReadyHint: "Ready", recapTimeHint: "11 pm", stop: "Stop following"});
+  articles: n => `${n} stories today`, hm: (h, m) => `${h} h ${m} min`, recapReadyHint: "Ready", recapTimeHint: "11 pm", stop: "Stop following",
+  coloursL: "When lines change colour", coloursIntro: "An article's words never change, but its colours do as more reports come in. We tell you when lines of any article turn the colours you pick, at most once an hour per article."});
 Object.assign(T.hi, {notes: "सूचनाएं", myAudio: "मेरे ऑडियो", noNotes: "अभी कुछ नहीं। कोई खंड, राज्य या शब्द फ़ॉलो करें, नया लेख आने पर हम बताएंगे।",
   noAudio: "आपने अभी कोई ऑडियो नहीं मांगा।", ready: l => `${l} · तैयार`, making: l => `${l} · बन रहा है, आमतौर पर एक घंटे में`, failed: l => `${l} · नहीं बन सका`,
   followIntro: "आप जो फ़ॉलो करते हैं, उसमें हर नया लेख आने पर हम बताते हैं। पूरा चुनने के लिए गोले पर, भीतर चुनने के लिए तीर पर टैप करें।",
@@ -3398,7 +3408,8 @@ Object.assign(T.hi, {notes: "सूचनाएं", myAudio: "मेरे ऑ�
   of: (a, b) => `${b} में से ${a}`, wordsIntro: "जिस लेख में यह नाम आए, हम बताएंगे।", wordPh: "कोई शब्द या नाम, जैसे Supreme Court", followBtn: "फ़ॉलो",
   recapAt: "आज का सार लिखा जाएगा", recapTime: "रात 11:00 बजे", recapIn: x => `${x} में`, recapAbout: "दिन की ख़बरों का छोटा सार, खंड के अनुसार: राजनीति, न्याय, बिज़नेस, दुनिया और जीवन। हर ख़बर की एक पंक्ति, उसके लेख के रंगों में। पूरा लेख पढ़ने के लिए किसी पंक्ति पर टैप करें।",
   recapMaking: "आज का सार लिखा जा रहा है। कुछ ही मिनटों में यहां होगा।", notifyMe: "तैयार होने पर मुझे बताएं", listenRecap: "सुनें",
-  articles: n => `आज की ${n} ख़बरें`, hm: (h, m) => `${h} घंटे ${m} मिनट`, recapReadyHint: "तैयार", recapTimeHint: "रात 11", stop: "फ़ॉलो बंद करें"});
+  articles: n => `आज की ${n} ख़बरें`, hm: (h, m) => `${h} घंटे ${m} मिनट`, recapReadyHint: "तैयार", recapTimeHint: "रात 11", stop: "फ़ॉलो बंद करें",
+  coloursL: "जब पंक्तियों का रंग बदले", coloursIntro: "लेख के शब्द नहीं बदलते, पर नई रिपोर्टें आने पर उनके रंग बदलते हैं। आप जो रंग चुनें, किसी भी लेख की पंक्तियाँ उस रंग की होने पर हम बताएंगे, हर लेख के लिए घंटे में अधिकतम एक बार।"});
 const STATES = [["andhra-pradesh", "Andhra Pradesh", "आंध्र प्रदेश"], ["arunachal-pradesh", "Arunachal Pradesh", "अरुणाचल प्रदेश"], ["assam", "Assam", "असम"], ["bihar", "Bihar", "बिहार"], ["chhattisgarh", "Chhattisgarh", "छत्तीसगढ़"], ["goa", "Goa", "गोवा"], ["gujarat", "Gujarat", "गुजरात"], ["haryana", "Haryana", "हरियाणा"], ["himachal-pradesh", "Himachal Pradesh", "हिमाचल प्रदेश"], ["jharkhand", "Jharkhand", "झारखंड"], ["karnataka", "Karnataka", "कर्नाटक"], ["kerala", "Kerala", "केरल"], ["madhya-pradesh", "Madhya Pradesh", "मध्य प्रदेश"], ["maharashtra", "Maharashtra", "महाराष्ट्र"], ["manipur", "Manipur", "मणिपुर"], ["meghalaya", "Meghalaya", "मेघालय"], ["mizoram", "Mizoram", "मिज़ोरम"], ["nagaland", "Nagaland", "नगालैंड"], ["odisha", "Odisha", "ओडिशा"], ["punjab", "Punjab", "पंजाब"], ["rajasthan", "Rajasthan", "राजस्थान"], ["sikkim", "Sikkim", "सिक्किम"], ["tamil-nadu", "Tamil Nadu", "तमिलनाडु"], ["telangana", "Telangana", "तेलंगाना"], ["tripura", "Tripura", "त्रिपुरा"], ["uttar-pradesh", "Uttar Pradesh", "उत्तर प्रदेश"], ["uttarakhand", "Uttarakhand", "उत्तराखंड"], ["west-bengal", "West Bengal", "पश्चिम बंगाल"], ["andaman-nicobar", "Andaman and Nicobar Islands", "अंडमान और निकोबार"], ["chandigarh", "Chandigarh", "चंडीगढ़"], ["dadra-daman-diu", "Dadra and Nagar Haveli and Daman and Diu", "दादरा और नगर हवेली और दमन और दीव"], ["delhi", "Delhi", "दिल्ली"], ["jammu-kashmir", "Jammu and Kashmir", "जम्मू-कश्मीर"], ["ladakh", "Ladakh", "लद्दाख"], ["lakshadweep", "Lakshadweep", "लक्षद्वीप"], ["puducherry", "Puducherry", "पुडुचेरी"]];
 const stateLabel = k => { const s = STATES.find(x => x[0] === k); return s ? s[lang === "hi" ? 2 : 1] : k; };
 
@@ -3458,7 +3469,11 @@ function followHtml() {
     ${secRows().map(r => row(`data-fall="${r.p}"`, r.label, r.full ? "full" : r.part ? "part" : "", r.note, `data-fsub="${r.p}"`)).join("")}
     <div class="flabel">${esc(t.placesL)}</div>
     ${row(`data-fsub="states"`, t.states, `dash${states.length ? " on" : ""}`, states.join(", "), `data-fsub="states"`)}
-    ${row(`data-fsub="words"`, t.words, `dash${words.length ? " on" : ""}`, words.length ? String(words.length) : "", `data-fsub="words"`)}`;
+    ${row(`data-fsub="words"`, t.words, `dash${words.length ? " on" : ""}`, words.length ? String(words.length) : "", `data-fsub="words"`)}
+    <div class="flabel">${esc(t.coloursL || "When lines change colour")}</div>
+    <p class="bnote" style="margin:0 4px 6px;font-size:14px;line-height:1.45">${esc(t.coloursIntro || "")}</p>
+    ${["established", "developing", "disputed", "false"].map(c => row(`data-fone="colour|${c}|${c}"`, (t.k || {})[c] || c,
+        isF("colour", c) ? "full" : "", "", "")).join("")}`;
   let sub = "";
   if (followSub === "states") {
     sub = STATES.map(([k, en, hi]) => { const on = isF("place", k); return row(`data-fone="place|${k}|${esc(en)}"`, lang === "hi" ? hi : en, on ? "full" : "", "", ""); }).join("");

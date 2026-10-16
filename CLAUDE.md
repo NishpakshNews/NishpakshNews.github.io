@@ -1580,6 +1580,15 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   "broad" are gone (settings kept, unused); run stat `settled_read` replaces `settled_broad`. Express:
   `wait_for_second_hours: 0` (two outlets are read before it qualifies). Tests: test_pipeline
   `test_a_story_is_written_once_the_rule_is_met_and_its_reports_are_read`, `test_article_is_written_once_its_reports_are_read`.
+- **Latest in this story; colour notifications (Oct 16 2026, owner; step 4).** Site: an article with later
+  developments opens with a "Latest in this story" link to its newest child (`latestin`). Notifications: follows of
+  kind "colour" (key established / developing / disputed / false; Supabase check constraint widened, migration
+  20261016000100_follow_colour.sql) chosen in the Following sheet ("When lines change colour"); `notify.queue_colours`
+  (every desk run, after queue_articles) compares each live article's line classes (`line_classes`, parts on their
+  own, struck lines skipped) with the last look (notify_state "colours"; the first sight only records) and queues ONE
+  notification per reader per article per IST clock hour (kind "colour", ref "story@hour"): "2 lines now established
+  · 1 line now sources now disagree". For every live article, not only followed ones (owner). Tests:
+  `tests/test_notify_colours.py`.
 - **Open (Oct 16 2026):** `tests/test_express_db.py::test_nothing_is_embedded_while_the_pacing_curve_has_given_the_slice_out`
   fails at some hours of the day (failed at ~05:30 UTC with and without the session 9 changes, passed at 04:xx).
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:
