@@ -134,10 +134,23 @@
   #plate { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-origin: 0 0; background: var(--ground); border-radius: 0; }
   #plate i { position: absolute; inset: 0; border-radius: inherit; background: var(--card); opacity: 1; }
   #sheet.open #plate i { opacity: 0; }
-  #sheet.anim #plate i { transition: opacity 360ms ease 60ms; }
+  #sheet.anim #plate i { transition: opacity 220ms ease; }
   /* closing: the sheet fades away over the last 200 ms (the headline and picture are already over the card's), so the
      card's body text and heading come in by crossfade instead of appearing all at once when the sheet is removed */
-  #sheet.anim.leaving { opacity: 0; transition: opacity 200ms ease 260ms; }
+  /* Flash fix (owner, Oct 16 2026: the screen flashed white at the start of the opening and during the closing).
+     Opening: on a phone the sheet was shown one frame before its start position reached the GPU, so the plate filled the
+     screen in white for a frame. Now the start position is also set as plain styles, and the sheet is first drawn at
+     almost no opacity (.pre without .anim) so its layers are rasterised while the card still shows; then it appears.
+     Closing: the article's text left at once while the white plate covered the card, and the card's own text came back only
+     when the sheet faded at the end (a blank white card). Now the plate fades away first and the card stays visible
+     underneath, only its picture, headline, kicker and bar hidden (.under) while the article's glide into their places;
+     at the end the two hand over in a short crossfade (#sheet.gone). */
+  #sheet.pre:not(.anim) { opacity: 0.01; }
+  #sheet.leaving #plate { opacity: 0; transition: opacity 180ms ease; }
+  #sheet.leaving #plate i { opacity: 0; transition: none; }
+  #sheet.gone { opacity: 0; transition: opacity 130ms ease; }
+  a.card .pic, a.card h2, a.card .kk, a.card .edge { transition: opacity 130ms ease; }
+  a.card.under .pic, a.card.under h2, a.card.under .kk, a.card.under .edge { opacity: 0; transition: none; }
   .sheet-scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; touch-action: pan-y pinch-zoom; overscroll-behavior: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .sheet-scroll::-webkit-scrollbar { display: none; }
   .col { max-width: 560px; margin: 0 auto; padding: 0 max(14px, env(safe-area-inset-right)) 48px max(14px, env(safe-area-inset-left)); }
@@ -2071,7 +2084,10 @@ function ddWave(d, body, open, pt) {
   const x = pt && pt.x != null ? pt.x - r.left : sr.left + sr.width / 2 - r.left;
   const y = pt && pt.y != null ? pt.y - r.top : sr.top + sr.height / 2 - r.top;
   const h = r.height + (open && body ? Math.max(0, body.scrollHeight - body.getBoundingClientRect().height) : 0);
-  const size = 2 * Math.hypot(Math.max(x, r.width - x), Math.max(y, h - y)) * 1.05;
+  // sized to what can be seen (owner, Oct 16 2026: closing a long list stalled): on Who reported what (1,700 px tall) the ring
+  // covered the whole card, a ~3,600 px circle, ~9,000 device pixels across, and drawing it held the page for 0.3 s
+  const vis = Math.min(h, y + innerHeight);
+  const size = 2 * Math.hypot(Math.max(x, r.width - x), Math.max(y, vis - y), 1) * 1.05;
   const setPos = getComputedStyle(host).position === "static";
   if (setPos) host.style.position = "relative";
   host.classList.add("rip-host");
@@ -2101,10 +2117,41 @@ function ddSet(d, open, pt) {
   d.open = true;
   const to = open ? body.scrollHeight : 0;
   const o0 = open ? (from ? Number(getComputedStyle(body).opacity) : 0) : Number(getComputedStyle(body).opacity);
-  const a = body.animate([{height: from + "px", opacity: o0}, {height: to + "px", opacity: open ? 1 : 0}],
-                         {duration: open ? 420 : 340, easing: "cubic-bezier(.2,.8,.2,1)", fill: "forwards"});
+  // closing (owner, Oct 16 2026: "opens smoothly but closes abruptly"): Sources and Who reported what sit at the foot of
+  // the article, so as a list shrinks the browser pulls the whole page down with it; on the fast-start curve that pull was
+  // 144 px in the first 55 ms. Closing now takes as long as opening on an ease-in-out curve that starts gently, and the
+  // list fades out over its first half instead of the whole way.
+  const a = open
+    ? body.animate([{height: from + "px", opacity: o0}, {height: to + "px", opacity: 1}],
+                   {duration: 420, easing: "cubic-bezier(.2,.8,.2,1)", fill: "forwards"})
+    : body.animate([{height: from + "px", opacity: o0}, {opacity: 0, offset: 0.5}, {height: to + "px", opacity: 0}],
+                   {duration: 440, easing: "cubic-bezier(.45,0,.2,1)", fill: "forwards"});
   d._dd = a;
+  if (!open) ddFollow(a, from - to, 440);
   a.onfinish = () => { if (d._dd !== a) return; d._dd = null; if (!open) d.open = false; a.cancel(); };
+}
+/* A list closing near the end of the article shortens the page, and the browser then pulls the whole page down to fill
+   the screen, all at once and late (measured: the heading still for 0.3 s, then 618 px in 0.25 s). Instead the page is
+   moved by us on the same curve over the whole close: a spacer at the end keeps the browser from pulling, and the scroll
+   goes from where it was to where it will have to be. Nothing moves when the page is long enough below. */
+let ddSpace = null, ddRaf = 0;
+function ddFollow(a, shrink, dur) {
+  const sc = sheetScroll, s0 = sc.scrollTop, maxAfter = sc.scrollHeight - shrink - sc.clientHeight;
+  const delta = Math.max(0, s0 - Math.max(0, maxAfter));
+  if (!delta || shrink <= 0) return;
+  if (!ddSpace) { ddSpace = document.createElement("div"); ddSpace.setAttribute("aria-hidden", "true"); }
+  sc.querySelector(".col").appendChild(ddSpace);
+  const ease = easeCurve(.45, 0, .2, 1);
+  cancelAnimationFrame(ddRaf);
+  const step = () => {
+    const p = Math.min(1, Math.max(0, (a.currentTime || 0) / dur)), want = s0 - delta * ease(p);
+    const room = sc.scrollHeight - (ddSpace.offsetHeight || 0);           // the page without the spacer, this frame
+    ddSpace.style.height = `${Math.max(0, Math.ceil(want + sc.clientHeight - room))}px`;
+    sc.scrollTop = want;
+    if (p < 1 && a.playState !== "idle") ddRaf = requestAnimationFrame(step);
+    else { ddSpace.style.height = "0px"; ddSpace.remove(); }
+  };
+  ddRaf = requestAnimationFrame(step);
 }
 $("sheet").addEventListener("click", e => {
   const sm = e.target.closest("details.dd > summary");
@@ -2302,8 +2349,8 @@ async function openStory(id, fromCard, opts = {}) {
     const u = `#/story/${encodeURIComponent(id)}`;
     if (location.hash !== u) { history.pushState({story: id}, "", u); openedFromDeck = true; }
   }
-  stopMorph();
-  sheet.classList.remove("anim", "open", "leaving", "on");
+  stopMorph(); releaseUnder();
+  sheet.classList.remove("anim", "open", "leaving", "on", "gone");
   let done = Promise.resolve();
   if (r && !STILL.matches) {
     lastOff = headOffset(fromCard);              // where the card's headline, kicker and picture are now
@@ -2314,8 +2361,8 @@ async function openStory(id, fromCard, opts = {}) {
     placeOverCard(r, lastOff);                   // the headline, kicker and picture over the card's
     const bar = flyBar(fromCard);                // the colour bar over the card's
     const m = buildMorph(r, true);               // the plate and the picture, at the card (paused on their first frame)
-    sheet.classList.add("on", "pre");            // shown only now, already exactly over the card
-    await nextFrames();                          // that first frame is drawn (it looks like the card) before anything moves
+    sheet.classList.add("on", "pre");            // drawn only now, already exactly over the card, at almost no opacity (.pre)
+    await nextFrames();                          // its layers are rasterised while the card still shows, before anything moves
     if (openId !== id) return;
     sheet.classList.add("anim", "open");         // the fades and the headline's glide (CSS) ...
     if (bar) bar();                              // ... the bar ...
@@ -2336,6 +2383,8 @@ async function openStory(id, fromCard, opts = {}) {
   setTimeout(() => { if (openId === id) $("back").focus({preventScroll: true}); }, 480);
   schedulePeek(id);
 }
+var underCard = null;
+function releaseUnder() { if (underCard) { underCard.classList.remove("under"); underCard = null; } }
 function closeStory(animate = true) {
   if (!openId) return;
   tkLeave();                       // the floating button fades and the conversation closes with the article
@@ -2356,11 +2405,15 @@ function closeStory(animate = true) {
     placeOverCard(r, lastOff);
     flyBarBack(el);                // 2.1: the colour bar travels back into the card with the headline
     buildMorph(r, false).play();   // the plate shrinks into the card and the picture back into the card's crop
+    if (el) { el.classList.add("under"); underCard = el; }   // the card shows under the glide, without what is gliding into it
     sheet.classList.remove("open");
     sheet.classList.add("leaving");
-    closing = setTimeout(() => { sheet.classList.remove("on", "anim", "leaving", "pre"); stopMorph(); resetPlate(); closing = null; }, 470);
+    closing = setTimeout(() => {   // the glide has landed on the card's own places: hand over in a short crossfade
+      sheet.classList.add("gone"); releaseUnder();
+      closing = setTimeout(() => { sheet.classList.remove("on", "anim", "leaving", "pre", "gone"); stopMorph(); resetPlate(); closing = null; }, 140);
+    }, MOTION_MS - 20);
   } else {
-    sheet.classList.remove("on", "anim", "open", "leaving", "pre"); resetPlate();
+    sheet.classList.remove("on", "anim", "open", "leaving", "pre", "gone"); resetPlate(); releaseUnder();
   }
   const el = track.querySelector(`.slot[data-i="${current}"] a.card`);
   if (el) el.focus({preventScroll: true});
@@ -3018,7 +3071,13 @@ function easeCurve(x1, y1, x2, y2) {           // cubic-bezier, as CSS (--ease i
   return x => { let lo = 0, hi = 1; for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (bx(m) < x) lo = m; else hi = m; } return by((lo + hi) / 2); };
 }
 var morphEase = easeCurve(.2, .8, .2, 1);
-function stopMorph() { morphAnims.forEach(a => { try { a.cancel(); } catch (e) { /* gone */ } }); morphAnims = []; }
+var morphInline = [];
+function stopMorph() {
+  morphAnims.forEach(a => { try { a.cancel(); } catch (e) { /* gone */ } }); morphAnims = [];
+  morphInline.forEach(([el, k]) => el.style.removeProperty(k)); morphInline = [];
+}
+// the first frame of a morph also as plain styles: right on the first frame even before the animation reaches the GPU
+function holdStart(el, kf) { for (const k of Object.keys(kf)) { const css = k.replace(/[A-Z]/g, m => "-" + m.toLowerCase()); el.style.setProperty(css, kf[k]); morphInline.push([el, css]); } }
 function resetPlate() { $("plate").style.borderRadius = ""; }
 function buildMorph(r, opening) {
   const plate = $("plate"), W = sheet.clientWidth || innerWidth, Hs = sheet.clientHeight || innerHeight;
@@ -3052,7 +3111,11 @@ function buildMorph(r, opening) {
     hp.querySelectorAll("img.soft").forEach(im => anims.push(im.animate(soft, opt)));
     anims.push(hp.animate(round, opt));          // the corners alone (not a GPU property, so its own animation)
   }
-  anims.forEach(a => a.pause());                      // held on the first frame until play()
+  anims.forEach(a => {
+    a.pause();                                         // held on the first frame until play()
+    const k = a.effect && a.effect.getKeyframes ? a.effect.getKeyframes()[0] : null;
+    if (k && a.effect.target) { const {offset, easing, composite, computedOffset, ...props} = k; holdStart(a.effect.target, props); }
+  });
   morphAnims = anims;
   return {
     play() {
