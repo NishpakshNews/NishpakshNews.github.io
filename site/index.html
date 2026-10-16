@@ -1202,7 +1202,9 @@
                         font-size: 19.5px; line-height: 1.6; }
   .rise > .paper.lead::before { border-top: 0; border-radius: 0 0 20px 20px; }
   .rise > .paper.lead > * { position: relative; z-index: 1; }
-  .rise > .paper.lead .s { --wash: color-mix(in srgb, var(--sc) var(--tint), var(--leadbg)); }
+  /* the lead's lines wash like the body's (owner, Oct 16 2026): their own colour on white, feathered out until they melt
+     into the card's tint (it was the colour mixed into the tint: a flat grey block with a hard edge) */
+  .rise > .paper.lead .s { --feather: 12px; }
   html.hi .rise > .paper.lead { font-size: 19px; line-height: 1.8; }
   .rise > .paper.lead + .acts { margin-top: 22px; }
   /* every sentence in every section carries its colour: the figures' tiles and the quotes too */
