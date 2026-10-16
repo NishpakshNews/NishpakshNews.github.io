@@ -125,11 +125,19 @@
   /* the article: a sheet that grows out of the card */
   #sheet { position: fixed; inset: 0; z-index: 10; background: var(--card); visibility: hidden; }
   #sheet.on { visibility: visible; }
-  #sheet.anim { transition: clip-path 460ms var(--ease), -webkit-clip-path 460ms var(--ease), background-color 460ms ease; }
-  #sheet.open { background: var(--ground); }
+  /* optimisation pass (owner, Oct 16 2026): the sheet is never clipped. Animating clip-path is done on the main thread
+     and repainted the whole article every frame, while the picture and the headline glided on the GPU: when the page was
+     busy the two fell out of step (a white rectangle over the picture, the card flashing through). Now the sheet is
+     transparent and a plain plate (#plate) grows from the card to the screen by transform, on the GPU like everything
+     else that moves; the plate is white like the card, then the page's ground. */
+  #sheet { background: transparent; }
+  #plate { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-origin: 0 0; background: var(--ground); border-radius: 0; }
+  #plate i { position: absolute; inset: 0; border-radius: inherit; background: var(--card); opacity: 1; }
+  #sheet.open #plate i { opacity: 0; }
+  #sheet.anim #plate i { transition: opacity 360ms ease 60ms; }
   /* closing: the sheet fades away over the last 200 ms (the headline and picture are already over the card's), so the
      card's body text and heading come in by crossfade instead of appearing all at once when the sheet is removed */
-  #sheet.anim.leaving { opacity: 0; transition: clip-path 460ms var(--ease), -webkit-clip-path 460ms var(--ease), background-color 460ms ease, opacity 200ms ease 260ms; }
+  #sheet.anim.leaving { opacity: 0; transition: opacity 200ms ease 260ms; }
   .sheet-scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; touch-action: pan-y pinch-zoom; overscroll-behavior: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .sheet-scroll::-webkit-scrollbar { display: none; }
   .col { max-width: 560px; margin: 0 auto; padding: 0 max(14px, env(safe-area-inset-right)) 48px max(14px, env(safe-area-inset-left)); }
@@ -183,7 +191,7 @@
   #sheet.open .hbox h1 { transform: none; text-shadow: 0 1px 2px rgba(0,0,0,0.35), 0 0 18px rgba(0,0,0,0.18); }
   /* the picture at the top of the indigo box, dissolving into it; the card's and the article's are one picture */
   .hbox .hpic { position: absolute; left: 0; right: 0; top: 0; height: 200px; border-radius: 22px 22px 0 0; overflow: hidden;
-                opacity: 0; display: none; transform-origin: 0 0; transform: var(--pt, none); }
+                opacity: 0; display: none; transform-origin: 0 0; }
   .hbox.has-pic .hpic { display: block; }
   .hbox.morph .hpic { opacity: 1; }
   /* the image is laid out at its whole cover size (fitPic) and moved by its own transform, so on the way into and out
@@ -197,7 +205,7 @@
   .hbox .hpic .hsoft { position: absolute; inset: 0; opacity: 1;
                        -webkit-mask-image: linear-gradient(to bottom, #000 68%, transparent 100%); mask-image: linear-gradient(to bottom, #000 68%, transparent 100%); }
   .hbox .hpic .hsharp { position: absolute; inset: 0; }
-  .hbox .hpic .hsharp.s1 { opacity: 1; -webkit-mask-image: linear-gradient(to bottom, #000 52%, transparent 82%); mask-image: linear-gradient(to bottom, #000 52%, transparent 82%); }
+  .hbox .hpic .hsharp.s1 { opacity: 1; -webkit-mask-image: linear-gradient(to bottom, #000 76%, transparent 94%); mask-image: linear-gradient(to bottom, #000 76%, transparent 94%); }
   .hbox .hpic .hsharp.s2 { opacity: 0; -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); mask-image: linear-gradient(to bottom, #000 45%, transparent 100%); }
   #sheet.open .hbox .hpic .hsoft { opacity: 0; }
   #sheet.open .hbox .hpic .hsharp.s1 { opacity: 0; }
@@ -208,15 +216,13 @@
   #sheet.anim:not(.open) .hbox .hpic .hsoft { transition: opacity 300ms ease 100ms; }
   #sheet.anim:not(.open) .hbox .hpic .hsharp.s1 { transition: opacity 240ms ease; }
   #sheet.anim:not(.open) .hbox .hpic .hsharp.s2 { transition: opacity 260ms ease 200ms; }
-  .hbox .hpic img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; display: block;
-                    transform-origin: 50% 50%; transform: var(--it, none); }
-  .hbox .hpic img.soft { filter: blur(var(--bl, 16px)) saturate(1.1); transform: var(--it2, translate(0px, 0px) scale(1) scale(1.15)); }
-  #sheet.anim .hbox .hpic img.sharp { transition: transform 460ms var(--ease); will-change: transform; }
-  #sheet.open .hbox .hpic img.sharp { transform: none; }
+  .hbox .hpic img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; display: block; transform-origin: 50% 50%; }
+  .hbox .hpic img.soft { filter: blur(var(--bl, 16px)) saturate(1.1); transform: scale(1.15); }
+  /* (the picture's box and images are moved by the morph's own animations: see "one motion" in the script) */
   .hbox .hpic .hwash { position: absolute; inset: 0; pointer-events: none;
-                       background: linear-gradient(to bottom, rgba(255,255,255,0) 50%, rgba(255,255,255,0.55) 78%, #fff 100%); }
+                       background: linear-gradient(to bottom, rgba(255,255,255,0) 74%, rgba(255,255,255,0.55) 89%, #fff 100%); }
   .hbox .hpic .pic-credit { opacity: 0; }
-  #sheet.anim .hbox .hpic { transition: opacity 340ms ease 100ms, transform 460ms var(--ease); will-change: transform; }
+  #sheet.anim .hbox .hpic { transition: opacity 340ms ease 100ms; }
   #sheet.anim .hbox .hpic .pic-credit { transition: opacity 220ms ease 300ms; }
   #sheet.open .hbox .hpic { opacity: 1; transform: none; }
   #sheet.open .hbox .hpic .pic-credit { opacity: 1; }
@@ -310,9 +316,12 @@
   .card.has-pic { padding-top: 0; }
   .card .pic { position: relative; flex: none; height: 46%; margin: 0 -22px; overflow: hidden; background: #f1f1ee; }
   .card .pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
-  .card .pic .soft { filter: blur(16px) saturate(1.1); transform: scale(1.15); }
-  .card .pic .sharp { -webkit-mask-image: linear-gradient(to bottom, #000 52%, transparent 82%); mask-image: linear-gradient(to bottom, #000 52%, transparent 82%); }
-  .card .pic .wash { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(255,255,255,0) 50%, rgba(255,255,255,0.55) 78%, #fff 100%); }
+  .card .pic .soft { filter: blur(16px) saturate(1.1); transform: scale(calc(1.15 * var(--z, 1))); }
+  .card .pic .sharp { transform: scale(var(--z, 1)); }
+  /* the blur is only a short band at the picture's foot (owner, Oct 16 2026: it covered about a third of it); the article's
+     opening copy of the picture (.hsharp.s1, .hwash) uses the same stops, so the glide starts from exactly the card */
+  .card .pic .sharp { -webkit-mask-image: linear-gradient(to bottom, #000 76%, transparent 94%); mask-image: linear-gradient(to bottom, #000 76%, transparent 94%); }
+  .card .pic .wash { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(255,255,255,0) 74%, rgba(255,255,255,0.55) 89%, #fff 100%); }
   .card.has-pic h2 { position: relative; margin-top: 0; }
   /* the card, U1 (owner, Oct 15 2026; canvas "U1 · Tint lines"): the photo is the hero and nothing solid sits on it. The colour
      bar is the photo's bottom edge with a soft glow of its colours rising into the fade; one small kicker names the story's
@@ -322,9 +331,6 @@
   .card .edge { position: relative; z-index: 2; flex: none; margin: -16px 0 0; }
   .card:not(.has-pic) .edge { margin-top: 0; }
   .card .edge .bar { flex: none; height: 6px; position: relative; z-index: 1; }
-  .card .edge .aglow { position: absolute; left: 5%; right: 5%; top: -22px; height: 26px; display: flex; gap: 2px; filter: blur(14px); opacity: 0.55; pointer-events: none; }
-  .card .edge .aglow span { flex-basis: 0; min-width: 0; }
-  .card:not(.has-pic) .edge .aglow { display: none; }
   .kk { display: flex; flex-wrap: wrap; gap: 3px 10px; margin: 10px 0 0; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; line-height: 1.3; }
   html.hi .kk { letter-spacing: 0; text-transform: none; font-size: 13px; }
   .kk + h2 { margin-top: 6px; }
@@ -1104,7 +1110,7 @@
   .cpane .rail { margin-bottom: 14px !important; }
   .cpane .pin, .cpane .pin.on { padding-bottom: 14px; }
   /* the article keeps room for the section names under the header, so they never cover the headline */
-  .rspace { height: 0; transition: height 560ms cubic-bezier(.22,.9,.24,1) 320ms; }
+  .rspace { height: 0; }   /* never animated (optimisation pass): its growing height relaid the whole article for 560 ms after it landed */
   #sheet.hasrail .rspace { height: 56px; }
   .rail button { min-height: 30px; height: 30px; padding: 0 12px; font-size: 12.5px; border-radius: 999px; background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.9); box-shadow: none; }
   .rail button.on { background: #fff; color: #1f2550; }
@@ -1147,11 +1153,11 @@
 
   /* the picture ends before the headline: with the box white, the headline sits under the picture, never over it
      (the picture dissolves to white by its own bottom edge) */
-  .hbox .hpic .hsharp.s2 { -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent 94%); mask-image: linear-gradient(to bottom, #000 50%, transparent 94%); }
-  .card .pic img { transition: object-position 1200ms cubic-bezier(.45,0,.25,1); }
+  .hbox .hpic .hsharp.s2 { -webkit-mask-image: linear-gradient(to bottom, #000 80%, transparent 100%); mask-image: linear-gradient(to bottom, #000 80%, transparent 100%); }   /* the article's picture: a short fade at its foot (owner, Oct 16 2026) */
+  .card .pic img { transition: object-position 1200ms cubic-bezier(.45,0,.25,1), transform-origin 1200ms cubic-bezier(.45,0,.25,1); }
   /* the tilt (the phone's motion sensor): the picture drawn a little larger and moved behind the card's frame */
-  html.tilt-on .card .pic img.sharp { transform: translate3d(var(--gx, 0px), var(--gy, 0px), 0) scale(1.07); }
-  html.tilt-on .card .pic img.soft { transform: translate3d(var(--gx, 0px), var(--gy, 0px), 0) scale(1.23); }
+  html.tilt-on .card .pic img.sharp { transform: translate3d(var(--gx, 0px), var(--gy, 0px), 0) scale(calc(1.07 * var(--z, 1))); }
+  html.tilt-on .card .pic img.soft { transform: translate3d(var(--gx, 0px), var(--gy, 0px), 0) scale(calc(1.23 * var(--z, 1))); }
   @media (prefers-reduced-motion: reduce) { .card .pic img { transition: none; } }
   /* the article's top, in the card's order (owner, Oct 15 2026: the bar came down past the headline while the headline
      went up, and the opening jittered): the picture, then the bar section straight under it (one white piece, as on
@@ -1249,6 +1255,7 @@
   .wcard.quote::before { z-index: 2; }
   canvas.wash { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; border-radius: inherit; opacity: 0; transition: opacity 260ms ease; }
   canvas.wash.on { opacity: 1; }
+  canvas.wash.now { transition: none; }   /* painted before it was ever seen (a card built again): no fade */
   #sheet[data-spot] canvas.wash { opacity: 0; }
   .wcard .s, .wcard .tile .s { background: transparent; box-shadow: none; padding: 0; border-radius: 0; }
   /* the home card's text gets the same wash (owner, Oct 15 2026). Its box clips (overflow hidden, the fade at the bottom), so it
@@ -1291,6 +1298,7 @@
   <nav class="sections brand" id="sections" aria-label="Sections"><div class="sbar" id="sbar"></div></nav>
 </div>
 <div id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-h">
+  <div id="plate" aria-hidden="true"><i></i></div>
   <div class="sheet-scroll" id="sheet-scroll">
     <div class="col">
       <div class="chrome" id="chrome"><div class="crow">
@@ -1607,7 +1615,7 @@ function sentenceHtml(x) {
 /* the card's two new parts (U1): the colour bar as the photo's edge, and the kicker */
 function edgeHtml(b) {
   const sp = ["e", "v", "p", "o", "d", "r", "u"].map(k => b[k] ? `<span style="flex-grow:${b[k]};background:var(--bar-${k})"></span>` : "").join("");
-  return `<div class="edge"><div class="aglow" aria-hidden="true">${sp}</div><div class="bar" role="img" aria-label="${esc(T[lang].bar(b))}">${sp}</div></div>`;
+  return `<div class="edge"><div class="bar" role="img" aria-label="${esc(T[lang].bar(b))}">${sp}</div></div>`;
 }
 function kickerHtml(b) {     // the best grade the story has, then disputed / false when there are any
   const t = T[lang].kShort, n = k => b[k] || 0;
@@ -1639,13 +1647,24 @@ function renderDeck(keepId) {
       <h2>${esc(t.secEmpty(secLabel(fKey)))}</h2><p>${esc(t.secBody)}</p>
       <button type="button" class="brand" id="showall">${esc(t.showAll)}</button></div></div></div>`;
     $("showall").onclick = () => { const d0 = secDepth(); goSection(null, null); syncHistory(d0); };
+    delete track.dataset.sig;
     return;
   }
-  if (!cards.length) { track.innerHTML = `<div class="slot"><div class="state">${esc(T[lang].empty)}</div></div>`; return; }
+  if (!cards.length) { track.innerHTML = `<div class="slot"><div class="state">${esc(T[lang].empty)}</div></div>`; delete track.dataset.sig; return; }
   const n = cards.length;
+  // optimisation pass (owner, Oct 16 2026): a refresh with nothing new rebuilt every card, so their painted washes and
+  // pictures were thrown away and redrawn (the smooth background went sharp, then came back) and the deck froze. The
+  // same cards in the same language and order are left exactly as they are; only their "x min ago" is brought up to date.
+  const sig = [lang, ...cards.map(c => [c.id, c.at, c.h, (c.img || {}).src || "", JSON.stringify(c.bar || {}), JSON.stringify(c.paras || []).length].join("|"))].join("\n");
+  if (track.dataset.sig === sig && track.querySelector("a.card")) {
+    track.querySelectorAll("a.card").forEach(a => { const c = cards.find(x => String(x.id) === a.dataset.id), g = a.querySelector(".ago"); if (c && g) g.textContent = ago(c.at); });
+    if (keepId != null) { const k = cards.findIndex(c => String(c.id) === String(keepId)); if (k >= 0 && k !== current) jumpTo(k); }
+    return "same";
+  }
   // loop: a copy of the last card before the first and of the first after the last
   const slots = n > 1 ? [[cards[n - 1], n - 1], ...cards.map((c, i) => [c, i]), [cards[0], 0]] : [[cards[0], 0]];
   track.innerHTML = slots.map(([c, i]) => cardHtml(c, i)).join("");
+  track.dataset.sig = sig;
   let idx = 0;
   if (keepId != null) { const k = cards.findIndex(c => String(c.id) === String(keepId)); if (k >= 0) idx = k; }
   jumpTo(idx);
@@ -1999,6 +2018,7 @@ function setSheetPicture(id) {
   // kept as it is, not rebuilt (a rebuilt one is blank until its images load and is not placed over the card's, so
   // the picture and headline box flashed at the end of the opening; owner, Oct 11 2026)
   const src = pic ? pic.src : "";
+  box.dataset.sid = id == null ? "" : String(id);
   if (box.dataset.src === src && (!pic || box.firstElementChild)) { hbox.classList.toggle("has-pic", !!pic); return; }
   box.dataset.src = src;
   hbox.classList.toggle("has-pic", !!pic);
@@ -2201,10 +2221,7 @@ function cardRectFor(id) {
   const r = el.getBoundingClientRect();
   return r.height ? r : null;
 }
-function setClip(r) {
-  const v = r ? `inset(${r.top}px ${innerWidth - r.right}px ${innerHeight - r.bottom}px ${r.left}px round 20px)` : "inset(0px 0px 0px 0px round 0px)";
-  sheet.style.clipPath = v; sheet.style.webkitClipPath = v;
-}
+function setClip() { /* optimisation pass: the sheet is never clipped; the plate grows instead (see "one motion") */ }
 function headOffset(cardEl) {   // where the card's headline sits inside the card
   const h2 = cardEl && cardEl.querySelector("h2");
   if (!h2) return {x: 22, y: 24, w: 0, pic: null};
@@ -2270,23 +2287,33 @@ async function openStory(id, fromCard, opts = {}) {
     const u = `#/story/${encodeURIComponent(id)}`;
     if (location.hash !== u) { history.pushState({story: id}, "", u); openedFromDeck = true; }
   }
-  sheet.classList.remove("anim", "open", "leaving");
-  sheet.classList.add("on");
-  if (!document.documentElement.classList.contains("reading")) { syncFold(); void sheet.offsetWidth; }   // the fold starts from the whole pill
-  document.documentElement.classList.add("reading"); sections.inert = true;
-  if (r) {
-    lastOff = headOffset(fromCard);
-    setClip(r); placeOverCard(r, lastOff);
-    flyBar(fromCard);
-    void sheet.offsetWidth;                      // start from the card
-    sheet.classList.add("anim");
-    requestAnimationFrame(() => { setClip(null); sheet.classList.add("open"); });
+  stopMorph();
+  sheet.classList.remove("anim", "open", "leaving", "on");
+  let done = Promise.resolve();
+  if (r && !STILL.matches) {
+    lastOff = headOffset(fromCard);              // where the card's headline, kicker and picture are now
+    await picReady();                            // the article's copy of the picture is laid out (it is the card's, already loaded)
+    if (openId !== id) return;
+    if (!document.documentElement.classList.contains("reading")) { syncFold(); void sheet.offsetWidth; }   // the fold starts from the whole pill
+    document.documentElement.classList.add("reading"); sections.inert = true;
+    placeOverCard(r, lastOff);                   // the headline, kicker and picture over the card's
+    const bar = flyBar(fromCard);                // the colour bar over the card's
+    const m = buildMorph(r, true);               // the plate and the picture, at the card (paused on their first frame)
+    sheet.classList.add("on", "pre");            // shown only now, already exactly over the card
+    await nextFrames();                          // that first frame is drawn (it looks like the card) before anything moves
+    if (openId !== id) return;
+    sheet.classList.add("anim", "open");         // the fades and the headline's glide (CSS) ...
+    if (bar) bar();                              // ... the bar ...
+    done = m.play();                             // ... and the plate and picture start on the same frame
   } else {
+    if (!document.documentElement.classList.contains("reading")) { syncFold(); void sheet.offsetWidth; }
+    document.documentElement.classList.add("reading"); sections.inert = true;
     hbox.style.removeProperty("--hw"); hbox.classList.remove("morph");
-    setClip(null); sheet.classList.add("open");
+    resetPlate(); sheet.classList.add("on", "open");
   }
   if (!quick) {
     const row = await pending;
+    await done;                                  // never refilled mid-glide (the key card could change height under the headline)
     if (openId !== id) return;
     if (row) fillSheet(row, card);
     else $("rise").innerHTML = `<div class="paper essay"><p>${esc(T[lang].missing)}</p></div>`;
@@ -2305,18 +2332,20 @@ function closeStory(animate = true) {
   const k = cards.findIndex(c => String(c.id) === id);
   if (k >= 0 && k !== current) jumpTo(k);
   const r = animate ? cardRectFor(id) : null;
-  if (r) {
+  stopMorph();
+  if (r && !STILL.matches) {
     const el = track.querySelector(`.slot[data-i="${current}"] a.card`);
     if (el) lastOff = headOffset(el);
     sheetScroll.scrollTop = 0;     // the article's top goes back into the card, as it came out of it
     sheet.classList.add("anim");
     placeOverCard(r, lastOff);
     flyBarBack(el);                // 2.1: the colour bar travels back into the card with the headline
-    setClip(r); sheet.classList.remove("open");
+    buildMorph(r, false).play();   // the plate shrinks into the card and the picture back into the card's crop
+    sheet.classList.remove("open");
     sheet.classList.add("leaving");
-    closing = setTimeout(() => { sheet.classList.remove("on", "anim", "leaving"); closing = null; }, 470);
+    closing = setTimeout(() => { sheet.classList.remove("on", "anim", "leaving", "pre"); stopMorph(); resetPlate(); closing = null; }, 470);
   } else {
-    sheet.classList.remove("on", "anim", "open", "leaving");
+    sheet.classList.remove("on", "anim", "open", "leaving", "pre"); resetPlate();
   }
   const el = track.querySelector(`.slot[data-i="${current}"] a.card`);
   if (el) el.focus({preventScroll: true});
@@ -2920,18 +2949,19 @@ track.addEventListener("scroll", () => { lastScroll = Date.now(); }, {passive: t
 function countSwipe(prev) { if (prev !== current && ++swipes >= 2) tidy(); }
 
 /* the colour bar travels from the card to under the headline (FLIP: transform only) */
-function flyBar(fromCard) {
+function flyBar(fromCard) {     // sets the bar over the card's; returns the function that starts its glide (with the rest)
   const cb = fromCard && fromCard.querySelector(".bar"), ab = $("abar");
-  if (!cb || !ab || STILL.matches) return;
+  if (!cb || !ab || STILL.matches) return null;
   const a = cb.getBoundingClientRect(), b = ab.getBoundingClientRect();
-  if (!b.width) return;
+  if (!b.width) return null;
   ab.style.transition = "none";
   ab.style.transform = `translate(${a.left - b.left}px, ${a.top - b.top}px) scale(${a.width / b.width}, ${(a.height / b.height) || 0.8})`;
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    ab.style.transition = "transform 560ms cubic-bezier(.3,.85,.25,1)";
+  return () => {
+    void ab.offsetWidth;
+    ab.style.transition = `transform ${MOTION_MS}ms var(--ease)`;
     ab.style.transform = "";
-    setTimeout(() => { ab.style.transition = ""; }, 600);
-  }));
+    setTimeout(() => { ab.style.transition = ""; }, MOTION_MS + 40);
+  };
 }
 function flyBarBack(cardEl) {       // closing: the bar goes back to the card's foot, by transform, with the headline
   const cb = cardEl && cardEl.querySelector(".bar"), ab = $("abar");
@@ -2944,6 +2974,83 @@ function flyBarBack(cardEl) {       // closing: the bar goes back to the card's 
   ab.style.transform = `translate(${a.left - b.left}px, ${a.top - b.top}px) scale(${a.width / b.width}, ${(a.height / b.height) || 0.8})`;
   setTimeout(() => { ab.style.transition = ""; ab.style.transform = ""; ab.style.opacity = ""; ab.style.willChange = ""; }, 500);
 }
+/* ======================= one motion for opening and closing (optimisation pass, owner, Oct 16 2026) =======================
+   Everything that moves while an article grows out of its card (or back) moves by transform or opacity only, so the GPU
+   runs it even while the page is busy, and it all starts on one frame:
+   - the plate (#plate): the sheet's background, from the card's rectangle to the screen;
+   - the picture: its frame from the card's picture to the article's, and the image inside at exactly the card's crop and
+     zoom at one end and the article's at the other. Frame and image are computed together for each of MORPH_STEPS points
+     of the eased path (the frame stretches unevenly; the image is counter-stretched so it never distorts), so they
+     cannot drift apart;
+   - the headline, the kicker and the colour bar (their own transforms, same duration and curve);
+   - the rest fades (CSS, by the sheet's classes).
+   Before anything moves, the start (which looks exactly like the card) is drawn once, so the layers are ready and nothing
+   flashes; the article's text arriving mid-way waits for the end. */
+var MOTION_MS = 460, MORPH_STEPS = 24, morphPic = null, morphAnims = [];
+function easeCurve(x1, y1, x2, y2) {           // cubic-bezier, as CSS (--ease is .2,.8,.2,1)
+  const bx = t => 3 * (1 - t) * (1 - t) * t * x1 + 3 * (1 - t) * t * t * x2 + t * t * t;
+  const by = t => 3 * (1 - t) * (1 - t) * t * y1 + 3 * (1 - t) * t * t * y2 + t * t * t;
+  return x => { let lo = 0, hi = 1; for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (bx(m) < x) lo = m; else hi = m; } return by((lo + hi) / 2); };
+}
+var morphEase = easeCurve(.2, .8, .2, 1);
+function stopMorph() { morphAnims.forEach(a => { try { a.cancel(); } catch (e) { /* gone */ } }); morphAnims = []; }
+function resetPlate() { $("plate").style.borderRadius = ""; }
+function buildMorph(r, opening) {
+  const plate = $("plate"), W = sheet.clientWidth || innerWidth, Hs = sheet.clientHeight || innerHeight;
+  const sx = r.width / W, sy = r.height / Hs, opt = {duration: MOTION_MS, easing: "linear", fill: "both"};
+  const ord = a => opening ? a : a.slice().reverse();
+  const anims = [];
+  // the plate: rounded like the card at the card (its corners are counter-stretched), square once it fills the screen
+  plate.style.borderRadius = `${(20 / sx).toFixed(2)}px / ${(20 / sy).toFixed(2)}px`;
+  anims.push(plate.animate(ord([{transform: `translate(${r.left}px, ${r.top}px) scale(${sx}, ${sy})`}, {transform: "none"}]),
+                           {duration: MOTION_MS, easing: "cubic-bezier(.2,.8,.2,1)", fill: "both"}));
+  const mp = morphPic, hp = $("hpic");
+  if (mp && hbox.classList.contains("morph")) {
+    const {P, B, f, a0} = mp, outer = [], inner = [], soft = [], round = [];
+    const cx = f.L + f.w / 2, cy = f.T + f.h / 2;
+    for (let i = 0; i <= MORPH_STEPS; i++) {
+      // how far along from the card (0) to the article (1); closing runs the same curve the other way (fast, then settling)
+      const q = morphEase(i / MORPH_STEPS), e = opening ? q : 1 - q, L = (a, b) => a + (b - a) * e;
+      const R = {left: L(P.left, B.left), top: L(P.top, B.top), w: L(P.w, B.w), h: L(P.h, B.h)};
+      const kx = R.w / B.w, ky = R.h / B.h, tx = R.left - B.left, ty = R.top - B.top;
+      const ax = L(a0.x, B.left + f.L), ay = L(a0.y, B.top + f.T), g = L(a0.g, f.s);
+      const mx = g / (kx * f.s), my = g / (ky * f.s);
+      const dx = (ax - B.left - tx) / kx - cx - mx * (f.L - cx), dy = (ay - B.top - ty) / ky - cy - my * (f.T - cy);
+      const it = `translate(${dx.toFixed(2)}px, ${dy.toFixed(2)}px) scale(${mx.toFixed(5)}, ${my.toFixed(5)})`;
+      outer.push({transform: `translate(${tx.toFixed(2)}px, ${ty.toFixed(2)}px) scale(${kx.toFixed(5)}, ${ky.toFixed(5)})`});
+      inner.push({transform: it}); soft.push({transform: `${it} scale(1.15)`});
+      const rx = (20 / kx).toFixed(2), ry = (20 / ky).toFixed(2);
+      round.push({borderRadius: `${rx}px ${rx}px 0px 0px / ${ry}px ${ry}px 0px 0px`});
+    }
+    anims.push(hp.animate(outer, opt));
+    hp.querySelectorAll("img.sharp").forEach(im => anims.push(im.animate(inner, opt)));
+    hp.querySelectorAll("img.soft").forEach(im => anims.push(im.animate(soft, opt)));
+    anims.push(hp.animate(round, opt));          // the corners alone (not a GPU property, so its own animation)
+  }
+  anims.forEach(a => a.pause());                      // held on the first frame until play()
+  morphAnims = anims;
+  return {
+    play() {
+      anims.forEach(a => a.play());
+      return Promise.all(anims.map(a => a.finished)).then(() => {
+        if (!opening || morphAnims !== anims) return;
+        stopMorph(); resetPlate(); sheet.classList.remove("pre");   // the CSS end state is the last frame: nothing moves
+      }, () => {});
+    }
+  };
+}
+// the article's picture loaded and decoded (it is the card's own file, so this is quick; at most 250 ms, after which the
+// picture fades in at its place instead of gliding)
+async function picReady() {
+  const imgs = [...$("hpic").querySelectorAll("img")];
+  if (!imgs.length) return;
+  const ok = im => im.complete && im.naturalWidth ? (im.decode ? im.decode().catch(() => {}) : null)
+                  : new Promise(res => { im.addEventListener("load", () => res(im.decode ? im.decode().catch(() => {}) : null), {once: true}); im.addEventListener("error", res, {once: true}); });
+  await Promise.race([Promise.all(imgs.map(ok)), new Promise(r => setTimeout(r, 250))]);
+}
+// two frames: the one that carries the start state, then the next
+function nextFrames() { return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); }
+
 // every sentence of the article knows its place (paragraph.sentence), for the audio's lighting
 function markSentences(row) {
   const p = (lang === "hi" && row.payload_hi) || row.payload_en || {};
@@ -4530,9 +4637,25 @@ function slide(frame, len, f, target) {
   if (len <= frame + 0.5) return (frame - len) / 2;
   return Math.max(frame - len, Math.min(0, target - f * len));
 }
-// where to look, for a frame W x H: one point for the faces together, or one per face when they do not fit together
-function framings(fo, W, H, ty) {
-  const ar = fo.ar || 1, cover = Math.max(W / ar, H) , iw = cover * ar, ih = cover;   // the picture at cover size
+/* Close-ups (owner, Oct 16 2026: "works for landscape photos but not for portrait photos"). A picture is drawn at cover
+   size, which on a phone card usually fills the frame's height exactly: it can slide sideways but not up. A close-up's
+   eyes sit lower (40-45% down) than a wide shot's, so they stayed there and the face ran into the fade. Such a picture
+   is now zoomed in just enough to bring the eyes up to their line (ZOOM_MAX at most, and never so far that the largest
+   face fills more than ZOOM_FACE of the frame). Pictures whose eyes already sit at or above the line are not zoomed. */
+const ZOOM_MAX = 1.6, ZOOM_FACE = 0.6, ZOOM_SLACK = 0.04;
+function zoomFor(fo, W, H, ty, iw, ih, eyes) {
+  const oy = slide(H, ih, eyes, H * ty), eyeY = oy + eyes * ih;
+  if (eyeY <= H * (ty + ZOOM_SLACK) || eyes >= 0.97) return 1;
+  const need = (H * (1 - ty)) / (ih * (1 - eyes));                 // the zoom at which the foot of the picture lets the eyes reach the line
+  const big = Math.max(...fo.fc.map(f => f[2] || 0)) || 0.01;
+  const cap = Math.min(ZOOM_MAX, (ZOOM_FACE * H) / (big * ih));
+  return Math.max(1, Math.min(need, cap));
+}
+// where to look, for a frame W x H: one point for the faces together, or one per face when they do not fit together;
+// with zoom, a close-up may be drawn larger than cover size (z, see zoomFor)
+function framings(fo, W, H, ty, zoom) {
+  const ar = fo.ar || 1, cover0 = Math.max(W / ar, H);
+  let iw = cover0 * ar, ih = cover0, z = 1;                                            // the picture at cover size
   const fc = fo.fc;
   const box = fc.reduce((b, [x, y, s]) => {
     const hw = (s * ih * 0.45) / iw, hh = s * 0.65;         // a face is about as wide as 0.9 of its height
@@ -4541,23 +4664,29 @@ function framings(fo, W, H, ty) {
   const fits = (box[2] - box[0]) * iw <= W * 0.94 && (box[3] - box[1]) * ih <= H * 0.86;
   const eyes = fc.reduce((n, f) => n + eyesOf(f), 0) / fc.length;
   const pts = fits || fc.length === 1 ? [[(box[0] + box[2]) / 2, eyes]] : fc.map(f => [f[0], eyesOf(f)]);
-  return {iw, ih, pts: pts.map(([x, y]) => [slide(W, iw, x, W / 2), slide(H, ih, y, H * ty)])};
+  if (zoom) { z = zoomFor(fo, W, H, ty, iw, ih, pts[0][1]); iw *= z; ih *= z; }
+  return {iw, ih, z, pts: pts.map(([x, y]) => [slide(W, iw, x, W / 2), slide(H, ih, y, H * ty)])};
 }
 function placeCardPic(cardEl, step) {
   const pic = cardEl && cardEl.querySelector(".pic"), fo = cardEl && focusOf(cardEl.dataset.id);
   if (!pic || !fo) return;
   const W = pic.clientWidth, H = pic.clientHeight;
   if (!W || !H) return;
-  const fr = framings(fo, W, H, FOCUS_Y_CARD);
-  const [ox, oy] = fr.pts[(step || 0) % fr.pts.length];
+  const fr = framings(fo, W, H, FOCUS_Y_CARD), frz = framings(fo, W, H, FOCUS_Y_CARD, true);
+  const k = (step || 0) % fr.pts.length, [ox, oy] = fr.pts[k];
   const pos = `${(fr.iw - W > 0.5 ? ox / (W - fr.iw) * 100 : 50).toFixed(2)}% ${(fr.ih - H > 0.5 ? oy / (H - fr.ih) * 100 : 50).toFixed(2)}%`;
-  pic.querySelectorAll("img").forEach(im => { im.style.objectPosition = pos; });
+  // zoomed: the cover-size picture at (ox, oy) is scaled by z about O so that it lands at the zoomed framing (zx, zy):
+  // O + z * (o - O) = zo, so O = (zo - z * o) / (1 - z); O stays inside the frame, so no edge can show
+  const z = frz.z, [zx, zy] = frz.pts[k % frz.pts.length] || [ox, oy];
+  const O = z > 1.001 ? [Math.max(0, Math.min(W, (zx - z * ox) / (1 - z))), Math.max(0, Math.min(H, (zy - z * oy) / (1 - z)))] : [W / 2, H / 2];
+  pic.style.setProperty("--z", z > 1.001 ? z.toFixed(4) : "1");
+  pic.querySelectorAll("img").forEach(im => { im.style.objectPosition = pos; im.style.transformOrigin = `${O[0].toFixed(1)}px ${O[1].toFixed(1)}px`; });
   pic.dataset.drift = fr.pts.length > 1 ? "1" : "";
 }
 let driftStep = 0, driftCard = null;
 function placeAllCardPics() { track.querySelectorAll("a.card").forEach(el => placeCardPic(el, 0)); driftStep = 0; }
 const renderDeckBase = renderDeck;
-renderDeck = function (...a) { const r = renderDeckBase.apply(this, a); placeAllCardPics(); return r; };
+renderDeck = function (...a) { const r = renderDeckBase.apply(this, a); if (r !== "same") placeAllCardPics(); return r; };
 addEventListener("resize", () => placeAllCardPics());
 setInterval(() => {
   if (REDUCED.matches || openId || document.hidden) return;
@@ -4620,11 +4749,11 @@ if ("DeviceOrientationEvent" in window && !REDUCED.matches) {
 fitPic = function () {
   const imgs = [...$("hpic").querySelectorAll("img")], img = imgs[0], W = hbox.getBoundingClientRect().width;
   if (!img || !img.naturalWidth || !W) return null;
-  const iw = img.naturalWidth, ih = img.naturalHeight, s = Math.max(W / iw, 200 / ih), w = iw * s, h = ih * s;
-  const fo = focusOf(openId);
+  const iw = img.naturalWidth, ih = img.naturalHeight, fo = focusOf(openId || $("hpic").dataset.sid);
+  const fr = fo ? framings({fc: fo.fc, ar: iw / ih}, W, 200, FOCUS_Y_ART, true) : null;
+  const s = Math.max(W / iw, 200 / ih) * (fr ? fr.z : 1), w = iw * s, h = ih * s;
   let L = (W - w) / 2, T = (200 - h) / 2;
   if (fo) {
-    const fr = framings({fc: fo.fc, ar: iw / ih}, W, 200, FOCUS_Y_ART);
     [L, T] = fr.pts[0];
     if (fr.pts.length > 1) {        // faces that do not fit together: the main face (largest) alone
       const f0 = fo.fc[0];
@@ -4644,24 +4773,16 @@ placeOverCard = function (r, off = lastOff) {
   st.setProperty("--ty", `${r.top + off.y - a.top}px`);
   const pic = off.pic && hbox.classList.contains("has-pic");
   hbox.classList.toggle("morph", !!pic);
-  const clear = () => { st.setProperty("--it", "none"); st.removeProperty("--it2"); st.removeProperty("--bl"); };
-  if (!pic) { clear(); return; }
+  morphPic = null;
+  if (!pic) return;
+  const f = fitPic(), now = off.pic.now, B = $("hpic").getBoundingClientRect();
+  if (!f || !B.width) return;
   const P = {left: r.left + off.pic.x, top: r.top + off.pic.y, w: off.pic.w, h: off.pic.h};
-  const k = Math.max(P.w / H.width, P.h / 200);
-  const tx = P.left + (P.w - H.width * k) / 2 - H.left, ty = P.top - H.top;
-  st.setProperty("--pt", `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scale(${k.toFixed(4)})`);
-  const f = fitPic(), now = off.pic.now;
-  if (!f) { clear(); return; }
-  // the card shows picture point u at P + o + sc*u; inside the moved box the article's image (laid out at L,T, size
-  // w x h, its own transform about its centre) must show the same point at the same place
+  // the card shows picture point u at (P + o) + sc*u; the article at (B + L,T) + s*u
   const sc = now ? now.sc : Math.max(P.w / f.iw, P.h / f.ih);
   const ox = now ? now.ox : (P.w - f.iw * sc) / 2, oy = now ? now.oy : (P.h - f.ih * sc) / 2;
-  const m = sc / (k * f.s);
-  const dx = (P.left + ox - H.left - tx) / k - f.L - f.w / 2 + m * f.w / 2;
-  const dy = (P.top + oy - H.top - ty) / k - f.T - f.h / 2 + m * f.h / 2;
-  st.setProperty("--it", `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) scale(${m.toFixed(4)})`);
-  st.setProperty("--it2", `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) scale(${m.toFixed(4)}) scale(1.15)`);
-  st.setProperty("--bl", `${(16 / (k * m)).toFixed(2)}px`);
+  morphPic = {P, B: {left: B.left, top: B.top, w: B.width, h: B.height}, f, a0: {x: P.left + ox, y: P.top + oy, g: sc}};
+  st.setProperty("--bl", `${(16 * f.s / sc).toFixed(2)}px`);      // 16 px on screen at the card, as there
 };
 
 /* the article's top in the card's order (owner, Oct 15 2026): the bar section straight under the picture, then the
@@ -4718,8 +4839,7 @@ placeOverCard = function (r, off = lastOff) {
    sentence's own (--sc) mixed into white at WASH.tint. Painting waits until the opening animation is over, then goes
    one card at a time while the reader is idle, cards in view first; a card is painted again when its size changes
    (language switch, rotation, fonts). */
-const WASH = {spread: 15, soft: 14, tint: 0.14};
-const washScratch = document.createElement("canvas");
+const WASH = {spread: 15, soft: 14, tint: 0.14, res: 0.5};
 const washColours = {};
 function washColour(el) {
   const key = el.className;
@@ -4731,38 +4851,38 @@ function washColour(el) {
   }
   return washColours[key];
 }
-function washCard(card) {
+/* Optimisation pass (owner, Oct 16 2026: the opening, closing and refresh ran at "10 FPS"). The wash used to blur each
+   sentence on a scratch canvas, read every pixel back to the CPU (getImageData) and mix the colours in a JavaScript loop:
+   100-800 ms per card on a phone, run in idle slots forced within 600 ms, so it landed on top of every glide (profiled:
+   ~95% of the main thread's time while opening, closing and refreshing). Now each sentence's grown line boxes are filled
+   in its own colour with the canvas's blur, straight onto the card's canvas: the GPU does it, nothing is read back, a card
+   takes a few ms. Same spread, softness and strength; where two sentences overlap the later one is laid over the earlier
+   with the blur's own alpha (the old loop weighted the two by strength), which reads the same at these tints. */
+function washCard(card, instant) {
   const w = card.offsetWidth, h = card.offsetHeight;
   if (!w || !h) return;
   let cv = card.querySelector(":scope > canvas.wash");
   if (!cv) { cv = document.createElement("canvas"); cv.className = "wash"; cv.setAttribute("aria-hidden", "true"); card.prepend(cv); }
   const cr = card.getBoundingClientRect(), k = cr.width / w || 1;      // k undoes any transform on the way (the opening glide)
-  const dpr = Math.min(2, window.devicePixelRatio || 1), PW = Math.round(w * dpr), PH = Math.round(h * dpr);
-  washScratch.width = PW; washScratch.height = PH;
-  const sx = washScratch.getContext("2d", {willReadFrequently: true});
-  const layers = [];
+  // half a CSS pixel per canvas pixel: the wash is a 14px blur, so it looks the same as at full resolution and costs a
+  // sixteenth of a phone's (dpr 2-3) pixels to paint and to keep in memory
+  const dpr = WASH.res, PW = Math.max(1, Math.round(w * dpr)), PH = Math.max(1, Math.round(h * dpr));
+  if (cv.width !== PW || cv.height !== PH) { cv.width = PW; cv.height = PH; cv.style.width = w + "px"; cv.style.height = h + "px"; }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.filter = "none"; ctx.clearRect(0, 0, PW, PH);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.filter = `blur(${WASH.soft * dpr}px)`;
+  const d = WASH.spread;
   card.querySelectorAll(".s").forEach(el => {
-    const c = washColour(el), rects = [...el.getClientRects()].filter(r => r.width >= 1);
+    const c = washColour(el), rects = el.getClientRects();
     if (!c || !rects.length) return;
-    sx.setTransform(1, 0, 0, 1, 0, 0); sx.filter = "none"; sx.clearRect(0, 0, PW, PH);
-    sx.setTransform(dpr, 0, 0, dpr, 0, 0); sx.filter = `blur(${WASH.soft * dpr}px)`; sx.fillStyle = "#000";
-    const d = WASH.spread;
-    for (const r of rects) sx.fillRect((r.left - cr.left) / k - d, (r.top - cr.top) / k - d, r.width / k + 2 * d, r.height / k + 2 * d);
-    const px = sx.getImageData(0, 0, PW, PH).data, a = new Uint8Array(PW * PH);
-    for (let i = 0, j = 3; i < a.length; i++, j += 4) a[i] = px[j];
-    layers.push({a, c});
+    ctx.fillStyle = `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+    ctx.beginPath();
+    for (const r of rects) if (r.width >= 1) ctx.rect((r.left - cr.left) / k - d, (r.top - cr.top) / k - d, r.width / k + 2 * d, r.height / k + 2 * d);
+    ctx.fill();
   });
-  cv.width = PW; cv.height = PH; cv.style.width = w + "px"; cv.style.height = h + "px";
-  const ctx = cv.getContext("2d"), out = ctx.createImageData(PW, PH), o = out.data;
-  for (let i = 0; i < PW * PH; i++) {
-    let sum = 0, r = 0, g = 0, b = 0, keep = 1;
-    for (const L of layers) { const a = L.a[i]; if (!a) continue; const f = a / 255; sum += f; r += f * L.c[0]; g += f * L.c[1]; b += f * L.c[2]; keep *= 1 - f; }
-    if (!sum) continue;
-    const j = i * 4; o[j] = r / sum; o[j + 1] = g / sum; o[j + 2] = b / sum; o[j + 3] = 255 * (1 - keep);
-  }
-  ctx.putImageData(out, 0, 0);
   card.dataset.washed = `${w}x${h}`;
-  requestAnimationFrame(() => cv.classList.add("on"));
+  if (instant) { cv.classList.add("now", "on"); requestAnimationFrame(() => cv.classList.remove("now")); }
+  else requestAnimationFrame(() => cv.classList.add("on"));
 }
 const washQueue = new Set();
 let washTimer = 0, washReadyAt = 0;
@@ -4805,6 +4925,15 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => $("r
 /* the home cards: the same wash behind each card's text, painted for the cards on screen and next to it (the deck holds
    every card, so painting them all would be wasted work); a card built again (refresh, language, section) is painted again */
 const deckWash = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) washLater(e.target, 120); }), {root: track, rootMargin: "100% 0px"});
+// a deck built again: the card in view and its neighbours are washed at once (a few ms each now), before the first frame
+// shows them, so the reader never sees them plain; the rest as they come near
+function washDeckNow() {
+  const slots = track.children, k = current + (cards.length > 1 ? 1 : 0);
+  for (let i = Math.max(0, k - 1); i <= Math.min(slots.length - 1, k + 1); i++) {
+    const t = slots[i] && slots[i].querySelector(".card .text.wcard");
+    if (t && t.offsetWidth) { try { washCard(t, true); } catch (e) { /* the plain text stays */ } }
+  }
+}
 function setupDeckWash() {
   track.querySelectorAll(".card .text").forEach(t => { if (t.classList.contains("wcard")) return; t.classList.add("wcard"); deckWash.observe(t); washSizes.observe(t); });
 }
@@ -4870,7 +4999,7 @@ function fitSheetHead() {
   if (w) fitHead(h, w); else requestAnimationFrame(() => fitHead(h, h.clientWidth));
 }
 const renderDeckFit = renderDeck;
-renderDeck = function (...a) { const r = renderDeckFit.apply(this, a); fitDeckHeads(); return r; };
+renderDeck = function (...a) { const r = renderDeckFit.apply(this, a); if (r !== "same") fitDeckHeads(); return r; };
 const fillSheetFit = fillSheet;
 fillSheet = function (...a) { fillSheetFit.apply(this, a); fitSheetHead(); };
 let hfitResize = 0;
@@ -4878,7 +5007,7 @@ window.addEventListener("resize", () => { clearTimeout(hfitResize); hfitResize =
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { hfitPlans.clear(); hfitWords.clear(); fitDeckHeads(); if (openId) fitSheetHead(); });
 fitDeckHeads();
 const renderDeckWash = renderDeck;
-renderDeck = function (...a) { const r = renderDeckWash.apply(this, a); setupDeckWash(); return r; };
+renderDeck = function (...a) { const r = renderDeckWash.apply(this, a); if (r !== "same") { setupDeckWash(); washDeckNow(); } return r; };
 setupDeckWash();
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => track.querySelectorAll(".card .text.wcard").forEach(c => { if (c.dataset.washed) { delete c.dataset.washed; washLater(c); } }));
 </script>

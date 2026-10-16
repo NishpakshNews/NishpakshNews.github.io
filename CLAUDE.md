@@ -1142,6 +1142,47 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   at the card headline's width (`cardHeadWidth`), so the opening glide never re-wraps. Run on every deck build
   (`renderDeck` wrapped), every `fillSheet`, on resize and again when the fonts have loaded. `sw.js` np-main-54.
 
+- **Optimisation pass (owner, Oct 16 2026: a screen recording of the opening, closing and refresh "at 10 FPS", the smooth
+  background going sharp on refresh, the picture popping and a white rectangle over it).** Measured in headless Chromium
+  at 4x CPU throttle on the real feed (stand-in pictures with the faces drawn where `img.fc` says). Causes and fixes:
+  (1) `washCard` blurred each sentence on a scratch canvas, read every pixel back (`getImageData`) and mixed them in JS:
+  100-800 ms per card, ~95% of the main thread while opening (3.3 s), closing (2.7 s) and refreshing (6.5 s), run in idle
+  slots forced within 600 ms, so on top of every glide. Now each sentence's grown line boxes are filled in its colour with
+  the canvas blur straight onto the card's canvas (no read-back; a later sentence is laid over an earlier one with the
+  blur's alpha instead of the strength-weighted mix), at half a CSS pixel per canvas pixel (`WASH.res`; it is a 14 px
+  blur). Same spread / softness / strength. JS while opening: 3.3 s -> ~0.17 s. (2) The article grew out of the card by
+  animating `clip-path` on the whole sheet: main thread, a repaint of the article every frame, while the picture and
+  headline moved on the GPU; when the page was busy they fell out of step (the white rectangle, the card flashing
+  through). Now "one motion" (script block of that name): the sheet is never clipped; `#plate` (its background, white
+  like the card, then the ground) grows from the card's rectangle by transform; the picture's frame and the image inside
+  are animated together (WAAPI, `MORPH_STEPS` points on the eased path, frame stretched unevenly, image counter-stretched
+  so it never distorts) from the card's exact crop and zoom (`cardPicNow`) to the article's; headline, kicker and bar on
+  their own transforms, same 460 ms and curve, all started on one frame; closing runs the same path the other way with
+  the same fast-then-settle curve. The start is drawn once before anything moves (`nextFrames`), the article's picture is
+  waited for (`picReady`: it was created fresh at each opening and was not loaded yet, so it never morphed and sat at its
+  final size from the first frame: the "wrong crop" pop), the sheet is shown only once its start frame is built, and an
+  article arriving mid-glide is filled in after it. `fitPic` frames on the story the picture belongs to
+  (`hpic.dataset.sid`), so closing (openId already null) keeps the face framing. (3) `.rspace` (room for the section names)
+  grew its height for 560 ms after the glide: a relayout of the whole article every frame and the article sliding down
+  56 px after landing. It is now there from the first frame, never animated. (4) Refresh rebuilt every card even with
+  nothing new, throwing away the painted washes ("went sharp") and freezing for 1.3 s: `renderDeck` returns "same" for an
+  identical deck (signature `track.dataset.sig`: language, ids, times, headlines, pictures, bars, text length) and only
+  updates the "x min ago"; a rebuilt deck washes the card in view and its neighbours at once (`washDeckNow`). Results at
+  4x throttle: opening JS 3.3 s -> 0.17 s, the glide itself at 60 fps (frames every ~16 ms); closing 12 -> 50+ frames in
+  700 ms; refresh worst frame gap 1350 ms -> 33 ms. Left: ~150-230 ms (4x; ~50 ms on a phone) between the tap and the
+  first moving frame, the browser laying out the whole article for the first time. NOT verified on a real phone.
+  **Owner's design changes, same day:** the glow above the card's colour bar (`.aglow`) is gone; the blur at a picture's
+  foot is a short band (card: sharp to 76%, fade to 94%, wash from 74%; the article's picture fades from 80%; the
+  article's opening copy uses the card's stops so the glide starts from exactly the card). **Close-ups framed
+  ("portrait photos", owner):** every feed picture is landscape; a close-up's eyes sit 40-55% down and the card's picture
+  fills its frame's height exactly, so it could not slide up and the face ran into the fade. `zoomFor` zooms such a
+  picture in just enough to bring the eyes to their line (at most `ZOOM_MAX` 1.6, never past a face `ZOOM_FACE` 0.6 of the
+  frame; pictures whose eyes already sit at or above the line are not zoomed, so wide shots are unchanged). Card: slid by
+  object-position at cover size as before, zoomed by `scale(var(--z))` about the point that lands the eyes on the line
+  (it joins the blurred copy's 1.15 and the tilt's 1.07; its origin glides with the drift); article: laid out at the
+  zoomed size. `sw.js` np-main-55. Harness (not in the repo): Playwright, `Emulation.setCPUThrottlingRate` 4, rAF gaps,
+  long tasks, a CPU profile and the screencast frames of open / close / refresh.
+
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →
 retract headline-only reads → Tavily reads blocked pages → wire copies → grouping (`stories.py`) →
