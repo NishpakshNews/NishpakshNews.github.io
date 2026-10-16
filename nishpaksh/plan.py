@@ -48,6 +48,13 @@ RULES: dict[str, Rule] = {
     "say": Rule("speaker", "subject", "speaker", "one speaker's argument, the main point first"),
     "related": Rule("time", "event", "when", "one related event, with its own time and people"),
     "next": Rule("time", "subject", "when", "what happens next: hearings, deadlines, required steps"),
+    # the express desk's layouts (expressdesk.py)
+    "performers": Rule("given", "subject", "", "one standout player or team, with their figures"),
+    "who": Rule("given", "subject", "", "who the person is: role, age, where from, what they are known for"),
+    "journey": Rule("time", "subject", "when", "their path so far, oldest first, each step with its time"),
+    "words": Rule("speaker", "subject", "speaker", "a person's own words, quoted, with what they are about"),
+    "drivers": Rule("given", "subject", "", "what explains the figures, one subject per paragraph"),
+    "market": Rule("time", "subject", "", "how the share price and investors reacted"),
 }
 
 
@@ -212,7 +219,7 @@ def build(items: list[dict], sec: dict[int, str]) -> list[Para]:
     from . import narrative
     words = _words_fn()
     plan: list[Para] = []
-    for key in narrative.SECTION_KEYS:
+    for key in narrative._keys():
         mine = [i for i in items if sec.get(i["id"]) == key]
         if not mine:
             continue
@@ -221,7 +228,7 @@ def build(items: list[dict], sec: dict[int, str]) -> list[Para]:
         if key == "news":
             made = [Para(0, key, [i["id"] for i in mine])]
         elif rule.order == "speaker":
-            made = _say(mine, words)
+            made = _say(mine, words, key)
         else:
             ordered = sorted(mine, key=_start) if rule.order == "time" else list(mine)
             if rule.group == "event":
@@ -259,7 +266,7 @@ def _by_topic(chunk: list[dict]) -> list[tuple[list[dict], bool]]:
     return [(p_, True) for p_ in parts.values()]
 
 
-def _say(items: list[dict], words) -> list[Para]:
+def _say(items: list[dict], words, key: str = "say") -> list[Para]:
     """"What they say": one speaker's statements together, speakers in order of first appearance, an answer right
     after what it answers (narrative._by_speaker); a long argument is cut into paragraphs by subject."""
     from . import narrative
@@ -270,7 +277,7 @@ def _say(items: list[dict], words) -> list[Para]:
     def flush():
         nonlocal pending
         for group in _pack(_units(pending), words):
-            out.append(Para(0, "say", [i["id"] for i in group]))
+            out.append(Para(0, key, [i["id"] for i in group]))
             seen.update(i["id"] for i in group)
         pending = []
     for name, group in narrative._by_speaker(items):
@@ -282,7 +289,7 @@ def _say(items: list[dict], words) -> list[Para]:
             ids = [i["id"] for i in part]
             partners = set().union(*(narrative._partners(i) for i in part)) - set(ids)
             hit = sorted(partners & seen)
-            out.append(Para(0, "say", ids, speaker=name, link=("continues" if n else "answers" if hit else "new"),
+            out.append(Para(0, key, ids, speaker=name, link=("continues" if n else "answers" if hit else "new"),
                             answers=hit if not n else []))
             seen.update(ids)
     flush()

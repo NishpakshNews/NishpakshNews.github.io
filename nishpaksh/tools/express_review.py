@@ -59,6 +59,8 @@ def collect(store: Store, sample: int) -> dict:
                      "articles": len(mine), "text_words": text_words, "text_cut": cut,
                      "summary_only": sum(1 for a in mine if a.get("text_source") == "summary"),
                      "models": sorted({str((a.get("extraction") or {}).get("model")) for a in mine}),
+                     "coverage": [(a.get("extraction") or {}).get("coverage") for a in mine if (a.get("extraction") or {}).get("coverage")],
+                     "layout": (p.get("narrative") or {}).get("layout"),
                      "read": n_read, "read_context": ctx, "shown": shown, "page_words": page_words,
                      "words_per_statement_read": round(text_words / n_read, 1) if n_read else None})
     out: dict = {"stories": rows}

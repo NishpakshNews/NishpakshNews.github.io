@@ -582,6 +582,18 @@ MEDIA_WORDS = re.compile(r"(?i)\b(newspapers?|news ?papers?|channels?|editions?|
                          r"most read|publish\w*|publications?|news agency|broadcaster|daily|founded|established in)\b")
 
 
+def _express_report(store, story_id: int) -> str | None:
+    """The text of the report(s) an express story was read from (for the desk's copy check)."""
+    try:
+        from . import heavy
+        rows = store.rows(select(articles.c.id, *heavy.columns(store, "text"))
+                          .where(articles.c.story_id == story_id, articles.c.extracted_at.is_not(None)))
+        return "\n".join(r["text"] or "" for r in heavy.fill(store, rows, "text")) or None
+    except Exception as e:  # noqa: BLE001 - a check, never a reason not to write
+        log.info("express report text not loaded for story %s (%s)", story_id, str(e)[:80])
+        return None
+
+
 def drop_outlet_self_talk(payload: dict) -> int:
     """Statements a page says about its own publisher ("Hindustan was established in 1936 ... the second
     most widely read Hindi newspaper", Oct 7 2026, story 12687) are not the story: dropped by code when a
@@ -817,8 +829,10 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     # an earlier try that fell short of the bar is continued, not started again (owner, Oct 7 2026)
     an = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
     draft = _remap_draft(store, an.get("writer_draft"), payload)
+    report_text = _express_report(store, story_id) if payload.get("qualified_by") == "express" else None
     nar = write_narrative(router, payload, banned, draft=draft if _keepable({"model": (draft or {}).get("model"),
-                                                                             "paragraphs": [1]}) else None)
+                                                                             "paragraphs": [1]}) else None,
+                          report_text=report_text)
     drafted = nar.pop("drafted", None)
     essay_good = essay_ok(nar, payload) and _keepable(nar)
     if essay_good:

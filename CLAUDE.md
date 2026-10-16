@@ -1530,6 +1530,25 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   `EXACT WORDS: "..."` and may quote them (prompt "QUOTES"); `_validate` refuses words in double quotation marks
   (3+ words) that do not stand in a cited statement's words or text ("quote not in statements"), and a loaded word
   inside a quote is the speaker's, not refused. Tests: `tests/test_reading_long.py`.
+- **The express desk (Oct 16 2026, owner; step 2 of the express plan; `coverage.py`, `expressdesk.py`,
+  `extract.second_pass`, `narrative` layouts and copy check).** COVERAGE: an express story's report is read for
+  coverage: `coverage.fact_sentences` (the report's sentences minus clutter such as "Also read" / "Download the app",
+  captions, questions, fragments under 6 words) and `coverage.report` (which of them a statement came from: its
+  `quote`, else its anchors). A first reading under TARGET (0.7) gets ONE more reading call on the sentences left
+  (`second_pass`, merged like pieces). The article's `extraction["coverage"]` keeps {first, final, sentences, passed
+  (final >= MINIMUM 0.6)}; the run logs "express coverage:". Under the minimum the story is still published. LAYOUTS
+  (`expressdesk.kind_of` by code: sport with 2+ result-and-score lines = match; companies/tech with 3+ money figures =
+  results; one person named in 60%+ of statements = profile; else general): match = background (build-up), happened,
+  performers, say, numbers, next; profile = who, journey, words (their own words), next; results = numbers, drivers,
+  say, market, next; general = happened, words, say, numbers, background, explained, next. `expressdesk.sections`
+  moves narrative.assign_sections' choices into the layout. The writer gets `expressdesk.structure(kind)` instead of
+  NORMAL_STRUCTURE and the layout's order; narrative keeps the layout's keys per thread (`_keys()`, `_fill_groups()`;
+  plan.build follows them; plan.RULES has the new keys; "words" is planned like "say"); target length: one sentence per
+  statement at least. The payload's narrative has `layout`. The site, audio and feed show a page with a key outside
+  the normal sections in the order written; new headings in both languages (site/index.html); "words" paragraphs get
+  the speaker label like "say". COPY CHECK: a sentence sharing COPY_RUN (10) words in a row with the report outside
+  quotation marks is sent in ONE writer call (REPHRASE_PROMPT, at most 12) to be said in our words; kept only if it
+  passes every check and no longer copies (`flow.copied` / `flow.rephrased`). Tests: `tests/test_express_desk.py`.
 - **Open (Oct 16 2026):** `tests/test_express_db.py::test_nothing_is_embedded_while_the_pacing_curve_has_given_the_slice_out`
   fails at some hours of the day (failed at ~05:30 UTC with and without the session 9 changes, passed at 04:xx).
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:

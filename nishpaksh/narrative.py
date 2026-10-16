@@ -75,32 +75,7 @@ paragraph (same speaker, an answer, a contrast, a later time, the same subject).
 says; a statement with no LINK starts a new point and needs no connecting word. Never open a sentence with
 "Furthermore", "Moreover", "Additionally" or "Notably": they carry no fact.
 
-Structure: the article is written in SECTIONS, in this order, so that a reader who knows nothing about
-the story first learns why it matters today, then how it came about, and then follows it as one
-coherent story. The newsroom has already sorted the statements into sections AND into PARAGRAPHS, one
-subject each, in the order they belong: write EXACTLY ONE paragraph for each PARAGRAPH below, in that
-order, from ONLY its statements. Never move a statement to another paragraph, never join two
-paragraphs, never split one. A PARAGRAPH says how it opens ("opens with ..."): begin it that way.
-Within a paragraph write 2-4 sentences, the main point first, then what supports it. The sections:
-  news        1-2 sentences, the thing that makes this a story today, with who, where and
-              when, written from the statements in SECTION news (chosen for you): the first sentence
-              tells the first of them (it must be cited in the lead); if there is a second, it is what
-              happened today, told in the second sentence. Never the setting or background ("Donald Trump said 125 million people voted in
-              India's election, mixing up India with Brazil", not "Brazil held an election on Sunday").
-  background  the past of the story's own subject, oldest first: its history, then the steps just before the news,
-              each clearly with its own time (code decides the paragraphs; never add what is not in them)
-  happened    what happened, in time order (the statements of the news are not repeated here)
-  say         what each person or body says: claims, allegations, positions, and the responses to them.
-              Each PARAGRAPH is one speaker's argument (the main claim first, then its details); a
-              response paragraph names who answers and what is answered. Name each speaker as given;
-              never give one speaker's line to another
-  numbers     the figures: amounts, tolls, counts, percentages, each with what it measures
-  explained   what a rule, term, post, finding or number means
-  next        what happens next: hearings, deadlines, required steps
-  related     other events the reports connect to this one, each with its own time and its own people;
-              never blended into the story's event. Do not write "separately" or "in a separate case":
-              the section's heading says it (unless a statement itself says so)
-Write only the sections that have statements (and "news"); skip the others.
+{structure}
 A disagreement is written where its subject is, in the same paragraph as the rest of that subject, with
 both versions and whose they are; never collected into a paragraph or section about differing accounts.
 Never join two statements in one sentence unless they are about the same person, body, place or
@@ -189,10 +164,36 @@ background), the present and what happens next.
 {people}{background}Statements, by section and paragraph:
 {statements}
 
-Reply with JSON only, the sections in this order (news, background, happened, say, numbers, explained,
-next, related), each with its paragraphs:
+Reply with JSON only, the sections in this order ({order}), each with its paragraphs:
 {{"sections": [{{"key": "news", "paragraphs": [[{{"text": "...", "ids": [3]}}]]}},
                {{"key": "happened", "paragraphs": [[{{"text": "...", "ids": [5, 7]}}], [ ... ]]}}, ...]}}"""
+
+NORMAL_STRUCTURE = """Structure: the article is written in SECTIONS, in this order, so that a reader who knows nothing about
+the story first learns why it matters today, then how it came about, and then follows it as one
+coherent story. The newsroom has already sorted the statements into sections AND into PARAGRAPHS, one
+subject each, in the order they belong: write EXACTLY ONE paragraph for each PARAGRAPH below, in that
+order, from ONLY its statements. Never move a statement to another paragraph, never join two
+paragraphs, never split one. A PARAGRAPH says how it opens ("opens with ..."): begin it that way.
+Within a paragraph write 2-4 sentences, the main point first, then what supports it. The sections:
+  news        1-2 sentences, the thing that makes this a story today, with who, where and
+              when, written from the statements in SECTION news (chosen for you): the first sentence
+              tells the first of them (it must be cited in the lead); if there is a second, it is what
+              happened today, told in the second sentence. Never the setting or background ("Donald Trump said 125 million people voted in
+              India's election, mixing up India with Brazil", not "Brazil held an election on Sunday").
+  background  the past of the story's own subject, oldest first: its history, then the steps just before the news,
+              each clearly with its own time (code decides the paragraphs; never add what is not in them)
+  happened    what happened, in time order (the statements of the news are not repeated here)
+  say         what each person or body says: claims, allegations, positions, and the responses to them.
+              Each PARAGRAPH is one speaker's argument (the main claim first, then its details); a
+              response paragraph names who answers and what is answered. Name each speaker as given;
+              never give one speaker's line to another
+  numbers     the figures: amounts, tolls, counts, percentages, each with what it measures
+  explained   what a rule, term, post, finding or number means
+  next        what happens next: hearings, deadlines, required steps
+  related     other events the reports connect to this one, each with its own time and its own people;
+              never blended into the story's event. Do not write "separately" or "in a separate case":
+              the section's heading says it (unless a statement itself says so)
+Write only the sections that have statements (and "news"); skip the others."""
 
 FILL_PROMPT = """You are completing a news article written in sections from numbered statements. Rewrite ONLY the
 sections named below so that they carry EVERY statement listed for them (each where it belongs; a new
@@ -280,10 +281,24 @@ def assign_sections(items: list[dict], background: list[dict] | None = None) -> 
     return out
 
 
+def _keys() -> list[str]:
+    """The section keys of the article being written, in page order: narrative.SECTIONS, or an express layout
+    (expressdesk.LAYOUTS) set for this thread by write_narrative."""
+    return getattr(_TL, "keys", None) or SECTION_KEYS
+
+
+def _fill_groups() -> list[tuple]:
+    keys = _keys()
+    if keys == SECTION_KEYS:
+        return FILL_GROUPS
+    rest = [k for k in keys if k != "news"]
+    return [tuple(["news"] + rest[:2])] + [tuple(rest[n:n + 3]) for n in range(2, len(rest), 3)]
+
+
 def _section_block(items: list[dict], sec: dict[int, str]) -> str:
     """The statements, grouped by section, for the writer."""
     lines = []
-    for key in SECTION_KEYS:
+    for key in _keys():
         mine = [i for i in items if sec.get(i["id"]) == key]
         if not mine:
             continue
@@ -1304,9 +1319,10 @@ def essay_shortfall(nar: dict, payload: dict) -> dict:
     return out
 
 
-def _target_length(items: list[dict]) -> str:
-    """Roughly how long the article should be: it follows the material, never padded."""
-    lo = max(5, min(50, int(0.8 * len(items))))       # every statement is written: about one sentence each
+def _target_length(items: list[dict], express: bool = False) -> str:
+    """Roughly how long the article should be: it follows the material, never padded. An express story (one
+    report, read for coverage) writes every statement fully: one sentence each at least."""
+    lo = max(5, min(60, len(items))) if express else max(5, min(50, int(0.8 * len(items))))
     return f"{lo}-{lo + max(3, lo // 3)}"
 
 
@@ -1522,10 +1538,10 @@ def _sections_of(data) -> list[tuple[str, list]]:
     for sec in data.get("sections") or []:
         if not isinstance(sec, dict):
             continue
-        key = sec.get("key") if sec.get("key") in SECTION_KEYS else "happened"
+        key = sec.get("key") if sec.get("key") in _keys() else ("happened" if "happened" in _keys() else _keys()[1])
         out += [(key, p) for p in sec.get("paragraphs") or [] if isinstance(p, list)]
     if not out and isinstance(data.get("paragraphs"), list):
-        out = [("happened", p) for p in data["paragraphs"] if isinstance(p, list)]
+        out = [("happened" if "happened" in _keys() else _keys()[1], p) for p in data["paragraphs"] if isinstance(p, list)]
     return out
 
 
@@ -1580,7 +1596,7 @@ def _article_with_sections(drafted: list[tuple[str, list]]) -> str:
 def _in_order(drafted: list[tuple[str, list]]) -> list[tuple[str, list]]:
     """The sections in the page's order (SECTIONS), whatever order the model wrote them in; paragraphs
     keep their order within a section."""
-    order = {k: n for n, k in enumerate(SECTION_KEYS)}
+    order = {k: n for n, k in enumerate(_keys())}
     return sorted(drafted, key=lambda kp: order.get(kp[0], 99))
 
 
@@ -1599,7 +1615,64 @@ PUBLISH_MIN = 0.80  # what the final check REQUIRES (owner, Oct 12 2026): an art
                     # of the 85% aim is still published; below 80% it is kept as a draft and rewritten, as before
 
 
-def write_narrative(router: Router | None, payload: dict, banned: set[str], draft: dict | None = None) -> dict:
+COPY_RUN = 10           # words in a row the page may share with the one report it is written from (outside quotes)
+REPHRASE_MAX = 12       # sentences sent in the one rephrasing call
+
+REPHRASE_PROMPT = """Each numbered sentence below repeats a news report's own wording too closely. Rewrite each one in
+your own words as ONE sentence: the same facts, names, numbers, times and speaker, nothing added or left out. Keep any
+words in quotation marks exactly as they are (they are a person's own words). Plain, calm news English.
+
+{items}
+
+Reply with JSON only: {{"sentences": ["...", "..."]}} with exactly {n} entries, in the same order."""
+
+
+def _grams(text: str, n: int = COPY_RUN) -> set:
+    toks = re.findall(r"[\w']+", text.lower())
+    return {tuple(toks[k:k + n]) for k in range(len(toks) - n + 1)}
+
+
+def copied(sentence: str, report_grams: set) -> bool:
+    """Does a sentence repeat COPY_RUN words in a row of the report, outside quotation marks?"""
+    t = sentence
+    for q in _quoted_spans(sentence):
+        t = t.replace(q, " | ")
+    return bool(_grams(t) & report_grams)
+
+
+def _rephrase_copies(router, paragraphs: list, by_id: dict, banned, outlets, report_text: str) -> tuple[list, dict]:
+    """The express desk's copy check (owner, Oct 16 2026: a long page from one report must not retell the outlet's
+    article in its words): sentences that share COPY_RUN words in a row with the report outside quotation marks get
+    ONE writer call to say them in our words; a rewrite is kept only if it passes every check and no longer copies."""
+    grams = _grams(report_text or "")
+    flagged = [(p, k) for p, para in enumerate(paragraphs) for k, s_ in enumerate(para)
+               if not s_.get("parts") and copied(s_["text"], grams)]
+    stats = {"copied": len(flagged), "rephrased": 0}
+    if not flagged or router is None:
+        return paragraphs, stats
+    todo = flagged[:REPHRASE_MAX]
+    items = "\n".join(f"{n + 1}. {paragraphs[p][k]['text']}" for n, (p, k) in enumerate(todo))
+    try:
+        res = router.call("writer", REPHRASE_PROMPT.format(items=items, n=len(todo)), json_out=True,
+                          max_output_tokens=200 + 120 * len(todo), max_attempts=4)
+        got = (res.data or {}).get("sentences") if isinstance(res.data, dict) else None
+    except Exception as e:  # noqa: BLE001
+        log.info("narrative: rephrasing not done (%s)", str(e)[:120])
+        return paragraphs, stats
+    if not isinstance(got, list) or len(got) != len(todo):
+        return paragraphs, stats
+    out = [list(para) for para in paragraphs]
+    for (p, k), new in zip(todo, got):
+        new = str(new or "").strip()
+        cand = dict(out[p][k], text=new)
+        if new and not copied(new, grams) and _still_ok(cand, by_id, banned, outlets):
+            out[p][k] = cand
+            stats["rephrased"] += 1
+    return out, stats
+
+
+def write_narrative(router: Router | None, payload: dict, banned: set[str], draft: dict | None = None,
+                    report_text: str | None = None) -> dict:
     """The article, in sections (owner, Oct 7 2026): one sectioned draft, then a fill pass for each
     group of sections that left statements out or has failed sentences, a few sections per call, so even
     Flash-Lite carries everything. Each sentence is checked; a section rewrite is kept only if the
@@ -1607,6 +1680,14 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
     items, background, by_id, outlets, banned = _context(payload, banned)
     _TL.pronouns = voice.pronouns(items + background)
     sec = assign_sections(items, background)
+    # the express desk (expressdesk.py, owner Oct 16 2026): a story from ONE report is laid out by its kind
+    layout = None
+    _TL.keys = SECTION_KEYS
+    if payload.get("qualified_by") == "express":
+        from . import expressdesk
+        layout = expressdesk.kind_of(payload.get("express_lane"), items)
+        sec = expressdesk.sections(layout, items + background, sec)
+        _TL.keys = expressdesk.LAYOUTS[layout]
     # the news is chosen by code (news.pick_news): the lead is written from it and must cite it
     news_id = next((x for x in payload.get("news") or [] if x in sec), None)
     if news_id is not None:
@@ -1639,7 +1720,8 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
     if resumed:
         # an earlier try that fell short is finished, not thrown away (owner, Oct 7 2026): its sections
         # are kept and only what is still missing is written; new statements simply count as missing
-        drafted = [(k if k in SECTION_KEYS else "happened", p) for k, p in draft["sections"] if isinstance(p, list)]
+        drafted = [(k if k in _keys() else ("happened" if "happened" in _keys() else _keys()[1]), p)
+                   for k, p in draft["sections"] if isinstance(p, list)]
         model = draft["model"]
     elif router is not None and items:
         bg = ""
@@ -1648,9 +1730,12 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
                   "\"background\" holds facts from the earlier story: give at most TWO sentences of them.\n\n")
         from . import express as _express
         bg += _express.writer_note(payload)     # a company's own claim is its claim, not a fact (express lane)
+        from . import expressdesk as _desk
         prompt = WRITER_PROMPT.format(banned=", ".join(sorted(banned)) or "(none)", background=bg, now=clock.now_line(),
+                                      structure=_desk.structure(layout) if layout else NORMAL_STRUCTURE,
+                                      order=", ".join(_keys()),
                                       statements=planning.block(pl, by_id, _statement_line, sentences.link_line),
-                                      length=_target_length(items), people=_people(items))
+                                      length=_target_length(items, express=bool(layout)), people=_people(items))
         drafted, model, failure = _call_writer(router, prompt)
 
     drafted = _in_order(drafted)
@@ -1659,11 +1744,11 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
     filled = []
     # up to two rounds over the section groups: a group still short after its first fill gets one more
     # (three for a resumed draft: statements may have joined the story since it was written)
-    rounds = [g for _ in range(3 if resumed else 2) for g in FILL_GROUPS]
+    rounds = [g for _ in range(3 if resumed else 2) for g in _fill_groups()]
     for n_call, group in enumerate(rounds):
         if not model or router is None:
             break
-        if n_call >= len(FILL_GROUPS):
+        if n_call >= len(_fill_groups()):
             cov_now = {x for para in paragraphs for s_ in para for x in s_["ids"]}
             if len({i["id"] for i in items} & cov_now) >= COMPLETE * len(items) and not failed:
                 break                                  # complete enough: no second round
@@ -1702,7 +1787,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
                 continue
             trial.append((k, p))
         if not placed:
-            order = {k: n for n, k in enumerate(SECTION_KEYS)}
+            order = {k: n for n, k in enumerate(_keys())}
             trial = sorted(trial + new, key=lambda kp: order.get(kp[0], 99))
         saved = dict(_reasons())
         _reasons().clear()
@@ -1744,6 +1829,10 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
     if paragraphs:
         paragraphs, flow = sentences.polish(paragraphs, by_id, lambda s_: _still_ok(s_, by_id, banned, outlets))
         flow.update(sentences.stats(paragraphs, by_id))
+        if layout and report_text:                    # the express desk: our words, not the outlet's
+            paragraphs, copy_stats = _rephrase_copies(router if model else None, paragraphs, by_id, banned, outlets,
+                                                      report_text)
+            flow.update(copy_stats)
     covered = {x for para in paragraphs for s in para for x in s["ids"]}
     also = _also(items, covered, by_id, [x["text"] for para in paragraphs for x in para])
     if rejected:
@@ -1751,7 +1840,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
     return _finish(payload, paragraphs, also, by_id,
                    {"model": model, "rejected": rejected, "reject_reasons": dict(_reasons()), "failure": failure,
                     "first_draft_reasons": first_reasons, "repaired": bool(filled), "filled": filled,
-                    "section_keys": keys, "resumed": resumed, "plan": plan_stats, "flow": flow,
+                    "section_keys": keys, "resumed": resumed, "plan": plan_stats, "flow": flow, "layout": layout,
                     # the sections as drafted, kept with the story if the article falls short (not published)
                     "drafted": [[k, p] for k, p in drafted]})
 

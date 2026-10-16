@@ -74,9 +74,10 @@ def page_order(paragraphs: list, keys: list | None) -> list[int]:
     for k in range(n):
         cur = (keys[k] if k < len(keys) else None) or cur
         groups.setdefault(cur, []).append(k)
+    if any(k not in SEC_ORDER for k in groups):          # an express layout: its sections in the order written
+        return [i for key in groups for i in groups[key]]
     known = [k for k in SEC_ORDER if k in groups]
-    rest = [k for k in groups if k not in SEC_ORDER]
-    return [i for key in known + rest for i in groups[key]]
+    return [i for key in known for i in groups[key]]
 
 
 def _card_text(paragraphs: list, keys: list | None = None, limit: int = CARD_SENTENCES) -> list[list[dict]]:
@@ -168,7 +169,7 @@ def _speakers(store: Store, payload: dict | None) -> list | None:
     nar = (payload or {}).get("narrative") or {}
     paras, keys = nar.get("paragraphs") or [], nar.get("section_keys") or []
     want = {k: [i for s in para for i in (s.get("ids") or [])] for k, para in enumerate(paras)
-            if k < len(keys) and keys[k] == "say"}
+            if k < len(keys) and keys[k] in ("say", "words")}
     ids = sorted({i for v in want.values() for i in v})
     if not ids:
         return None

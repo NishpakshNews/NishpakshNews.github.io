@@ -405,6 +405,29 @@ def read_report(router: Router, a: dict, names: str = "") -> tuple[dict | None, 
     return (parts[0] if len(parts) == 1 else _merge_pieces(parts)), model
 
 
+COVERAGE_STATS: dict[str, float] = {}
+
+
+def second_pass(router: Router, a: dict, ex: dict, left: list[str], names: str = "") -> dict:
+    """The express desk's second reading (coverage.py): only the report's sentences no statement came from, merged
+    into the first reading. A failed call leaves the first reading as it was."""
+    part = ("THE REST of an article already read once: below are ONLY its sentences that no item came from yet. "
+            "Record every fact and every exact quote in them (same rules; \"quote\" is the start of the sentence below "
+            "it comes from).\n")
+    prompt = EXTRACT_PROMPT.format(outlet=a["outlet"], published=_fmt_ist(a["published_at"]), title=a["title"] or "",
+                                   text="\n".join(left[:80]), names=names, part=part)
+    try:
+        res = router.call("bulk", prompt, json_out=True, max_output_tokens=6000)
+    except (QuotaExhausted, CallFailed) as e:
+        log.info("extract: second reading of article %s not done (%s)", a["id"], str(e)[:80])
+        return ex
+    more = normalize_extraction(res.data)
+    if more is None:
+        return ex
+    more["signature"] = ex["signature"]
+    return _merge_pieces([ex, more])
+
+
 def _extract_one(store: Store, router: Router, a: dict, names: str = "", registry=None) -> str:
     # names: the registry's English spellings of the names this Hindi article uses (namepair.py, Oct 16 2026)
     try:
@@ -414,6 +437,23 @@ def _extract_one(store: Store, router: Router, a: dict, names: str = "", registr
         res = type("R", (), {"model": model})()
         ground(ex, f"{a['title'] or ''} {a['text'] or ''}")
         check_words(ex, f"{a['title'] or ''}. {a['text'] or ''}", a.get("lang") or "en")
+        # the express desk (owner, Oct 16 2026): one report is all the story has, so it is read for COVERAGE: a first
+        # reading under coverage.TARGET of the report's fact sentences gets one more call on the sentences left
+        cov = None
+        if a.get("express"):
+            from . import coverage
+            lang = a.get("lang") or "en"
+            n, total, left = coverage.report(ex, a["text"] or "", lang, registry)
+            first = round(n / total, 2) if total else None
+            if total and n / total < coverage.TARGET and left:
+                ex = second_pass(router, a, ex, left, names)
+                ground(ex, f"{a['title'] or ''} {a['text'] or ''}")
+                check_words(ex, f"{a['title'] or ''}. {a['text'] or ''}", lang)
+                n, total, left = coverage.report(ex, a["text"] or "", lang, registry)
+            cov = {"first": first, "final": round(n / total, 2) if total else None, "sentences": total,
+                   "passed": (n / total >= coverage.MINIMUM) if total else None}
+            COVERAGE_STATS["express_read"] = COVERAGE_STATS.get("express_read", 0) + 1
+            COVERAGE_STATS["under_minimum"] = COVERAGE_STATS.get("under_minimum", 0) + (cov["passed"] is False)
         # the dates are code's (when.py, Oct 16 2026): the model copies the time words, code places them
         from . import when as _when
         for kind in ("events", "context"):
@@ -448,6 +488,8 @@ def _extract_one(store: Store, router: Router, a: dict, names: str = "", registr
         return "failed"
     store_extraction(store, a["id"], a.get("story_id"), ex)
     meta = {"model": res.model}
+    if cov:
+        meta["coverage"] = cov
     prev = store.one(select(articles.c.extraction).where(articles.c.id == a["id"]))
     if isinstance((prev or {}).get("extraction"), dict) and prev["extraction"].get("express"):
         meta["express"] = prev["extraction"]["express"]       # the express verdict (express.py) stays with the article
@@ -640,6 +682,8 @@ def extract_pending(store: Store, router: Router, deadline: float, workers: int 
                 a = next(queue, None)
             if a is None:
                 return
+            if express and a.get("story_id") in express:
+                a = dict(a, express=True)              # read for coverage (coverage.py)
             outcome = _extract_one(store, router, a, name_hints.get(a["id"], ""), registry)
             with lock:
                 counts[outcome] += 1
@@ -653,6 +697,8 @@ def extract_pending(store: Store, router: Router, deadline: float, workers: int 
         t.join()
     if readcheck.STATS:
         log.info("readcheck: %s", dict(readcheck.STATS))
+    if COVERAGE_STATS:
+        log.info("express coverage: %s", dict(COVERAGE_STATS))
     left = len(pending) - counts["done"] - counts["failed"]
     log.info("extract: %d done, %d failed, %d left for next run%s", counts["done"], counts["failed"], left,
              " (quota exhausted)" if counts["quota"] else "")

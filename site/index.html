@@ -1330,7 +1330,9 @@ const T = {
     error: "Stories could not be loaded. Check your connection and try again.", retry: "Try again",
     missing: "This story is no longer available.", loading: "Loading…",
     sections: {happened: "What happened", numbers: "By the numbers", say: "What they say", background: "Background",
-               related: "Related events", explained: "Explained", next: "What next"},
+               related: "Related events", explained: "Explained", next: "What next",
+               performers: "Top performers", who: "Who they are", journey: "The journey so far",
+               words: "In their own words", drivers: "What drove the numbers", market: "Market reaction"},
     bar: (c) => `${c.e} established, ${c.v || 0} developing, ${c.p || 0} partly backed by others, ${c.o} one outlet only, ${c.d} disputed, ${c.r} shown false, ${c.u} not yet cross-checked`,
     all: "All", nav: "Sections", secBack: (l) => `Back from ${l} to all sections`, secUp: (l, p) => `Back from ${l} to ${p}`,
     secEmpty: (l) => `Nothing in ${l} yet.`, secBody: "Articles get their sections when they are published, so this one will fill up as new stories come in.",
@@ -1351,7 +1353,9 @@ const T = {
     error: "ख़बरें लोड नहीं हो सकीं। इंटरनेट जाँचें और दोबारा कोशिश करें।", retry: "दोबारा कोशिश करें",
     missing: "यह ख़बर अब उपलब्ध नहीं है।", loading: "लोड हो रहा है…",
     sections: {happened: "क्या हुआ", numbers: "आँकड़ों में", say: "किसने क्या कहा", background: "पृष्ठभूमि",
-               related: "जुड़ी घटनाएँ", explained: "समझिए", next: "आगे क्या"},
+               related: "जुड़ी घटनाएँ", explained: "समझिए", next: "आगे क्या",
+               performers: "शीर्ष प्रदर्शन", who: "परिचय", journey: "अब तक का सफ़र",
+               words: "उन्हीं के शब्दों में", drivers: "आँकड़ों के पीछे", market: "बाज़ार की प्रतिक्रिया"},
     bar: (c) => `${c.e} स्थापित, ${c.v || 0} विकसित हो रही, ${c.p || 0} आंशिक रूप से अन्य स्रोतों का समर्थन, ${c.o} केवल एक स्रोत, ${c.d} मतभेद, ${c.r} असत्य, ${c.u} अभी पुष्टि नहीं`,
     all: "सभी", nav: "खंड", secBack: (l) => `${l} से सभी खंडों पर लौटें`, secUp: (l, p) => `${l} से ${p} पर लौटें`,
     secEmpty: (l) => `${l} में अभी कोई ख़बर नहीं।`, secBody: "हर लेख को छपते समय उसका खंड मिलता है, इसलिए नई ख़बरों के साथ यह खंड भरता जाएगा।",
@@ -1779,8 +1783,10 @@ function sectionGroups(nar) {
     if (!byKey.has(cur)) byKey.set(cur, []);
     byKey.get(cur).push(k);
   });
-  const known = SEC_ORDER.filter(k => byKey.has(k)), rest = [...byKey.keys()].filter(k => !SEC_ORDER.includes(k));
-  return [...known, ...rest].map(key => ({key, items: byKey.get(key)}));
+  // an express layout (nishpaksh/expressdesk.py) has sections of its own: shown in the order they were written
+  if ([...byKey.keys()].some(k => !SEC_ORDER.includes(k))) return [...byKey.keys()].map(key => ({key, items: byKey.get(key)}));
+  const known = SEC_ORDER.filter(k => byKey.has(k));
+  return known.map(key => ({key, items: byKey.get(key)}));
 }
 // paragraph indices in the order the page shows them
 function pageOrder(nar) {
@@ -1856,7 +1862,7 @@ function essayBody(nar, t) {
     no += 1;
     const head = `<div class="sechead" data-sec="${esc(g.key)}"><span>${String(no).padStart(2, "0")}</span><h3>${esc(t.sections[g.key] || "")}</h3></div>`;
     if (g.key === "numbers") return head + figuresHtml(ps.flat(), sent);
-    if (g.key === "say") {
+    if (g.key === "say" || g.key === "words") {
       return head + g.items.map(k => {
         const label = lang === "en" && who[k] ? `<div class="who">${esc(who[k])}</div>` : "";
         return `<div class="paper quote">${label}${paras[k].map(x => `<p>${sent(x)}</p>`).join("")}</div>`;

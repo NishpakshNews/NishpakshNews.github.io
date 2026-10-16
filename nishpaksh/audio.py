@@ -64,7 +64,9 @@ def _page_order(keys: list, n: int) -> list[int]:
     for i in range(n):
         cur = keys[i] if i < len(keys) and keys[i] else cur
         owner.append(cur)
-    rank = {k: r for r, k in enumerate(SECTION_KEYS)}
+    # an express layout (expressdesk.py) has keys of its own: its sections are shown in the order written
+    rank = ({k: r for r, k in enumerate(SECTION_KEYS)} if set(owner) <= set(SECTION_KEYS)
+            else {k: r for r, k in enumerate(dict.fromkeys(owner))})
     first = {}
     for i, k in enumerate(owner):
         first.setdefault(k, i)
