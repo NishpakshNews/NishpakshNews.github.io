@@ -15,22 +15,27 @@ proposed:
   - {en: "campaign", hi: "आंदोलन", learned: "2026-10-16", stories: 6, days: 3, en_sources: 19, hi_sources: 18, why: "unstable: without its best day and best source it no longer passes"}
   - {en: "complaint", hi: "शिकायत", learned: "2026-10-16", stories: 8, days: 3, en_sources: 40, hi_sources: 17, why: "unstable: without its best day and best source it no longer passes"}
   - {en: "constituency", hi: "विधायक", learned: "2026-10-16", stories: 3, days: 3, en_sources: 17, hi_sources: 7, why: "a competing Hindi rendering: गंगा, विधानसभा"}
-  - {en: "democratic", hi: "लड़ाई", learned: "2026-10-16", stories: 5, days: 3, en_sources: 22, hi_sources: 14, why: "unstable: without its best day and best source it no longer passes"}
-  - {en: "demonstrations", hi: "ज्ञानेश", learned: "2026-10-16", stories: 11, days: 3, en_sources: 40, hi_sources: 34, why: "a competing Hindi rendering: आयुक्त, जंतर, प्रदर्शन"}
+  - {en: "democratic", hi: "लड़ाई", learned: "2026-10-16", stories: 6, days: 3, en_sources: 24, hi_sources: 17, why: "unstable: without its best day and best source it no longer passes"}
+  - {en: "demonstrations", hi: "ज्ञानेश", learned: "2026-10-16", stories: 12, days: 3, en_sources: 42, hi_sources: 37, why: "a competing Hindi rendering: आयुक्त, जंतर, प्रदर्शन"}
   - {en: "event", hi: "क्यों", learned: "2026-10-16", stories: 12, days: 3, en_sources: 40, hi_sources: 32, why: "unstable: without its best day and best source it no longer passes"}
-  - {en: "exchange", hi: "विदेश", learned: "2026-10-16", stories: 6, days: 3, en_sources: 25, hi_sources: 15, why: "unstable: without its best day and best source it no longer passes"}
+  - {en: "exchange", hi: "विदेश", learned: "2026-10-16", stories: 6, days: 3, en_sources: 25, hi_sources: 16, why: "unstable: without its best day and best source it no longer passes"}
+  - {en: "filed", hi: "अदालत", learned: "2026-10-16", stories: 15, days: 3, en_sources: 57, hi_sources: 54, why: "a competing Hindi rendering: खिलाफ, याचिका, सुनवाई"}
   - {en: "fled", hi: "गोली", learned: "2026-10-16", stories: 4, days: 3, en_sources: 10, hi_sources: 15, why: "a competing Hindi rendering: गोलीबारी, वर्षीय, वारदात"}
-  - {en: "founder", hi: "तिरंगा", learned: "2026-10-16", stories: 6, days: 3, en_sources: 42, hi_sources: 24, why: "a competing Hindi rendering: अपील, अभिजीत, आशुतोष"}
+  - {en: "founder", hi: "तिरंगा", learned: "2026-10-16", stories: 6, days: 3, en_sources: 44, hi_sources: 24, why: "a competing Hindi rendering: अपील, अभिजीत, आशुतोष"}
   - {en: "gained", hi: "देकर", learned: "2026-10-16", stories: 3, days: 3, en_sources: 7, hi_sources: 6, why: "a competing Hindi rendering: खड़ी, खड़े, तीसरा"}
   - {en: "geographical", hi: "किलोमीटर", learned: "2026-10-16", stories: 4, days: 3, en_sources: 10, hi_sources: 9, why: "unstable: without its best day and best source it no longer passes"}
   - {en: "goal", hi: "देखें", learned: "2026-10-16", stories: 3, days: 3, en_sources: 5, hi_sources: 6, why: "unstable: without its best day and best source it no longer passes"}
-  - {en: "hearing", hi: "सुनवाई", learned: "2026-10-16", stories: 12, days: 3, en_sources: 68, hi_sources: 44, why: "a competing Hindi rendering: याचिका, वकील"}
+  - {en: "hearing", hi: "सुनवाई", learned: "2026-10-16", stories: 12, days: 3, en_sources: 68, hi_sources: 45, why: "a competing Hindi rendering: याचिका, वकील"}
   - {en: "investigators", hi: "आरोपी", learned: "2026-10-16", stories: 6, days: 3, en_sources: 28, hi_sources: 24, why: "a competing Hindi rendering: उसने"}
   - {en: "lawful", hi: "याचिकाओं", learned: "2026-10-16", stories: 4, days: 3, en_sources: 7, hi_sources: 10, why: "a competing Hindi rendering: याचिकाएं"}
+  - {en: "listed", hi: "अनुरोध", learned: "2026-10-16", stories: 4, days: 3, en_sources: 11, hi_sources: 9, why: "a competing Hindi rendering: इजाजत"}
   - {en: "network", hi: "नेटवर्क", learned: "2026-10-16", stories: 5, days: 3, en_sources: 23, hi_sources: 15, why: "unstable: without its best day and best source it no longer passes"}
-  - {en: "participate", hi: "मुंबई", learned: "2026-10-16", stories: 5, days: 3, en_sources: 29, hi_sources: 19, why: "unstable: without its best day and best source it no longer passes"}
+  - {en: "participate", hi: "मुंबई", learned: "2026-10-16", stories: 5, days: 3, en_sources: 29, hi_sources: 20, why: "unstable: without its best day and best source it no longer passes"}
+  - {en: "polls", hi: "निर्वाचन", learned: "2026-10-16", stories: 5, days: 3, en_sources: 12, hi_sources: 15, why: "a competing Hindi rendering: मतदान"}
+  - {en: "register", hi: "पात्र", learned: "2026-10-16", stories: 3, days: 3, en_sources: 6, hi_sources: 6, why: "unstable: without its best day and best source it no longer passes"}
   - {en: "rural", hi: "गठन", learned: "2026-10-16", stories: 3, days: 3, en_sources: 7, hi_sources: 7, why: "a competing Hindi rendering: केंद्रों, जंगल, टास्क"}
   - {en: "scene", hi: "बनाकर", learned: "2026-10-16", stories: 3, days: 3, en_sources: 8, hi_sources: 7, why: "unstable: without its best day and best source it no longer passes"}
+  - {en: "second", hi: "हिस्सा", learned: "2026-10-16", stories: 7, days: 3, en_sources: 33, hi_sources: 16, why: "unstable: without its best day and best source it no longer passes"}
   - {en: "trains", hi: "मेट्रो", learned: "2026-10-16", stories: 3, days: 3, en_sources: 11, hi_sources: 10, why: "a competing Hindi rendering: घटाकर, ट्रेनों, पाबंदियों"}
   - {en: "violations", hi: "उचित", learned: "2026-10-16", stories: 4, days: 3, en_sources: 10, hi_sources: 12, why: "a competing Hindi rendering: उल्लंघन"}
   - {en: "writing", hi: "पात्र", learned: "2026-10-16", stories: 3, days: 3, en_sources: 6, hi_sources: 6, why: "a competing Hindi rendering: खासकर"}
