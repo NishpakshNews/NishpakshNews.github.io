@@ -1549,6 +1549,30 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   the speaker label like "say". COPY CHECK: a sentence sharing COPY_RUN (10) words in a row with the report outside
   quotation marks is sent in ONE writer call (REPHRASE_PROMPT, at most 12) to be said in our words; kept only if it
   passes every check and no longer copies (`flow.copied` / `flow.rephrased`). Tests: `tests/test_express_desk.py`.
+- **Facts shared along a thread; updates since published (Oct 16 2026, owner; step 3; `threads.save_links`,
+  `pooled_origins`, `verify.base_verdicts`, `editions.attach_updates`, site `updatesHtml`).** The follow-up check
+  (`editions._classify`) now numbers the parent's statements (E1, E2 ...) and returns, per later statement, `same_as`
+  (the earlier statement saying the same fact) and `updates` (the earlier one it replaces with newer information).
+  `threads.save_links` stores them in `canonical.rel`: `twins` both ways, `superseded_by` on the earlier, `updates` on
+  the later (re-judged: the old links of those later statements are replaced). `base_verdicts` judges the rule on a
+  statement's origins POOLED with its twins' (`pooled_origins`: origin keys as one set, outlets by `outlet_keys`, now
+  stored by origins.compute_origins as `names.source_key`s, else the largest count; a disputed/false twin makes it
+  contested); its own `canonical.origins` stays its own. So one fact has one colour on every page, and a published
+  page's line matures as later reports come in (`mature` runs base_verdicts on frozen pages every run).
+  `attach_updates` (every run, after `mature`): the page's `updates` = the later statements replacing its lines, each
+  with its own colour class, translated for the Hindi page (page tier, cached); the replaced line is `struck` (site:
+  line-through, no colour, no wash) once the later one has at least min(3, old line's) outlets; a sentence is struck
+  only when ALL its ids are (a part: its own ids). Site: "Updates since published" after the essay, a link to the
+  follow-up once it is a child of the page. THE BUG the owner saw (Punjab, 23690): `tools/story_check.py` (workflow
+  audit, tool story_check, private diagnostics) showed 42 articles but only 3 READ when it was published (the
+  "broad" settle fired on 17 outlets the moment the third was read), so every line was one outlet. Fixed by the
+  reading rule in step 4. Tests: `tests/test_threads_shared.py`.
+- **Express needs two OUTLETS (Oct 16 2026, owner: a sport story read from two outlets was far better).**
+  `express.min_outlets()` (config `min_outlets: 2`): an express candidate needs 2+ outlets with a readable page
+  (`express.outlet_key`: the outlet name; one wire copy carried by two outlets counts once; two papers of one owner
+  count as two). `select_for_extraction` reads an express story one article per OUTLET (not per owner group);
+  `assess` requires every readable outlet read ("one_outlet", "second_outlet_unread" in the funnel). Writer note and
+  layout prompt say "one or two outlets". Tests: `tests/test_express_story_db.py`.
 - **Open (Oct 16 2026):** `tests/test_express_db.py::test_nothing_is_embedded_while_the_pacing_curve_has_given_the_slice_out`
   fails at some hours of the day (failed at ~05:30 UTC with and without the session 9 changes, passed at 04:xx).
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:

@@ -119,15 +119,15 @@ def sections(kind: str, items: list[dict], sec: dict[int, str]) -> dict[int, str
 def structure(kind: str) -> str:
     """The structure paragraph of the writer's prompt for this layout."""
     lines = "\n".join(f"  {k:<11} {SAYS.get(k, '')}" for k in LAYOUTS[kind] if k != "news")
-    return (f"""Structure: this story comes from ONE report and is laid out as a {kind} story. Write EXACTLY ONE paragraph for
+    return (f"""Structure: this story comes from one or two outlets' reports and is laid out as a {kind} story. Write EXACTLY ONE paragraph for
 each PARAGRAPH below, in that order, from ONLY its statements; never move a statement to another paragraph,
 never join or split paragraphs. A PARAGRAPH says how it opens ("opens with ..."): begin it that way. Within a
 paragraph write 3-5 sentences, the main point first. The sections:
   news        1-2 sentences, the thing that makes this a story today, with who, where and when, from the statements
               in SECTION news (the first sentence tells the first of them and must cite it)
 {lines}
-Write only the sections that have statements (and "news"); skip the others. The reader gets EVERYTHING the report
-says: use every statement, and write it fully (who, what, when, the figures), not as a list.""")
+Write only the sections that have statements (and "news"); skip the others. The reader gets EVERYTHING the reports
+say: use every statement, and write it fully (who, what, when, the figures), not as a list.""")
 
 
 # headings on the page (site/index.html reads them from the payload for the keys narrative.SECTIONS lacks)

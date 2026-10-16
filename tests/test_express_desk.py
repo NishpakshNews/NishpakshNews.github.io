@@ -55,7 +55,7 @@ def test_each_layout_places_every_statement_in_its_own_sections():
     assert got == {1: "news", 2: "who", 3: "journey", 4: "words", 5: "journey"}
     assert set(got.values()) <= set(D.LAYOUTS["profile"])
     text = D.structure("profile")
-    assert "journey" in text and "In their own words" not in text and "ONE report" in text
+    assert "journey" in text and "In their own words" not in text and "one or two outlets" in text
 
 
 def test_the_copy_check_rephrases_only_what_repeats_the_report():

@@ -143,14 +143,26 @@ def base_verdicts(store: Store, story_id: int) -> int:
     name_conf |= {str(x) for x in (story["analysis"] or {}).get("doubtful_conflicts") or []}
     now = utcnow()
     changed = 0
+    # the same fact on another page of the thread (threads.py, owner Oct 16 2026): one fact, one colour
+    from .threads import pooled_origins, twin_rows
+    twins = twin_rows(store, canon)
     for cid, c in canon.items():
         s = support_summary(cid, members, agroup, gpersp)
         conflict_live = any(support_summary(o, members, agroup, gpersp)["support_groups"]
                             for o in (c["conflicts"] or []) if o in canon)
         contested = bool(s["deny_groups"] and s["support_groups"] or conflict_live)
+        mine = [twins[t] for t in ((c.get("rel") or {}).get("twins") or []) if t in twins]
+        judged_c = c                    # what the rule is judged on: with the twins' evidence (stored: its own only)
+        if mine:
+            contested = contested or any(t["verdict"] in ("disputed", "false") for t in mine)
+            pooled = pooled_origins(c.get("origins"), mine)
+            if pooled is not None:
+                judged_c = dict(c, origins=pooled,
+                                checkable=c.get("checkable") if c.get("checkable") is not None
+                                else next((t["checkable"] for t in mine if t["checkable"] is not None), None))
         # the 6-hour clock starts when the rule is first met, and restarts if it stops being met
         o = dict(c.get("origins") or {})
-        meets = (not contested and bool(s["support_groups"]) and meets_rule(c, s, mode)
+        meets = (not contested and bool(s["support_groups"]) and meets_rule(judged_c, s, mode)
                  and str(cid) not in name_conf)
         if meets and not o.get("met_at"):
             o["met_at"] = now.isoformat(timespec="minutes")
@@ -166,7 +178,8 @@ def base_verdicts(store: Store, story_id: int) -> int:
         elif str(cid) in name_conf:
             v = "unverified"  # the reports name different actors: not established, not even developing
         else:
-            v = established(c, s, mode, now) or "unverified"
+            v = established(dict(judged_c, origins=dict(judged_c.get("origins") or {}, met_at=o.get("met_at"))),
+                            s, mode, now) or "unverified"
         keep = (c["verdict"] in ("false", "confirmed")
                 and abs((c["checked_members"] or 0) - s["n_articles"]) <= 2)
         if not keep and v != c["verdict"]:

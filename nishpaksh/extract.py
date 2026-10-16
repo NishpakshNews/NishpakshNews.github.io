@@ -531,11 +531,20 @@ def select_for_extraction(store: Store, focus: set[int] | None = None, express: 
     ranked = []
     for sid, arts in by_story.items():
         groups = independence_groups(arts)
+        if sid in (express or ()):
+            # an express story is read from every OUTLET with a readable page (owner, Oct 16 2026: two outlets read
+            # gave a far better page than one), not one per owner group; a wire copy repeated by two outlets is one
+            from . import express as _x
+            groups = {a["id"]: _x.outlet_key(a) for a in arts}
         # read in depth (owner, Oct 2026): a story is read only once 3+ independent sources have a
         # readable page. Under 3 it can never be published, and omissions (the main evidence of a
         # perspective) can only be seen when several outlets' versions of one story are read.
         readable = {groups[a["id"]] for a in arts if a["text_source"] != "summary"}
-        if len(independent(readable)) < (1 if sid in (express or ()) else SETTINGS.min_sources_to_read):
+        if sid in (express or ()):
+            from . import express as _x
+            if len(readable) < _x.min_outlets():
+                continue
+        elif len(independent(readable)) < SETTINGS.min_sources_to_read:
             continue
         done = [a for a in arts if a["extracted_at"]]
         room = SETTINGS.max_extract_per_story - len(done)

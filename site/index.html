@@ -540,6 +540,10 @@
   .s.partial { --sc: var(--bar-p); --st: var(--par); }
   .s.disputed { --sc: var(--bar-d); --st: var(--dis); }
   .s.false { --sc: var(--bar-r); --st: var(--fal); }
+  .essay .s.struck, .card .text .s.struck { color: #8a8d91; background: transparent; text-decoration: line-through;
+                                            text-decoration-color: #8a8d91; }
+  .updates .uline { margin: 0 0 8px; }
+  .updates .uwas { display: block; font-size: 0.85em; color: #8a8d91; margin-top: 2px; }
   .essay .s, .card .text .s { background: color-mix(in srgb, var(--sc) var(--tint), transparent); padding: 1px 3px; border-radius: 4px;
                               -webkit-box-decoration-break: clone; box-decoration-break: clone;
                               transition: color 200ms ease, background-color 200ms ease, box-shadow 200ms ease; }
@@ -1337,6 +1341,7 @@ const T = {
     all: "All", nav: "Sections", secBack: (l) => `Back from ${l} to all sections`, secUp: (l, p) => `Back from ${l} to ${p}`,
     secEmpty: (l) => `Nothing in ${l} yet.`, secBody: "Articles get their sections when they are published, so this one will fill up as new stories come in.",
     showAll: "Show all news", photo: "Photo", share: "Share", copied: "Link copied", latest: "Go to the latest story",
+    updates: "Updates since published", latestIn: "Latest in this story",
   },
   hi: {
     wordmark: "निष्पक्ष", hello: "नमस्ते।", greet: ["सुप्रभात।", "नमस्कार।", "शुभ संध्या।"],
@@ -1360,6 +1365,7 @@ const T = {
     all: "सभी", nav: "खंड", secBack: (l) => `${l} से सभी खंडों पर लौटें`, secUp: (l, p) => `${l} से ${p} पर लौटें`,
     secEmpty: (l) => `${l} में अभी कोई ख़बर नहीं।`, secBody: "हर लेख को छपते समय उसका खंड मिलता है, इसलिए नई ख़बरों के साथ यह खंड भरता जाएगा।",
     showAll: "सारी ख़बरें देखें", photo: "फ़ोटो", share: "शेयर करें", copied: "लिंक कॉपी हो गया", latest: "सबसे ताज़ा ख़बर पर जाएँ",
+    updates: "प्रकाशन के बाद की नई जानकारी", latestIn: "इस ख़बर में सबसे ताज़ा",
   },
 };
 const KEYCOLOR = {established: "var(--est)", developing: "var(--dev)", unverified: "var(--unv)", partial: "var(--par)", single: "var(--one)", disputed: "var(--dis)", false: "var(--fal)"};
@@ -1757,6 +1763,19 @@ function ranges(nums) {
 // the first figure in a "By the numbers" sentence becomes the tile's big number (the sentence stays under it)
 const FIGURE = /(?<![\w.])(?:(?:[$₹€£]|Rs\.?\s?|INR\s?|USD\s?)\d[\d,]*(?:\.\d+)?(?:\s?(?:lakh|crore|million|billion|trillion|bn|mn|cr|लाख|करोड़))?|\d[\d,]*(?:\.\d+)?\s?(?:%|per\s?cent|percent|lakh|crore|million|billion|trillion|dollars|rupees|लाख|करोड़|प्रतिशत|फीसदी|डॉलर|रुपये|रुपए)|\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|(?!(?:19|20)\d\d\b)\d{2,}(?:\.\d+)?)(?![\w-])/i;
 function essayHtml(nar, t) { return essayBody(nar, t) + alsoHtml(nar, t); }
+// "Updates since published" (owner, Oct 16 2026): later reports that replace a line of this page, each in its own
+// colour; the line they replace is struck through above. A link goes to the follow-up once it is published.
+function updatesHtml(p, t) {
+  const ups = p.updates || [];
+  if (!ups.length) return "";
+  const kids = new Set((p.children || []).map(c => String(c.story_id)));
+  const rows = ups.map(u => {
+    const more = kids.has(String(u.story_id)) ? ` <a href="#/story/${encodeURIComponent(u.story_id)}" data-story="${esc(u.story_id)}">→</a>` : "";
+    return `<p class="uline"><span class="s ${esc(cls(u.class))}">${esc(u.text)}</span>${more}</p>`;
+  }).join("");
+  return `<div class="sechead" data-sec="updates"><span>+</span><h3>${esc(t.updates || "Updates since published")}</h3></div>` +
+         `<div class="paper essay updates">${rows}</div>`;
+}
 // "Also in these reports": lines the pages carried that are not about this story (belong.py), collapsed under the
 // article, one plain line each, never a paragraph; coloured and numbered like the rest
 function alsoHtml(nar, t) {
@@ -1844,9 +1863,11 @@ function essayBody(nar, t) {
   const body = x => {
     const tag = x.class === "false" ? `<span class="ftag">${esc(t.falseTag)}</span>` : "";
     const sp = sup(x);   // the number goes inside the last coloured span, so the wash runs under it
+    // a line later reports replaced ("Updates since published", owner Oct 16 2026): struck through, no colour
+    const c = o => o.struck || x.struck ? "struck" : cls(o.class);
     return tag + (x.parts && x.parts.length > 1
-      ? x.parts.map((p, i) => `<span class="s ${esc(cls(p.class))}">${esc(p.text)}${i === x.parts.length - 1 ? sp : ""}</span>`).join(" ")
-      : `<span class="s ${esc(cls(x.class))}">${esc(x.text)}${sp}</span>`);
+      ? x.parts.map((p, i) => `<span class="s ${esc(c(p))}">${esc(p.text)}${i === x.parts.length - 1 ? sp : ""}</span>`).join(" ")
+      : `<span class="s ${esc(c(x))}">${esc(x.text)}${sp}</span>`);
   };
   const paras = nar.paragraphs || [], keys = nar.section_keys || [], who = nar.who || [];
   // every sentence carries its place (paragraph.sentence) so audio lighting finds it whatever order the page shows it in
@@ -1953,6 +1974,7 @@ function articleHtml(row) {
   return `<div class="acts"><button type="button" data-act="audio" aria-label="${esc(t.listen)}">${ICON.audio}</button><button type="button" data-act="video" aria-label="${esc(t.videos)}">${ICON.video}</button>
       <div class="talkpeek" data-act="talk" aria-hidden="true"><div class="tpin"><span>${esc(t.talkBanner)}</span></div></div><button type="button" class="talkbtn" data-act="talk" aria-label="${esc(t.talkName)}">${ICON.talk}</button></div>
     ${essayHtml(nar, t)}
+    ${updatesHtml(p, t)}
     ${p.suicide ? `<p class="note helpline">${esc(t.helpline)}</p>` : ""}
     ${thread(t.earlier, p.parents)}${thread(t.next, p.children)}
     ${sources ? `<div class="paper dd-card"><details class="who srcs dd"><summary>${esc(t.sourcesTitle)} (${(nar.sources || []).length})</summary><div class="dd-body"><ol class="sources">${sources}</ol></div></details></div>` : ""}

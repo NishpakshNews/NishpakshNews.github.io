@@ -114,7 +114,7 @@ def _item(i: dict) -> dict:
 
 PAGE_KEYS = ("story_id", "headline", "counts", "has_established", "qualified_by", "perspective_mode",
              "perspectives", "framing", "suicide", "thread", "parents", "children", "written_at", "category",
-             "places", "people")
+             "places", "people", "updates")
 
 
 def slim_payload(p: dict | None, who: list | None = None) -> dict | None:

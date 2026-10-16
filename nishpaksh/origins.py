@@ -260,10 +260,13 @@ def compute_origins(store: Store, router: Router | None, story_id: int) -> dict[
         rs = supporters.get(cid, [])
         origins = sorted({origin_of(r) for r in rs})
         read = [r for r in rs if arts[r["article_id"]]["extracted_at"] and arts[r["article_id"]]["text_source"] != "summary"]
+        from .names import source_key
         info = {
             "origins": origins,
             "n_origins": len([o for o in origins if o != POOL]),
             "outlets": len(independent(groups[r["article_id"]] for r in read)),
+            # the same outlets by their source keys (the same on every page): counted once along a thread (threads.py)
+            "outlet_keys": sorted({k for k in (source_key(arts[r["article_id"]]) for r in read) if k}),
             "first_seen": min((arts[r["article_id"]]["published_at"] for r in rs), default=None),
         }
         if info["first_seen"] is not None:

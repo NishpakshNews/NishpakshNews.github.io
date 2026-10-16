@@ -180,11 +180,11 @@ class FakeBackend:
             return json.dumps({"paragraphs": [first, rest]}), [], 400
         if "Decide, for each LATER statement, whether the EARLIER article already says it" in prompt:
             # new = not in the earlier list word for word; bail and court steps are major
-            earlier = set(re.findall(r"^- (.*)$", prompt, re.M))
+            earlier = {t: f"E{k}" for k, t in re.findall(r"^E(\d+)\. (.*)$", prompt, re.M)}
             res = []
             for n, t in re.findall(r"^(\d+)\. (.*)$", prompt.split("LATER STATEMENTS:")[1], re.M):
                 new = t not in earlier
-                res.append({"n": int(n), "new": new,
+                res.append({"n": int(n), "new": new, "same_as": earlier.get(t, ""), "updates": "",
                             "major": "court" if new and re.search(r"(?i)bail|court", t) else "none"})
             return json.dumps({"items": res}), [], 100
         if "each shown by the headlines different outlets gave it" in prompt:

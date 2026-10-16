@@ -682,6 +682,17 @@ def _readable(a: dict) -> bool:
     return (a.get("text_source") or "full") != "summary" and a.get("has_text", True)
 
 
+def outlet_key(a: dict) -> str:
+    """One OUTLET (owner, Oct 16 2026: an express story needs two outlets it could read, independent or not); the same
+    wire copy carried by two outlets is one text, so it counts once."""
+    return f"wire:{a['wire_group']}" if a.get("wire_group") else "outlet:" + (a.get("outlet") or "").strip().lower()
+
+
+def min_outlets() -> int:
+    """Outlets with a readable page an express story needs before it is read and written (config `min_outlets`)."""
+    return int(setting("min_outlets", 2))
+
+
 def candidates(store, now: dt.datetime | None = None) -> dict[int, dict]:
     """{story id: {"lane", "groups", "read"}} for stories that are express now: unpublished, fresh, a lane, one or
     two independent readable outlets. `read` is True once an article of the story has been read."""
@@ -719,6 +730,8 @@ def candidates(store, now: dt.datetime | None = None) -> dict[int, dict]:
         n = len(independent({groups[a["id"]] for a in arts if _readable(a)}))
         if n < 1 or n >= int(setting("normal_route_outlets", 3)):
             continue
+        if len({outlet_key(a) for a in arts if _readable(a)}) < min_outlets():
+            continue                      # one outlet's page only: waits for a second (owner, Oct 16 2026)
         out[sid] = {"lane": lane, "sig": story_sig(arts), "groups": n, "read": any(a["extracted_at"] for a in arts),
                     "newest": max((a["published_at"] for a in arts if a["published_at"]), default=now)}
     return out
@@ -807,6 +820,17 @@ def assess(store, sid: int) -> bool:
         _count("story_out_lane", f"{lane}:second_outlet_unread")
         _count("story_out", "second_outlet_unread")     # its page is readable but not yet read: wait, never skip it
         return False
+    # two OUTLETS read at least, independent or not (owner, Oct 16 2026), and every readable outlet read
+    out_readable = {outlet_key(a) for a in arts if _readable(a)}
+    out_read = {outlet_key(a) for a in arts if a["extracted_at"] and _readable(a)}
+    if len(out_readable) < min_outlets():
+        _count("story_out", "one_outlet")
+        _count("story_out_lane", f"{lane}:one_outlet")
+        return False
+    if out_readable - out_read:
+        _count("story_out", "second_outlet_unread")
+        _count("story_out_lane", f"{lane}:second_outlet_unread")
+        return False
     if len(independent(read)) >= 2 and disputed(store, sid):
         _count("story_out_lane", f"{lane}:disputed")
         _count("story_out", "disputed")
@@ -854,7 +878,7 @@ def qualify(store, sid: int) -> bool:
 
 
 WRITER_NOTE = (
-    "This story comes from ONE source and is about what a company, studio or organisation says about itself. "
+    "This story comes from one or two outlets and is about what a company, studio or organisation says about itself. "
     "Write every statement that says who makes it as that party's own word, with the verb the statement uses "
     "(\"X said\", \"X announced\", \"X plans\"). Never state a party's claim, plan, forecast, price, "
     "figure or ranking as established fact, and add no praise or adjective the statements do not carry.\n\n")

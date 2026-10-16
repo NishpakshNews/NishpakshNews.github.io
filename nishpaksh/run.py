@@ -217,6 +217,12 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     settled = [sid for sid, why in reasons.items() if why]
     # published articles: only their colours mature, by code (the 6-hour clock)
     matured = sum(1 for sid in sorted(frozen) if editions.mature(store, sid))
+    # later reports that replace a published line (threads.py): "Updates since published", the old line struck
+    for sid in sorted(frozen):
+        try:
+            editions.attach_updates(store, router, sid)
+        except Exception as e:  # noqa: BLE001 - an update list never stops the run
+            log.warning("updates of story %s not attached: %s", sid, str(e)[:150])
     stats.update(stories_dirty=len(dirty), analysed=len(analysed), qualifying=len(qualifying),
                  settled=len(settled), settled_broad=sum(1 for why in reasons.values() if why == "broad"),
                  claims_checked=checked, colours_matured=matured,

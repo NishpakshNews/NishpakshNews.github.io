@@ -26,6 +26,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 from zoneinfo import ZoneInfo
 
 from .config import SETTINGS
@@ -59,11 +60,16 @@ LATER STATEMENTS:
 For each later statement:
 - "new": false if the earlier article already says the same thing, even in other words or with a small
   change in a detail; true only if it adds information the earlier article does not have.
+- "same_as": the number (E1, E2 ...) of the earlier statement that says the same fact, if one does; else "".
+- "updates": the number of an earlier statement this one REPLACES with newer information about the same thing
+  (a higher toll, an accused now arrested, a date that moved), if one; else "". Not for a statement that only
+  adds a detail.
 - "major": for a NEW statement only, the kind of development it reports, if it is one of these:
 {kinds}
   otherwise "none". A statement that only repeats, explains, reacts to or comments on the event is "none".
 
-Reply with JSON only: {{"items": [{{"n": 1, "new": true, "major": "arrest"}}, {{"n": 2, "new": false, "major": "none"}}]}}"""
+Reply with JSON only: {{"items": [{{"n": 1, "new": true, "major": "arrest", "same_as": "", "updates": "E4"}},
+  {{"n": 2, "new": false, "major": "none", "same_as": "E2", "updates": ""}}]}}"""
 
 
 def _parse(ts) -> dt.datetime | None:
@@ -230,7 +236,16 @@ def _core_major(p: dict) -> list[dict]:
 
 def _classify(router: Router, parent: dict, items: list[dict]) -> dict[int, dict] | None:
     pp = parent["payload_en"]
-    earlier = "\n".join(f"- {i['text']}" for i in _all_items(pp) if i.get("kind") != "relation")[:6000]
+    olds = [i for i in _all_items(pp) if i.get("kind") != "relation" and i.get("id") is not None]
+    olds = list({i["id"]: i for i in olds}.values())
+    earlier, size = [], 0
+    for k, i in enumerate(olds):
+        line = f"E{k + 1}. {i['text']}"
+        size += len(line)
+        if size > 6000:
+            break
+        earlier.append(line)
+    earlier = "\n".join(earlier)
     later = "\n".join(f"{n + 1}. {i['text']}" for n, i in enumerate(items))
     kinds = "\n".join(f"  {k}: {v}" for k, v in MAJOR_KINDS.items())
     written = _parse(parent.get("written_at"))
@@ -256,7 +271,13 @@ def _classify(router: Router, parent: dict, items: list[dict]) -> dict[int, dict
         if 0 <= n < len(items):
             new = r.get("new") is True
             major = r.get("major") if new and r.get("major") in MAJOR_KINDS else None
-            out[items[n]["id"]] = {"new": new, "major": major}
+
+            def earlier_id(v):
+                m = re.fullmatch(r"\s*E?(\d+)\s*", str(v or ""))
+                k = int(m.group(1)) - 1 if m else -1
+                return olds[k]["id"] if 0 <= k < len(olds) else None
+            out[items[n]["id"]] = {"new": new, "major": major, "same_as": earlier_id(r.get("same_as")),
+                                   "updates": earlier_id(r.get("updates"))}
     # an unanswered statement counts as not new: when unsure, no follow-up
     return {i["id"]: out.get(i["id"], {"new": False, "major": None}) for i in items}
 
@@ -301,12 +322,93 @@ def follow_up_ok(store: Store, router: Router | None, sid: int, payload: dict, p
     rec.update(new=len(new), need_new=need_new, outlets=len(carried), major_outlets=major_reach,
                same_day=same_day, ok=ok, at=now.isoformat(timespec="minutes"))
     _save(store, sid, an, dict(ed, followup=rec))
+    try:
+        from . import threads
+        threads.save_links(store, pid, judged)        # the same facts share their evidence; updates mark the old line
+    except Exception as e:  # noqa: BLE001 - links improve colours, never block a follow-up
+        log.warning("thread links of story %s not saved: %s", sid, str(e)[:150])
     log.info("story %s as a follow-up of %s: %s (%d new of %d needed, %d outlets, major in %d, same day %s)",
              sid, pid, "yes" if ok else "not yet", len(new), need_new, len(carried), major_reach, same_day)
     return ok
 
 
 # ---------------------------------------------------------------------------- published pages
+
+def _outlets(origins: dict | None) -> int:
+    return int((origins or {}).get("outlets") or 0)
+
+
+def attach_updates(store: Store, router: Router | None, sid: int) -> bool:
+    """"Updates since published" on a published page (owner, Oct 16 2026): a later statement that REPLACES one of the
+    page's (threads.py `superseded_by`: a higher toll, an accused now arrested) is listed at the bottom of the page
+    with its own colour; the page's line it replaces is struck through and loses its colour once the later one is at
+    least as well reported (as many independent outlets as the old line had, three at most). A sentence is struck
+    only when every statement it rests on is struck (a coloured part: when its own are). The page's words never
+    change. Returns True if the page changed."""
+    from . import compose
+    from .db import canonical
+    own = store.rows(select(canonical.c.id, canonical.c.rel, canonical.c.origins).where(canonical.c.story_id == sid))
+    later_of = {c["id"]: list((c["rel"] or {}).get("superseded_by") or []) for c in own
+                if (c["rel"] or {}).get("superseded_by")}
+    row = store.one(select(published.c.payload_en, published.c.payload_hi).where(published.c.story_id == sid))
+    if not row:
+        return False
+    if not later_of and not (row["payload_en"] or {}).get("updates"):
+        return False
+    ids = sorted({x for v in later_of.values() for x in v})
+    later = {r["id"]: r for r in store.rows(select(canonical.c.id, canonical.c.story_id, canonical.c.text,
+                                                   canonical.c.verdict, canonical.c.origins)
+                                            .where(canonical.c.id.in_(ids or [-1])))}
+    origins = {c["id"]: c["origins"] for c in own}
+    updates, struck = [], set()
+    for old, news in sorted(later_of.items()):
+        for n in news:
+            r = later.get(n)
+            if not r or not r["text"]:
+                continue
+            hit = _outlets(r["origins"]) >= max(1, min(3, _outlets(origins.get(old))))
+            if hit:
+                struck.add(old)
+            v = r["verdict"]
+            cls = ("established" if v in ("corroborated", "confirmed") else v if v in ("developing", "disputed", "false")
+                   else "single" if _outlets(r["origins"]) <= 1 else "unverified")
+            updates.append({"id": r["id"], "text": r["text"], "verdict": v, "class": cls, "story_id": r["story_id"],
+                            "replaces": old, "struck": hit})
+    hi_of: dict[str, str] = {}
+    texts = [u["text"] for u in updates]
+    if texts:
+        try:
+            cache = compose._translate(store, router, texts)
+            hi_of = {t: cache.get(compose._key(t)) or "" for t in texts}
+        except Exception as e:  # noqa: BLE001 - the English page gets its updates either way
+            log.info("updates of story %s not translated (%s)", sid, str(e)[:100])
+    changed = False
+    out = {}
+    for col in ("payload_en", "payload_hi"):
+        p = json.loads(json.dumps(row[col])) if row[col] else None
+        if not p:
+            continue
+        ups = [dict(u, text=(hi_of.get(u["text"]) or "") if col == "payload_hi" else u["text"]) for u in updates]
+        ups = [u for u in ups if u["text"]]
+        if ups != (p.get("updates") or []):
+            p["updates"] = ups
+            changed = True
+        for para in (p.get("narrative") or {}).get("paragraphs") or []:
+            for s in para:
+                for piece in [s] + list(s.get("parts") or []):
+                    ids_ = list(piece.get("ids") or [])
+                    hit = bool(ids_) and all(x in struck for x in ids_)
+                    if bool(piece.get("struck")) != hit:
+                        if hit:
+                            piece["struck"] = True
+                        else:
+                            piece.pop("struck", None)
+                        changed = True
+        out[col] = p
+    if changed:
+        store.exec(update(published).where(published.c.story_id == sid).values(**out))
+    return changed
+
 
 def mature(store: Store, sid: int) -> bool:
     """Colours of a published article catch up with the clock, by code: verdicts are recomputed from

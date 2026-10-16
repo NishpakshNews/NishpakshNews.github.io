@@ -182,3 +182,89 @@ def root_of(store: Store, story_id: int, depth: int = 20) -> int:
 
 def drop_links_of(store: Store, story_id: int) -> None:
     store.exec(delete(story_links).where((story_links.c.parent_id == story_id) | (story_links.c.child_id == story_id)))
+
+
+# ---------------------------------------------------------------------------- facts shared along a thread
+# (owner, Oct 16 2026: a fact green on the earlier page was purple on its follow-up, and the earlier page never saw
+# the reports that came later.) The follow-up check (editions._classify) says, for each statement of a candidate
+# follow-up, which earlier statement says the SAME fact and which one it UPDATES with newer information. Saved here
+# in `canonical.rel` both ways:
+#   twins          the same fact on another page of the thread: verify.base_verdicts counts the twins' origins
+#                  and outlets with its own, so the fact has ONE colour on every page and an earlier page's line
+#                  matures as later reports come in
+#   superseded_by  (on the earlier statement) the later statements that replace it: the earlier page strikes the
+#                  line and lists the newer one under "Updates since published" (editions.attach_updates)
+#   updates        (on the later statement) the earlier one it replaces
+
+def save_links(store: Store, parent_id: int, judged: dict) -> int:
+    """Save the twins and updates the follow-up check found between a candidate's statements and its parent's.
+    `judged`: {later canonical id: {"same_as": earlier id | None, "updates": earlier id | None, ...}}."""
+    from .db import canonical
+    later = {int(k): v for k, v in judged.items()}
+    earlier_ids = {v.get(x) for v in later.values() for x in ("same_as", "updates")} - {None}
+    rows = {r["id"]: r for r in store.rows(select(canonical.c.id, canonical.c.story_id, canonical.c.rel)
+                                           .where(canonical.c.id.in_(sorted(set(later) | earlier_ids) or [-1])))}
+    changed: dict[int, dict] = {}
+
+    def rel(cid):
+        if cid not in changed:
+            changed[cid] = dict((rows.get(cid) or {}).get("rel") or {})
+        return changed[cid]
+    # the parent's statements: what this candidate said before is replaced by what it says now
+    for r in store.rows(select(canonical.c.id, canonical.c.rel).where(canonical.c.story_id == parent_id)):
+        rows.setdefault(r["id"], dict(r, story_id=parent_id))
+        old = r["rel"] or {}
+        if set(old.get("twins") or []) & set(later) or set(old.get("superseded_by") or []) & set(later):
+            x = rel(r["id"])
+            x["twins"] = [t for t in x.get("twins") or [] if t not in later]
+            x["superseded_by"] = [t for t in x.get("superseded_by") or [] if t not in later]
+    n = 0
+    for cid, v in later.items():
+        if cid not in rows:
+            continue
+        x = rel(cid)
+        x.pop("twins", None)
+        x.pop("updates", None)
+        same, upd = v.get("same_as"), v.get("updates")
+        if same in rows and rows[same]["story_id"] != rows[cid]["story_id"]:
+            x["twins"] = [same]
+            y = rel(same)
+            y["twins"] = sorted(set(y.get("twins") or []) | {cid})
+            n += 1
+        if upd in rows and upd != same and rows[upd]["story_id"] != rows[cid]["story_id"]:
+            x["updates"] = upd
+            y = rel(upd)
+            y["superseded_by"] = sorted(set(y.get("superseded_by") or []) | {cid})
+            n += 1
+    for cid, x in changed.items():
+        x = {k: v for k, v in x.items() if v not in ([], None)}
+        store.exec(update(canonical).where(canonical.c.id == cid).values(rel=x or None))
+    return n
+
+
+def twin_rows(store: Store, canon: dict[int, dict]) -> dict[int, dict]:
+    """{canonical id: row} of the twins (on other pages of the thread) of these statements."""
+    from .db import canonical
+    ids = sorted({t for c in canon.values() for t in ((c.get("rel") or {}).get("twins") or []) if t not in canon})
+    if not ids:
+        return {}
+    return {r["id"]: r for r in store.rows(select(canonical.c.id, canonical.c.story_id, canonical.c.verdict,
+                                                  canonical.c.origins, canonical.c.checkable)
+                                           .where(canonical.c.id.in_(ids)))}
+
+
+def pooled_origins(own: dict | None, twins: list[dict]) -> dict | None:
+    """A statement's origins counted with its twins': origins and outlets as one set (origins.py keys are the same
+    on every page; outlets by their source keys where known, else the largest count)."""
+    if not twins:
+        return own
+    from .origins import POOL
+    infos = [own or {}] + [t.get("origins") or {} for t in twins]
+    origins = sorted(set().union(*[set(i.get("origins") or []) for i in infos]))
+    if all(i.get("outlet_keys") is not None for i in infos):
+        outlets = len(set().union(*[set(i.get("outlet_keys") or []) for i in infos]))
+    else:
+        outlets = max(int(i.get("outlets") or 0) for i in infos)
+    out = dict(own or {})
+    out.update(origins=origins, n_origins=len([o for o in origins if o != POOL]), outlets=outlets)
+    return out

@@ -27,14 +27,20 @@ def _feed(store):
 
 
 def _story(store, feed, title="Tata Motors opens plant in Sanand", verdict="yes", read=False, minutes_ago=60,
-           outlet="Hindustan Times"):
+           outlet="Hindustan Times", second="Mint"):
+    """An express story; with `second`, a second OUTLET of the same owner (Mint is HT Media: one independent source,
+    two outlets, Oct 16 2026: an express story needs two outlets it could read)."""
     sid = store.insert_returning_id(stories, dict(signature=title, dirty=True, qualifies=False, analysis={}))
     ex = {"express": {"v": 1, "verdict": verdict, "lane": "companies", "sig": "india", "at": "x"}} if verdict else None
-    aid = store.insert_returning_id(articles, dict(
-        url=f"https://x/{sid}", feed_id=feed, outlet=outlet, lang="en", role="news", title=title, story_id=sid,
-        published_at=NOW - dt.timedelta(minutes=minutes_ago), fetched_at=NOW, text=(title + ". More of the report. ") * 20,
-        text_source="full", minhash=[1], extract_failures=0, extraction=ex,
-        extracted_at=NOW if read else None))
+    aid = None
+    for k, o in enumerate([outlet] + ([second] if second else [])):
+        x = store.insert_returning_id(articles, dict(
+            url=f"https://x/{sid}/{k}", feed_id=feed, outlet=o, lang="en", role="news", title=title, story_id=sid,
+            published_at=NOW - dt.timedelta(minutes=minutes_ago + k), fetched_at=NOW,
+            text=(title + f". More of the report from {o}. ") * 20,
+            text_source="full", minhash=[1], extract_failures=0, extraction=ex,
+            extracted_at=NOW if read else None))
+        aid = aid or x
     return sid, aid
 
 
@@ -72,7 +78,15 @@ def test_one_independent_source_is_enough_to_read_an_express_story_only(store):
     sid, aid = _story(store, f)
     assert select_for_extraction(store, {sid}) == []                       # the strict rule: 3 sources
     picked = select_for_extraction(store, {sid}, express={sid})
-    assert [p["id"] for p in picked] == [aid]
+    assert len(picked) == 2 and aid in [p["id"] for p in picked]              # both outlets, one owner
+
+
+def test_one_outlet_alone_is_not_enough_for_an_express_story(store):
+    from nishpaksh.extract import select_for_extraction
+    f = _feed(store)
+    sid, _ = _story(store, f, second=None)
+    assert sid not in express.candidates(store, NOW)
+    assert select_for_extraction(store, {sid}, express={sid}) == []
 
 
 def test_a_named_origin_qualifies_and_an_unnamed_one_does_not(store):

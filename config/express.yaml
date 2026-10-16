@@ -13,6 +13,11 @@
 
 enabled: true
 
+# Outlets with a readable page a story needs before it is read and written (owner, Oct 16 2026: a sport story read
+# from two outlets was far better than the one-outlet ones). Outlets, not independent sources: two papers of one owner
+# count as two; one wire copy carried by two outlets counts once. Every readable outlet is read before writing.
+min_outlets: 2
+
 # Round one. Left out on purpose: economy and markets (government figures, interference), health and general life
 # (one wrong medical claim does real harm). Add a lane here only after reading the first batch it produced.
 lanes:
