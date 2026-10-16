@@ -51,3 +51,22 @@ def test_language_mix_and_summary_by_mix():
     out = audit.summarise([s])
     assert out["by_mix"]["mixed"]["hindi"]["with_latin"] == 1 and out["by_mix"]["mixed"]["openings"]["alike"] == 1
     assert ("Amrit", 1) in out["latin_top_words"]
+
+
+def test_when_report_reads_stored_time_words(tmp_path):
+    import datetime as dt
+    from sqlalchemy import insert
+    from nishpaksh.db import Store, articles, claims
+    from nishpaksh.tools.audit import when_report
+    s = Store(f"sqlite:///{tmp_path}/n.db")
+    s.init()
+    with s.engine.begin() as c:
+        c.execute(insert(articles), [dict(id=1, url="u", lang="en", published_at=dt.datetime(2026, 10, 15, 4, 0))])
+        c.execute(insert(claims), [
+            dict(story_id=1, article_id=1, local_id="e1", kind="event", text="Police arrested two men",
+                 time={"when_text": "Tuesday night", "start": "2026-10-14T18:00", "precision": "part_of_day"}),
+            dict(story_id=1, article_id=1, local_id="e2", kind="event", text="Lamps were lit",
+                 time={"when_text": "", "start": None})])
+    rep = when_report(s)
+    assert rep["statements"] == 2 and rep["with_words"] == 1 and rep["counts"] == {"code_differs": 1}
+    assert rep["examples_differ"][0]["code"] == "2026-10-13T18:00"

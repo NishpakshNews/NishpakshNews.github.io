@@ -1225,6 +1225,25 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   raises QuotaExhausted (nothing else falls back to it). Usage keys carry the secret's suffix (`@k4`), never the position,
   so quota counts stay right whichever keys are set (`config.gemini_key_name`). Nothing calls `quality` yet: it is for the
   translation and fidelity work of the next sessions. Tests: `tests/test_key_reservation.py`.
+- **Dates and times read by code (Oct 16 2026, session 2 of the translation/learning plan; `when.py`, no model).** The
+  reading model used to turn time words into dates itself ("Tuesday night" + the publish time -> start/end): the model
+  typing a value. Now it only copies the words (`when_text`) and `when.read_time` places them, counted from the report's
+  publish time (IST): dates in any form and both languages ("October 15", "Oct. 15, 2026", "15th of October", "15/10/2026"
+  day first, "15 अक्टूबर", Devanagari digits), ranges ("17-22 October", "from October 17 to 22", "17 से 22 अक्टूबर"),
+  weekdays (the last one on or before the report, the next one for a statement in the future tense), relative days and
+  weeks / months / years ("yesterday", "last week", "आज", "परसों"), clock times (IST only: "local time" or another zone
+  keeps the day and drops the hour) and parts of the day. A date with no year takes the nearest year the tense allows.
+  NEVER GUESSED: "कल" without a tense, a weekday that contradicts its date, a clock time with no day, a festival name
+  -> None. Code's reading replaces the model's (`time.by = "code"`); the model's date is kept only when code cannot read
+  the words (`by = "model"`), and refused when it puts a past event more than an hour after publication. Counted in
+  `runs.stats.when` (code_agrees, code_differs, model_only, model_refused, none). New precision "year". One date reader:
+  `frames.date_of` (so relate, disputes) is `when.date_of`; `compose.drop_past_schedules` reads dates through it (nearest
+  year, never the tense's: the line itself says "will"); `narrative.english_when` turns Hindi time words into English.
+  **House date form "15 October" (day first) in what WE write** (`when.house_dates` in `style.polish`, every sentence and
+  part, and the headline; never inside a quotation): the audit found both forms in 57% of mixed-language articles.
+  Outlets' statements are compared by value and stay as written (the figures rule). `when.date_values` gives the dates a
+  translation must keep (for the fidelity work). The audit (`tools/audit.when_report`) compares code's reading with the
+  model's on the newest 20,000 stored statements. Tests: `tests/test_when.py`.
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:
   missed merges (statement pairs with 60%+ shared root words left apart, by the language mix of the story's sources:
   en / hi / mixed, and what code and the twice-asked question said of them), English left in Hindi pages (by field, top

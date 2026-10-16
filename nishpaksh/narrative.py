@@ -485,8 +485,9 @@ def _statement_line(i: dict) -> str:
 def english_when(t: dict) -> str:
     """The time words for an English page. Older readings copied Hindi time words ("26 सितंबर"),
     which then appeared in English text: those are replaced by the date itself, or dropped."""
-    w = (t.get("when_text") or "").strip()
-    if w and not re.search(r"[\u0900-\u097f]", w):
+    from .when import english
+    w = english(t.get("when_text"))
+    if w:
         return w
     start = t.get("start")
     try:

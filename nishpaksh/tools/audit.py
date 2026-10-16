@@ -14,7 +14,7 @@ from sqlalchemy import text as sql
 
 from .. import audit
 from ..config import database_url
-from ..db import Store, articles, canonical, published, select, stories
+from ..db import Store, articles, canonical, claims, published, select, stories
 
 log = logging.getLogger("audit")
 
@@ -50,6 +50,36 @@ def collect(store: Store) -> list[dict]:
     return out
 
 
+def when_report(store: Store, limit: int = 20000) -> dict:
+    """Code's reading of the stored time words (when.py) against the date the reading model typed, over the newest
+    statements with a time: how often code reads them, agrees, differs (with examples), and refuses the model."""
+    from .. import when
+    rows = store.rows(select(claims.c.text, claims.c.time, articles.c.published_at, articles.c.lang)
+                      .select_from(claims.join(articles, claims.c.article_id == articles.c.id))
+                      .where(claims.c.time.is_not(None)).order_by(claims.c.id.desc()).limit(limit))
+    when.STATS.clear()
+    out = {"statements": 0, "with_words": 0, "examples_differ": [], "examples_model_only": [], "forms": {}}
+    for r in rows:
+        t = r["time"] or {}
+        if not isinstance(t, dict):
+            continue
+        out["statements"] += 1
+        if not (t.get("when_text") or "").strip():
+            continue
+        out["with_words"] += 1
+        before = dict(when.STATS)
+        new = when.read_time(dict(t), r["text"], r["published_at"])
+        changed = {k for k in when.STATS if when.STATS[k] != before.get(k, 0)}
+        ex = {"words": t["when_text"], "model": t.get("start"), "code": new.get("start"),
+              "published": str(r["published_at"])[:16], "lang": r["lang"]}
+        if "code_differs" in changed and len(out["examples_differ"]) < 25:
+            out["examples_differ"].append(ex)
+        if "model_only" in changed and len(out["examples_model_only"]) < 25:
+            out["examples_model_only"].append(ex)
+    out["counts"] = dict(when.STATS)
+    return out
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     store = Store(database_url())
@@ -59,6 +89,7 @@ def main() -> None:
                             "statements": s["merge"]["statements"],
                             "latin": (s["hindi"] or {}).get("with_latin"), "alike": s["openings"]["alike"]}
                            for s in rows]
+    report["when"] = when_report(store)
     print(json.dumps({k: v for k, v in report.items() if k != "per_story"}, ensure_ascii=False, indent=1))
     with store.readers.engine.begin() as c:      # diagnostics live in Supabase (db.READER_TABLES), not the newsroom copy
         c.execute(sql("insert into diagnostics (kind, report) values ('audit', :r)"),

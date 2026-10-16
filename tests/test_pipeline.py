@@ -2633,7 +2633,7 @@ def test_who_speaks_is_code_s_job_story_13107():
     assert t[1].startswith("While Kabir had")               # "While" is not part of a name
     assert t[2] == "Kabir said that sixty-four people have been detained over the past two months."
     assert t[3] == "Police are interfering with the voting process in several booths, he said."
-    assert t[4] == "The April 23 assembly election was peaceful, the MLA said."
+    assert t[4] == "The 23 April assembly election was peaceful, the MLA said."     # house date form (when.py)
     # without the outlets' evidence there is no "he": the surname instead
     P2 = [[{"text": "MLA Humayun Kabir said police were present."}, {"text": "He said the vote was fair, he added."},
            {"text": "Humayun Kabir also stated that the count is on Friday."}]]

@@ -28,7 +28,7 @@ ROUNDUP = re.compile(r"(?i)\blive\b.*\bupdates?\b|\blive\s*(blog|updates?|news)\
                      r"|लाइव|ताजा खबर|बड़ी खबरें|टॉप न्यूज|न्यूज़ अपडेट")
 EVIDENCE = {"fir", "court_record", "official_data", "video", "official_statement",
             "named_witness", "unnamed_source", "none"}
-PRECISION = {"exact", "hour", "part_of_day", "day", "week", "month", "unknown"}
+PRECISION = {"exact", "hour", "part_of_day", "day", "week", "month", "year", "unknown"}
 REL_TYPES = {"before", "caused"}
 CONTEXT_TYPES = {"background", "related", "explanation", "reaction", "next"}
 
@@ -284,6 +284,12 @@ def _extract_one(store: Store, router: Router, a: dict) -> str:
         if ex is None:
             raise ValueError("empty extraction")
         ground(ex, f"{a['title'] or ''} {a['text'] or ''}")
+        # the dates are code's (when.py, Oct 16 2026): the model copies the time words, code places them
+        from . import when as _when
+        for kind in ("events", "context"):
+            for it in ex[kind]:
+                if it.get("time"):
+                    it["time"] = _when.read_time(it["time"], it.get("text"), a["published_at"])
         # what "It" and "the new scheme" point to, from the article itself (refs.py, Oct 15 2026)
         try:
             from . import refs as _refs

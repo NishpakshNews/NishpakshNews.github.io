@@ -355,3 +355,16 @@ def polish(payload: dict) -> None:
     from .refs import gloss_article
     refs_of = lambda sent: [r for i in sent.get("ids") or [] for r in (by_id.get(i) or {}).get("refs") or []]   # noqa: E731
     nar["refs"] = gloss_article(paras, payload.get("headline") or "", refs_of)
+    # one date form in what we write, "15 October" (when.py, Oct 16 2026: the audit found both forms in 57% of
+    # mixed-language articles); outlets' statements are not touched
+    from .when import house_dates
+    for para in paras:
+        for sent in para:
+            if sent.get("parts"):
+                for part in sent["parts"]:
+                    part["text"] = house_dates(part["text"])
+                sent["text"] = " ".join(p["text"].strip() for p in sent["parts"])
+            else:
+                sent["text"] = house_dates(sent["text"])
+    if payload.get("headline"):
+        payload["headline"] = house_dates(payload["headline"])

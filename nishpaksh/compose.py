@@ -588,7 +588,8 @@ def drop_past_schedules(payload: dict, now: dt.datetime | None = None) -> int:
     written after the meeting, from a report filed before it; the meeting's decisions are the story). A
     same-day line is left out only when another line of the story reports a decisive act with the same names
     (the thing happened). A line with no date is kept: code never guesses."""
-    from .frames import date_of
+    from .when import date_of, _nearest_year as nearest_year, _date
+    _valid = lambda y, m, d: _date(y, m, d) is not None   # noqa: E731
     from .news import _start, act_score
     from .relate import Profile
     now = now or utcnow()
@@ -600,12 +601,10 @@ def drop_past_schedules(payload: dict, now: dt.datetime | None = None) -> int:
         d = _start(i)
         if d:
             return d.date()
+        # the nearest year, never the tense's: the line itself says "will", and the point is that its day has passed
         y, m, dd = date_of(i.get("text")) or (None, None, None)
         if m and dd:
-            try:
-                return dt.date(y or today.year, m, dd)
-            except ValueError:
-                return None
+            return dt.date(y, m, dd) if y and _valid(y, m, dd) else nearest_year(m, dd, today, None)
         return None
     gone = set()
     for i in items:

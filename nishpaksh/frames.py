@@ -105,21 +105,11 @@ MONTHS = {m: n for n, ms in enumerate((("jan", "january"), ("feb", "february"), 
 
 
 def date_of(text: str | None) -> tuple | None:
-    """(year, month, day) with None for a part not given, when the value is a date: "1986-12-06",
-    "6 December 1986", "December 6, 1986", "31st October", "July 2026". Oct 7 2026: "6 December 1986"
-    and "1986-12-06" were read as the numbers 6 and 1986 and shown as a dispute."""
-    t = (text or "").lower()
-    m = re.search(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", t)
-    if m:
-        return int(m.group(1)), int(m.group(2)), int(m.group(3))
-    m = re.search(r"\b(" + "|".join(sorted(MONTHS, key=len, reverse=True)) + r")\b\.?", t)
-    if not m:
-        return None
-    month = MONTHS[m.group(1)]
-    day = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)?\b(?!\s*(?:hours|years|crore|lakh|%|per))", t[:m.start()][-8:] + " " + t[m.end():m.end() + 6])
-    year = re.search(r"\b(1[89]\d\d|20\d\d)\b", t)
-    d = int(day.group(1)) if day and 1 <= int(day.group(1)) <= 31 else None
-    return (int(year.group(1)) if year else None), month, d
+    """(year, month, day) with None for a part not given (when.date_of: English and Hindi, "1986-12-06",
+    "6 December 1986", "December 6, 1986", "31st October", "July 2026", "15 अक्टूबर", "15/10/2026"). Oct 7 2026:
+    "6 December 1986" and "1986-12-06" were read as the numbers 6 and 1986 and shown as a dispute."""
+    from .when import date_of as _date_of
+    return _date_of(text)
 
 
 def _dates_agree(x: tuple, y: tuple) -> bool:

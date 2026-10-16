@@ -224,6 +224,9 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
                  left_for_next_run=len(dirty) - len(analysed))
     if _express.STATS:      # the funnel again: the story stage added its own counts (express.py)
         stats["express"] = {k: (dict(v) if isinstance(v, dict) else v) for k, v in _express.STATS.items()}
+    from . import when as _when
+    if _when.STATS:         # who placed the reading's dates: code (agrees / differs), the model alone, refused
+        stats["when"] = dict(_when.STATS)
     from . import heavy
     stats["heavy_cache"] = dict(heavy.stats, active=heavy.active(store))   # egress: values served locally vs fetched
     from . import positions
