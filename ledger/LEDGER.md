@@ -1,12 +1,12 @@
 # Nishpaksh ledger
 
-Generated 2026-10-16 19:55 IST from 96 runs (2026-10-12 18:36 to 2026-10-16 19:36 IST). Field meanings: README.md. Detail per run: runs-YYYY-MM.jsonl.
+Generated 2026-10-16 21:05 IST from 97 runs (2026-10-12 18:36 to 2026-10-16 20:36 IST). Field meanings: README.md. Detail per run: runs-YYYY-MM.jsonl.
 
 ## Embedding quota, by quota day (Pacific)
 
 | day | runs | texts embedded (sum of runs) | used by day's end | least left | of it express | world held (avg/run) | waiting at last run |
 |---|---|---|---|---|---|---|---|
-| 2026-10-16 | 8 | 1370 | 1370 | 1630 | 33 | 1451 | 2523 |
+| 2026-10-16 | 9 | 1538 | 1538 | 1462 | 38 | 1450 | 2577 |
 | 2026-10-15 | 24 | 2975 | 2975 | 25 | 54 | 1438 | 2657 |
 | 2026-10-14 | 24 | 2975 | 2975 | 25 | 49 | 1328 | 2625 |
 | 2026-10-13 | 23 | 2827 | 2977 | 23 | 59 | 1141 | 1938 |
@@ -18,6 +18,7 @@ Generated 2026-10-16 19:55 IST from 96 runs (2026-10-12 18:36 to 2026-10-16 19:3
 
 | IST | new articles | embed budget | embedded | waiting | embed left | grouped | reading queue | qualifying | settled | published | problems |
 |---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-10-16 20:36 | 228 | 193 | 168 | 2577 | 1462 | 178 | 16 | 270 | 25 | 1 | 1 |
 | 2026-10-16 19:36 | 239 | 184 | 159 | 2523 | 1630 | 170 | 16 | 270 | 29 | 0 | 0 |
 | 2026-10-16 18:36 | 276 | 187 | 162 | 2533 | 1789 | 186 | 16 | 270 | 28 | 0 | 0 |
 | 2026-10-16 17:36 | 221 | 183 | 158 | 2496 | 1951 | 158 | 16 | 272 | 31 | 2 | 0 |
@@ -41,107 +42,107 @@ Generated 2026-10-16 19:55 IST from 96 runs (2026-10-12 18:36 to 2026-10-16 19:3
 | 2026-10-15 23:36 | 174 | 172 | 147 | 2408 | 1000 | 163 | 16 | 267 | 35 | 2 | 0 |
 | 2026-10-15 22:36 | 181 | 184 | 159 | 2418 | 1147 | 164 | 16 | 268 | 35 | 4 | 0 |
 | 2026-10-15 21:36 | 215 | 187 | 162 | 2466 | 1306 | 177 | 16 | 267 | 35 | 1 | 0 |
-| 2026-10-15 20:36 | 235 | 181 | 156 | 2504 | 1468 | 165 | 16 | 265 | 35 | 1 | 0 |
 
 ## Outlets
 
 | outlet | new articles (8 d) | embedded (8 d) | in 72 h window | of them embedded | in a 3+ outlet story | yield |
 |---|---|---|---|---|---|---|
-| India Today | 788 | 788 | 562 | 562 | 248 | 44% |
-| Hindustan Times | 1136 | 933 | 775 | 635 | 223 | 35% |
-| News18 | 853 | 676 | 588 | 476 | 202 | 42% |
-| Times of India | 1053 | 792 | 741 | 543 | 156 | 29% |
-| Aaj Tak | 1573 | 844 | 1148 | 731 | 147 | 20% |
-| The Hindu | 1946 | 931 | 1486 | 793 | 113 | 14% |
-| Amar Ujala | 332 | 332 | 225 | 225 | 101 | 45% |
-| NDTV | 441 | 441 | 319 | 319 | 97 | 30% |
-| Live Hindustan | 262 | 262 | 181 | 181 | 81 | 45% |
-| News18 Hindi | 448 | 480 | 327 | 312 | 66 | 21% |
-| NDTV India | 1154 | 363 | 809 | 303 | 58 | 19% |
-| Al Jazeera | 410 | 295 | 302 | 206 | 50 | 24% |
-| National Herald | 131 | 131 | 93 | 93 | 50 | 54% |
-| France 24 | 261 | 175 | 182 | 117 | 46 | 39% |
-| Organiser | 179 | 179 | 135 | 135 | 45 | 33% |
-| Zee News | 98 | 98 | 66 | 66 | 41 | 62% |
-| BBC News World | 119 | 94 | 90 | 70 | 37 | 53% |
-| Gulf News | 605 | 306 | 414 | 177 | 33 | 19% |
-| DW | 145 | 121 | 109 | 86 | 32 | 37% |
+| India Today | 799 | 799 | 561 | 561 | 242 | 43% |
+| Hindustan Times | 1142 | 937 | 770 | 629 | 220 | 35% |
+| News18 | 864 | 684 | 588 | 474 | 203 | 43% |
+| Times of India | 1072 | 808 | 742 | 546 | 155 | 28% |
+| Aaj Tak | 1593 | 870 | 1143 | 732 | 150 | 20% |
+| The Hindu | 1981 | 932 | 1487 | 768 | 110 | 14% |
+| Amar Ujala | 332 | 332 | 225 | 225 | 103 | 46% |
+| NDTV | 445 | 445 | 316 | 316 | 96 | 30% |
+| Live Hindustan | 263 | 263 | 177 | 177 | 82 | 46% |
+| News18 Hindi | 453 | 485 | 330 | 315 | 65 | 21% |
+| NDTV India | 1183 | 398 | 828 | 328 | 60 | 18% |
+| Al Jazeera | 413 | 297 | 300 | 203 | 50 | 25% |
+| National Herald | 133 | 133 | 93 | 93 | 49 | 53% |
+| Organiser | 183 | 183 | 135 | 135 | 45 | 33% |
+| France 24 | 264 | 176 | 173 | 110 | 44 | 40% |
+| Zee News | 98 | 98 | 66 | 66 | 40 | 61% |
+| BBC News World | 122 | 97 | 93 | 73 | 39 | 53% |
+| Gulf News | 611 | 310 | 414 | 180 | 33 | 18% |
+| DW | 150 | 124 | 112 | 87 | 31 | 36% |
 | ABP Live Hindi | 73 | 73 | 49 | 49 | 30 | 61% |
-| The Guardian | 324 | 178 | 233 | 121 | 30 | 25% |
-| Dawn | 211 | 160 | 151 | 109 | 27 | 25% |
-| Panchjanya | 134 | 134 | 100 | 100 | 27 | 27% |
-| The New Indian Express | 50 | 50 | 30 | 30 | 26 | 87% |
-| Satya Hindi | 87 | 87 | 67 | 67 | 24 | 36% |
-| Daily Mirror Sri Lanka | 179 | 116 | 146 | 98 | 19 | 19% |
-| ETV Bharat | 39 | 39 | 26 | 26 | 19 | 73% |
-| Jagran | 46 | 46 | 26 | 26 | 19 | 73% |
-| The National | 281 | 120 | 212 | 99 | 18 | 18% |
-| Khaleej Times | 295 | 143 | 210 | 95 | 17 | 18% |
+| The Guardian | 327 | 180 | 232 | 121 | 30 | 25% |
+| Dawn | 212 | 161 | 152 | 110 | 28 | 25% |
+| Panchjanya | 137 | 137 | 103 | 103 | 28 | 27% |
+| The New Indian Express | 50 | 50 | 29 | 29 | 26 | 90% |
+| Satya Hindi | 87 | 87 | 67 | 67 | 25 | 37% |
+| Jagran | 47 | 47 | 27 | 27 | 20 | 74% |
+| Daily Mirror Sri Lanka | 182 | 119 | 147 | 100 | 19 | 19% |
+| ETV Bharat | 40 | 40 | 27 | 27 | 19 | 70% |
+| Khaleej Times | 298 | 145 | 208 | 93 | 18 | 19% |
+| The National | 284 | 121 | 213 | 99 | 18 | 18% |
 | ABP News | 27 | 27 | 18 | 18 | 16 | 89% |
-| Anadolu Agency | 752 | 159 | 534 | 116 | 16 | 14% |
-| CNA | 553 | 221 | 406 | 119 | 16 | 13% |
-| BBC Hindi | 62 | 62 | 45 | 45 | 13 | 29% |
-| Economic Times | 27 | 27 | 17 | 17 | 12 | 71% |
+| Anadolu Agency | 765 | 159 | 531 | 107 | 16 | 15% |
+| CNA | 559 | 221 | 407 | 114 | 16 | 14% |
+| BBC Hindi | 63 | 62 | 45 | 44 | 13 | 30% |
+| Economic Times | 28 | 28 | 18 | 18 | 13 | 72% |
 | The Wire Hindi | 33 | 33 | 23 | 23 | 12 | 52% |
+| Navbharat Times | 18 | 18 | 13 | 13 | 11 | 85% |
 | Reuters | 22 | 22 | 12 | 12 | 11 | 92% |
 | ANI News | 18 | 18 | 10 | 10 | 9 | 90% |
-| Navbharat Times | 16 | 16 | 11 | 11 | 9 | 82% |
 | OpIndia | 28 | 28 | 19 | 19 | 9 | 47% |
 | The Wire | 11 | 11 | 9 | 9 | 9 | 100% |
-| Business Standard | 12 | 12 | 11 | 11 | 8 | 73% |
+| Dainik Bhaskar | 16 | 16 | 11 | 11 | 8 | 73% |
 | Geo News | 45 | 44 | 33 | 31 | 8 | 26% |
+| Head Topics | 18 | 18 | 13 | 13 | 8 | 62% |
 | Live Law | 17 | 17 | 9 | 9 | 8 | 89% |
+| Rediff | 23 | 23 | 12 | 12 | 8 | 67% |
 | WION | 11 | 11 | 8 | 8 | 8 | 100% |
-| Dainik Bhaskar | 15 | 15 | 10 | 10 | 7 | 70% |
-| Facebook | 18 | 18 | 11 | 11 | 7 | 64% |
-| Head Topics | 18 | 18 | 13 | 13 | 7 | 54% |
-| Jansatta | 11 | 11 | 8 | 8 | 7 | 88% |
-| Moneycontrol | 12 | 12 | 8 | 8 | 7 | 88% |
+| Business Standard | 12 | 12 | 10 | 10 | 7 | 70% |
+| Jansatta | 12 | 12 | 8 | 8 | 7 | 88% |
+| Moneycontrol | 13 | 13 | 8 | 8 | 7 | 88% |
 | NPR | 28 | 25 | 19 | 18 | 7 | 39% |
 | Outlook India | 17 | 17 | 7 | 7 | 7 | 100% |
 | Prabhat Khabar | 17 | 17 | 12 | 12 | 7 | 58% |
-| Rediff | 22 | 22 | 11 | 11 | 7 | 64% |
-| TASS | 589 | 74 | 418 | 62 | 7 | 11% |
 | Deccan Herald | 15 | 15 | 9 | 9 | 6 | 67% |
+| Facebook | 19 | 19 | 11 | 11 | 6 | 55% |
 | Hindustan | 7 | 7 | 6 | 6 | 6 | 100% |
 | MillenniumPost | 7 | 7 | 6 | 6 | 6 | 100% |
 | Open Magazine | 10 | 10 | 7 | 7 | 6 | 86% |
+| South China Morning Post | 69 | 40 | 51 | 27 | 6 | 22% |
+| TASS | 604 | 74 | 422 | 52 | 6 | 12% |
 | The Indian Express | 30 | 30 | 12 | 12 | 6 | 50% |
+| The Kathmandu Post | 99 | 52 | 69 | 26 | 6 | 23% |
 | LawBeat | 10 | 10 | 5 | 5 | 5 | 100% |
-| Mathrubhumi English | 8 | 8 | 5 | 5 | 5 | 100% |
+| Pragativadi | 9 | 9 | 5 | 5 | 5 | 100% |
 | Republic World | 8 | 8 | 5 | 5 | 5 | 100% |
-| South China Morning Post | 69 | 40 | 52 | 28 | 5 | 18% |
-| The Kathmandu Post | 97 | 50 | 67 | 24 | 5 | 21% |
 | The Print | 14 | 14 | 6 | 6 | 5 | 83% |
 | BBC | 8 | 8 | 5 | 5 | 4 | 80% |
 | Business Upturn | 5 | 5 | 4 | 4 | 4 | 100% |
 | DD India | 4 | 4 | 4 | 4 | 4 | 100% |
-| India TV Hindi | 8 | 8 | 5 | 5 | 4 | 80% |
+| Deccan Chronicle | 12 | 12 | 6 | 6 | 4 | 67% |
+| LawChakra | 7 | 7 | 4 | 4 | 4 | 100% |
+| Mathrubhumi English | 8 | 8 | 4 | 4 | 4 | 100% |
 | News On AIR | 11 | 11 | 6 | 6 | 4 | 67% |
-| PIB Hindi | 217 | 99 | 178 | 40 | 4 | 10% |
-| Pragativadi | 8 | 8 | 4 | 4 | 4 | 100% |
-| The Express Tribune | 376 | 132 | 255 | 39 | 4 | 10% |
-| The Quint | 44 | 37 | 33 | 26 | 4 | 15% |
+| PIB Hindi | 220 | 99 | 181 | 40 | 4 | 10% |
+| The Express Tribune | 378 | 132 | 243 | 30 | 4 | 13% |
+| The Quint | 47 | 40 | 36 | 29 | 4 | 14% |
 | The Statesman | 11 | 11 | 5 | 5 | 4 | 80% |
 | Agniban | 3 | 3 | 3 | 3 | 3 | 100% |
 | BBC News India | 7 | 7 | 5 | 5 | 3 | 60% |
 | CNN | 7 | 7 | 3 | 3 | 3 | 100% |
-| Deccan Chronicle | 11 | 11 | 5 | 5 | 3 | 60% |
+| DD News | 13 | 13 | 5 | 5 | 3 | 60% |
 | Euronews.com | 6 | 6 | 4 | 4 | 3 | 75% |
 | Greater Kashmir | 5 | 5 | 3 | 3 | 3 | 100% |
 | GujaratSamachar English | 5 | 5 | 3 | 3 | 3 | 100% |
+| India TV Hindi | 8 | 8 | 4 | 4 | 3 | 75% |
 | India TV News | 5 | 5 | 4 | 4 | 3 | 75% |
-| LawChakra | 6 | 6 | 3 | 3 | 3 | 100% |
 | Livemint | 11 | 11 | 6 | 6 | 3 | 50% |
 | Maktoob | 7 | 7 | 5 | 5 | 3 | 60% |
 | Mid-Day | 10 | 10 | 3 | 3 | 3 | 100% |
 | News9live | 6 | 6 | 3 | 3 | 3 | 100% |
 | NewsBytes | 13 | 13 | 8 | 8 | 3 | 38% |
-| Newslaundry | 19 | 19 | 12 | 12 | 3 | 25% |
+| Newslaundry | 19 | 19 | 11 | 11 | 3 | 27% |
+| Prabhasakshi | 4 | 4 | 3 | 3 | 3 | 100% |
 | Telegraph India | 9 | 9 | 3 | 3 | 3 | 100% |
 | The Federal | 5 | 5 | 3 | 3 | 3 | 100% |
 | The New York Times | 7 | 7 | 4 | 4 | 3 | 75% |
-| The Tribune | 9 | 9 | 4 | 4 | 3 | 75% |
 | True Scoop | 4 | 4 | 3 | 3 | 3 | 100% |
 | inkl | 10 | 10 | 5 | 5 | 3 | 60% |
 | www.nationpathindia.com | 7 | 7 | 4 | 4 | 3 | 75% |
@@ -152,10 +153,7 @@ Generated 2026-10-16 19:55 IST from 96 runs (2026-10-12 18:36 to 2026-10-16 19:3
 | Bharat24live | 2 | 2 | 2 | 2 | 2 | 100% |
 | Bhaskar English | 6 | 6 | 2 | 2 | 2 | 100% |
 | Bozeman Daily Chronicle | 2 | 2 | 2 | 2 | 2 | 100% |
-| BusinessLine | 2 | 2 | 2 | 2 | 2 | 100% |
-| CGTN | 153 | 63 | 95 | 29 | 2 | 7% |
 | CNBC | 6 | 6 | 2 | 2 | 2 | 100% |
-| DD News | 12 | 12 | 4 | 4 | 2 | 50% |
 | DNA India | 2 | 2 | 2 | 2 | 2 | 100% |
 | Daily Excelsior | 7 | 7 | 4 | 4 | 2 | 50% |
 | Daily Pioneer | 3 | 3 | 2 | 2 | 2 | 100% |
@@ -166,14 +164,13 @@ Generated 2026-10-16 19:55 IST from 96 runs (2026-10-12 18:36 to 2026-10-16 19:3
 | India Legal | 2 | 2 | 2 | 2 | 2 | 100% |
 | India Today NE | 3 | 3 | 2 | 2 | 2 | 100% |
 | India's News.Net | 5 | 5 | 2 | 2 | 2 | 100% |
-| Kashmir Life | 2 | 2 | 2 | 2 | 2 | 100% |
 | Kashmir Observer | 3 | 3 | 2 | 2 | 2 | 100% |
 | Lalluram | 2 | 2 | 2 | 2 | 2 | 100% |
 | Live Law Hindi | 2 | 2 | 2 | 2 | 2 | 100% |
-| Lokmat News Hindi | 8 | 8 | 3 | 3 | 2 | 67% |
 | MS NOW | 4 | 4 | 2 | 2 | 2 | 100% |
 | Mangalore Today | 3 | 3 | 2 | 2 | 2 | 100% |
 | Navbharat Live | 4 | 4 | 4 | 4 | 2 | 50% |
+| News Arena India | 3 | 3 | 2 | 2 | 2 | 100% |
 | News Mobile | 5 | 5 | 3 | 3 | 2 | 67% |
 | NewsGram | 5 | 5 | 3 | 3 | 2 | 67% |
 | Newstrack | 2 | 2 | 2 | 2 | 2 | 100% |
@@ -182,14 +179,15 @@ Generated 2026-10-16 19:55 IST from 96 runs (2026-10-12 18:36 to 2026-10-16 19:3
 | PM India | 3 | 3 | 3 | 3 | 2 | 67% |
 | Panay News | 2 | 2 | 2 | 2 | 2 | 100% |
 | Patrika News | 5 | 5 | 2 | 2 | 2 | 100% |
-| Prabhasakshi | 3 | 3 | 2 | 2 | 2 | 100% |
-| Saudi Gazette | 80 | 55 | 51 | 33 | 2 | 6% |
+| Saudi Gazette | 81 | 55 | 50 | 32 | 2 | 6% |
 | Social News XYZ | 2 | 2 | 2 | 2 | 2 | 100% |
 | Swarajya | 20 | 20 | 12 | 12 | 2 | 17% |
 | Telangana Today | 4 | 4 | 2 | 2 | 2 | 100% |
 | The Assam Tribune | 3 | 3 | 2 | 2 | 2 | 100% |
 | The Conversation | 3 | 3 | 2 | 2 | 2 | 100% |
+| The Siasat Daily | 8 | 8 | 2 | 2 | 2 | 100% |
 | The South First | 10 | 10 | 4 | 4 | 2 | 50% |
+| The Tribune | 9 | 9 | 3 | 3 | 2 | 67% |
 | The Washington Post | 5 | 5 | 2 | 2 | 2 | 100% |
 | The Week | 4 | 4 | 2 | 2 | 2 | 100% |
 | ThePrint Hindi | 12 | 12 | 6 | 6 | 2 | 33% |
@@ -225,7 +223,9 @@ Generated 2026-10-16 19:55 IST from 96 runs (2026-10-12 18:36 to 2026-10-16 19:3
 | Bored Panda | 1 | 1 | 1 | 1 | 1 | 100% |
 | Bournemouth Echo | 1 | 1 | 1 | 1 | 1 | 100% |
 | Business Today | 2 | 2 | 1 | 1 | 1 | 100% |
+| BusinessLine | 2 | 2 | 1 | 1 | 1 | 100% |
 | CBC | 2 | 2 | 2 | 2 | 1 | 50% |
+| CGTN | 153 | 63 | 90 | 26 | 1 | 4% |
 | CarDekho | 1 | 1 | 1 | 1 | 1 | 100% |
 | Cobrapost | 1 | 1 | 1 | 1 | 1 | 100% |
 | Committee to Protect Journalists | 1 | 1 | 1 | 1 | 1 | 100% |
@@ -250,7 +250,6 @@ Generated 2026-10-16 19:55 IST from 96 runs (2026-10-12 18:36 to 2026-10-16 19:3
 | GK Today | 1 | 1 | 1 | 1 | 1 | 100% |
 | GMA Network | 1 | 1 | 1 | 1 | 1 | 100% |
 | HuffPost | 1 | 1 | 1 | 1 | 1 | 100% |
-| Hyundai Motor Group | 1 | 1 | 1 | 1 | 1 | 100% |
 | INDIA New England News | 1 | 1 | 1 | 1 | 1 | 100% |
 | India Business Trade | 1 | 1 | 1 | 1 | 1 | 100% |
 | India News Network | 3 | 3 | 2 | 2 | 1 | 50% |
@@ -258,7 +257,6 @@ Generated 2026-10-16 19:55 IST from 96 runs (2026-10-12 18:36 to 2026-10-16 19:3
 | India Weekly | 2 | 2 | 1 | 1 | 1 | 100% |
 | India.com | 4 | 4 | 1 | 1 | 1 | 100% |
 | Indian Aviation News Net | 1 | 1 | 1 | 1 | 1 | 100% |
-| Indian Television Dot Com | 1 | 1 | 1 | 1 | 1 | 100% |
 | IndianMandarins | 1 | 1 | 1 | 1 | 1 | 100% |
 | IndulgExpress | 2 | 2 | 1 | 1 | 1 | 100% |
 | Inkl | 1 | 1 | 1 | 1 | 1 | 100% |
@@ -268,15 +266,18 @@ Generated 2026-10-16 19:55 IST from 96 runs (2026-10-12 18:36 to 2026-10-16 19:3
 | Jagran Josh | 3 | 3 | 1 | 1 | 1 | 100% |
 | Jakarta Globe | 1 | 1 | 1 | 1 | 1 | 100% |
 | Janta Se Rishta | 1 | 1 | 1 | 1 | 1 | 100% |
+| Journo Mirror | 1 | 1 | 1 | 1 | 1 | 100% |
 | KATU | 1 | 1 | 1 | 1 | 1 | 100% |
 | KOKH | 1 | 1 | 1 | 1 | 1 | 100% |
 | KPTV | 1 | 1 | 1 | 1 | 1 | 100% |
+| Kashmir Life | 2 | 2 | 1 | 1 | 1 | 100% |
 | Kerala Kaumudi | 2 | 2 | 1 | 1 | 1 | 100% |
 | Kiddaan | 1 | 1 | 1 | 1 | 1 | 100% |
 | Kurdistan24 | 1 | 1 | 1 | 1 | 1 | 100% |
 | LatestLY | 5 | 5 | 2 | 2 | 1 | 50% |
 | Law Trend | 2 | 2 | 2 | 2 | 1 | 50% |
 | Le Monde.fr | 1 | 1 | 1 | 1 | 1 | 100% |
+| Lokmat News Hindi | 8 | 8 | 2 | 2 | 1 | 50% |
 | Lokmat Times | 2 | 2 | 2 | 2 | 1 | 50% |
 | Madhyamam | 2 | 2 | 1 | 1 | 1 | 100% |
 | Magzter | 1 | 1 | 1 | 1 | 1 | 100% |
@@ -295,12 +296,10 @@ Generated 2026-10-16 19:55 IST from 96 runs (2026-10-12 18:36 to 2026-10-16 19:3
 | Nagaland Post | 2 | 2 | 1 | 1 | 1 | 100% |
 | Nepalnews.com | 1 | 1 | 1 | 1 | 1 | 100% |
 | New Age | 1 | 1 | 1 | 1 | 1 | 100% |
-| News Arena India | 2 | 2 | 1 | 1 | 1 | 100% |
 | News Diggers! | 1 | 1 | 1 | 1 | 1 | 100% |
 | News24 | 1 | 1 | 1 | 1 | 1 | 100% |
 | News24Online | 4 | 4 | 1 | 1 | 1 | 100% |
 | NewsCord | 3 | 3 | 2 | 2 | 1 | 50% |
-| NewsMeter | 2 | 2 | 1 | 1 | 1 | 100% |
 | NewsTak | 1 | 1 | 1 | 1 | 1 | 100% |
 | Newsdrum | 2 | 2 | 1 | 1 | 1 | 100% |
 | Northeast Today | 2 | 2 | 1 | 1 | 1 | 100% |
@@ -354,7 +353,6 @@ Generated 2026-10-16 19:55 IST from 96 runs (2026-10-12 18:36 to 2026-10-16 19:3
 | The News Pakistan | 2 | 2 | 1 | 1 | 1 | 100% |
 | The Observer Post | 1 | 1 | 1 | 1 | 1 | 100% |
 | The SOFX Report | 1 | 1 | 1 | 1 | 1 | 100% |
-| The Siasat Daily | 7 | 7 | 1 | 1 | 1 | 100% |
 | The Sunday Guardian | 2 | 2 | 1 | 1 | 1 | 100% |
 | The Telegraph | 2 | 2 | 2 | 2 | 1 | 50% |
 | The Weather Channel | 1 | 1 | 1 | 1 | 1 | 100% |
@@ -366,9 +364,9 @@ Generated 2026-10-16 19:55 IST from 96 runs (2026-10-12 18:36 to 2026-10-16 19:3
 | Vanguard News | 1 | 1 | 1 | 1 | 1 | 100% |
 | Verdictum | 2 | 2 | 1 | 1 | 1 | 100% |
 | Vietnam.vn | 3 | 3 | 3 | 3 | 1 | 33% |
-| Vocal TV | 2 | 2 | 1 | 1 | 1 | 100% |
 | WCYB | 1 | 1 | 1 | 1 | 1 | 100% |
 | WPDE | 1 | 1 | 1 | 1 | 1 | 100% |
+| Webdunia తెలుగు | 1 | 1 | 1 | 1 | 1 | 100% |
 | Yeni Şafak English | 1 | 1 | 1 | 1 | 1 | 100% |
 | Youth India News | 1 | 1 | 1 | 1 | 1 | 100% |
 | bdnindia.com | 1 | 1 | 1 | 1 | 1 | 100% |
@@ -385,6 +383,7 @@ Generated 2026-10-16 19:55 IST from 96 runs (2026-10-12 18:36 to 2026-10-16 19:3
 | nypost.com | 1 | 1 | 1 | 1 | 1 | 100% |
 | palpalindia | 1 | 1 | 1 | 1 | 1 | 100% |
 | prameyanews.com | 2 | 2 | 1 | 1 | 1 | 100% |
+| sandhya samay news | 1 | 1 | 1 | 1 | 1 | 100% |
 | t2ONLINE | 1 | 1 | 1 | 1 | 1 | 100% |
 | uttamhindu.com | 1 | 1 | 1 | 1 | 1 | 100% |
 | www.indiagazette.com | 1 | 1 | 1 | 1 | 1 | 100% |
@@ -458,11 +457,13 @@ Generated 2026-10-16 19:55 IST from 96 runs (2026-10-12 18:36 to 2026-10-16 19:3
 | Goal.com | 1 | 1 | 0 | 0 | 0 |  |
 | Goodreturns Hindi | 1 | 1 | 0 | 0 | 0 |  |
 | Hub News | 1 | 1 | 0 | 0 | 0 |  |
+| Hyundai Motor Group | 1 | 1 | 0 | 0 | 0 |  |
 | ITVX | 1 | 1 | 1 | 1 | 0 | 0% |
 | Inbox.eu | 1 | 1 | 0 | 0 | 0 |  |
 | Inbox.lv | 1 | 1 | 0 | 0 | 0 |  |
 | India Shipping News | 3 | 3 | 0 | 0 | 0 |  |
 | Indian PSU | 1 | 1 | 0 | 0 | 0 |  |
+| Indian Television Dot Com | 1 | 1 | 1 | 1 | 0 | 0% |
 | Inh News | 1 | 1 | 0 | 0 | 0 |  |
 | Inquirer.net | 1 | 1 | 0 | 0 | 0 |  |
 | Iran International | 1 | 1 | 0 | 0 | 0 |  |
@@ -494,6 +495,7 @@ Generated 2026-10-16 19:55 IST from 96 runs (2026-10-12 18:36 to 2026-10-16 19:3
 | News24 Hindi | 1 | 1 | 0 | 0 | 0 |  |
 | News9Live | 1 | 1 | 0 | 0 | 0 |  |
 | NewsDrum | 3 | 3 | 1 | 1 | 0 | 0% |
+| NewsMeter | 2 | 2 | 0 | 0 | 0 |  |
 | NewsX | 3 | 3 | 0 | 0 | 0 |  |
 | Newsband | 2 | 2 | 0 | 0 | 0 |  |
 | NewsroomPost | 1 | 1 | 0 | 0 | 0 |  |
@@ -508,7 +510,7 @@ Generated 2026-10-16 19:55 IST from 96 runs (2026-10-12 18:36 to 2026-10-16 19:3
 | Page Six | 1 | 1 | 0 | 0 | 0 |  |
 | Patna Press | 1 | 1 | 0 | 0 | 0 |  |
 | Perform India | 2 | 2 | 0 | 0 | 0 |  |
-| Port Technology | 1 | 1 | 1 | 1 | 0 | 0% |
+| Port Technology | 1 | 1 | 0 | 0 | 0 |  |
 | Pratahkal | 1 | 1 | 0 | 0 | 0 |  |
 | ProjectsMonitor | 1 | 1 | 0 | 0 | 0 |  |
 | R.Bharat | 1 | 1 | 1 | 1 | 0 | 0% |
@@ -572,6 +574,7 @@ Generated 2026-10-16 19:55 IST from 96 runs (2026-10-12 18:36 to 2026-10-16 19:3
 | VT Markets | 1 | 1 | 0 | 0 | 0 |  |
 | Vajiram & Ravi | 1 | 1 | 0 | 0 | 0 |  |
 | Variety | 1 | 1 | 0 | 0 | 0 |  |
+| Vocal TV | 3 | 3 | 1 | 1 | 0 | 0% |
 | WSB-TV | 1 | 1 | 0 | 0 | 0 |  |
 | WSJ | 1 | 1 | 1 | 1 | 0 | 0% |
 | Word&Way | 1 | 1 | 1 | 1 | 0 | 0% |
@@ -611,86 +614,86 @@ Generated 2026-10-16 19:55 IST from 96 runs (2026-10-12 18:36 to 2026-10-16 19:3
 
 | step | count |
 |---|---|
-| asked | 1130 |
-| calls | 206 |
-| embedded | 417 |
-| intake_excluded | 21073 |
+| asked | 1142 |
+| calls | 208 |
+| embedded | 422 |
+| intake_excluded | 21326 |
 | intake_over_cap | 406 |
-| not_lane | 384 |
-| passed | 417 |
+| not_lane | 386 |
+| passed | 422 |
 | passed_companies | 35 |
-| passed_entertainment | 99 |
-| passed_sport | 252 |
+| passed_entertainment | 102 |
+| passed_sport | 254 |
 | passed_tech | 31 |
-| taken | 1297 |
-| story_candidates | 3202 |
-| story_started | 197 |
-| story_begun | 1646 |
-| story_qualified | 664 |
-| lane_ok | 497 |
-| not_significant | 328 |
-| not_significant_entertainment | 179 |
-| not_significant_sport | 127 |
-| sig_calls | 129 |
-| sig_india | 148 |
+| taken | 1310 |
+| story_candidates | 3211 |
+| story_started | 200 |
+| story_begun | 1652 |
+| story_qualified | 666 |
+| lane_ok | 507 |
+| not_significant | 333 |
+| not_significant_entertainment | 182 |
+| not_significant_sport | 128 |
+| sig_calls | 131 |
+| sig_india | 153 |
 | sig_world | 21 |
 | started_companies | 32 |
 | started_tech | 23 |
 | not_significant_tech | 13 |
-| started_sport | 102 |
-| not_significant_companies | 9 |
+| started_sport | 103 |
+| not_significant_companies | 10 |
 | unreadable | 2 |
-| started_entertainment | 4 |
+| started_entertainment | 6 |
 
 Kept out by code, by list:
 
 | list | count |
 |---|---|
-| harm | 4833 |
-| market | 3786 |
-| government | 3541 |
-| speculation | 2994 |
-| service | 2381 |
-| gossip | 1494 |
-| url | 1421 |
-| listicle | 772 |
+| harm | 4884 |
+| market | 3830 |
+| government | 3586 |
+| speculation | 3034 |
+| service | 2417 |
+| gossip | 1508 |
+| url | 1438 |
+| listicle | 779 |
 
 The words doing the excluding (top 25; a word that keeps out good stories is too strict, loosen it in config/express.yaml):
 
 | list:word | count |
 |---|---|
-| url:photogallery | 1050 |
-| government:RBI | 860 |
-| market:sensex | 818 |
-| listicle:pattern | 772 |
-| service:review | 753 |
-| gossip:box office | 657 |
-| market:inflation | 632 |
-| harm:court | 592 |
-| market:IPO | 592 |
-| speculation:could | 561 |
-| service:explained | 518 |
-| government:minister | 433 |
-| speculation:may | 421 |
-| market:stock | 380 |
-| government:government | 377 |
-| speculation:reportedly | 376 |
-| service:live | 368 |
-| harm:dies | 359 |
-| market:shares | 349 |
-| harm:death | 342 |
-| harm:injured | 328 |
-| speculation:eyes | 320 |
-| harm:detained | 282 |
-| harm:died | 278 |
-| gossip:slams | 273 |
+| url:photogallery | 1063 |
+| government:RBI | 864 |
+| market:sensex | 828 |
+| listicle:pattern | 779 |
+| service:review | 774 |
+| gossip:box office | 664 |
+| market:inflation | 635 |
+| harm:court | 606 |
+| market:IPO | 601 |
+| speculation:could | 571 |
+| service:explained | 521 |
+| government:minister | 439 |
+| speculation:may | 425 |
+| market:stock | 383 |
+| speculation:reportedly | 383 |
+| government:government | 381 |
+| service:live | 370 |
+| harm:dies | 363 |
+| market:shares | 354 |
+| harm:death | 343 |
+| harm:injured | 329 |
+| speculation:eyes | 328 |
+| harm:detained | 286 |
+| harm:died | 279 |
+| gossip:slams | 274 |
 
 Express stories that qualified (lane:origin kind):
 
 | lane:origin | count |
 |---|---|
 | sport:own_voice | 438 |
-| sport:named | 150 |
+| sport:named | 152 |
 | companies:named | 34 |
 | entertainment:named | 30 |
 | tech:named | 12 |
@@ -717,9 +720,10 @@ Express stories that did not qualify, and why (a reason that dominates is the di
 
 Express articles written by the desk in these runs: 82.
 
-At the last run: allowance 157, cap_left 371, passed_waiting 0, sig_waiting 0, stories_waiting_to_read 0, undecided 0.
+At the last run: allowance 174, cap_left 367, passed_waiting 0, sig_waiting 0, stories_waiting_to_read 0, undecided 0.
 
 ## Problems seen in the last 24 runs
 
 - 2026-10-16 08:36: no article in the last two clock hours while 24 stories are ready
 - 2026-10-16 09:36: no article in the last two clock hours while 24 stories are ready
+- 2026-10-16 20:36: no article in the last two clock hours while 25 stories are ready
