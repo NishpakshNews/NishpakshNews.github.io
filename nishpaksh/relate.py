@@ -129,11 +129,19 @@ _MONTHS = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?"
 
 
 class Profile:
-    __slots__ = ("norm", "nums", "names", "roots", "neg", "contrast", "date", "years")
+    __slots__ = ("norm", "nums", "names", "roots", "neg", "contrast", "date", "years", "clocks")
 
     def __init__(self, text: str):
         t = text or ""
         self.norm = re.sub(r"\W+", " ", t.lower()).strip()
+        # a clock time is a time, not figures and not a name ("12:30 PM" read as 12, 30 and a name "PM" kept two
+        # tellings of the Ladakh inauguration apart, Oct 15 2026); compared as times, through the statements' times
+        from .when import find as _find_times
+        clocks = set()
+        for m in reversed([m for m in _find_times(t) if m.kind == "clock"]):
+            clocks.add(_clock_value(m.text))
+            t = t[:m.start] + " " + t[m.end:]
+        self.clocks = frozenset(c for c in clocks if c)
         # the numbers of a date are a time, compared as one (times), not figures ("October 8, 2026")
         nt = re.sub(r"(?i)\b\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?" + _MONTHS + r"\b(?:,?\s+(?:19|20)\d\d)?|"
                     + _MONTHS + r"\s+\d{1,2}(?:st|nd|rd|th)?\b(?:,?\s+(?:19|20)\d\d)?|\b(?:19|20)\d\d\b", " ", t)
@@ -147,14 +155,28 @@ class Profile:
             names.add(_stem(toks[0].lower()))
         # days and months are dates, compared as dates (times), not names: "on Thursday" kept two
         # tellings of one call apart (Oct 8 2026, story 14231)
-        self.names = frozenset(names - _DATE_WORDS)
+        self.names = frozenset(names - _DATE_WORDS - _CURRENCY)
         self.roots = frozenset(SYNONYM.get(r, r) for r in _roots(t)
-                               if r not in FILLER and r not in _NUMBER_STEMS and not r.isdigit())
+                               if r not in FILLER and r not in _NUMBER_STEMS and r not in _CURRENCY and not r.isdigit())
         self.neg = bool(NEGATION.search(t))
         from .frames import date_of
         self.date = date_of(t)
         self.years = frozenset(re.findall(r"\b(?:19|20)\d\d\b", t))
         self.contrast = bool(CONTRAST.search(t))
+
+
+# the currency is said by the number's own word: "Rs 375" = "375 rupees" = "₹375" (Oct 16 2026 audit, story 26318)
+_CURRENCY = {"rs", "inr", "rupe", "rupee", "rupees"}
+
+
+def _with_names(p: "Profile", names: frozenset) -> "Profile":
+    if names == p.names:
+        return p
+    q = Profile.__new__(Profile)
+    for k in Profile.__slots__:
+        setattr(q, k, getattr(p, k))
+    q.names = frozenset(names)
+    return q
 
 
 def _share(a: frozenset, b: frozenset) -> float:
@@ -170,10 +192,35 @@ def _times_apart(x: dict | None, y: dict | None) -> bool:
     return apart(x, y)
 
 
+def _clock_value(s: str) -> tuple[int, int] | None:
+    m = re.search(r"(\d{1,2})(?:[:.](\d{2}))?\s*([ap])?", (s or "").lower())
+    if not m:
+        return None
+    h, mi = int(m.group(1)), int(m.group(2) or 0)
+    if m.group(3) == "p" and h < 12:
+        h += 12
+    if m.group(3) == "a" and h == 12:
+        h = 0
+    return (h, mi)
+
+
 def relate(a: str, b: str, time_a: dict | None = None, time_b: dict | None = None,
            pa: Profile | None = None, pb: Profile | None = None) -> str:
-    """'same', 'a_covers_b', 'b_covers_a', 'ask' or 'different', by code from the words."""
+    """'same', 'a_covers_b', 'b_covers_a', 'ask' or 'different', by code from the words. Clock times (Oct 16 2026):
+    two different ones are different facts; a time only one line has is a detail it adds, so code never lets the
+    line without it stand for both: the model is asked whether the timed line covers the other."""
     pa, pb = pa or Profile(a), pb or Profile(b)
+    if pa.clocks and pb.clocks and not pa.clocks & pb.clocks:
+        return "different"
+    r = _relate(a, b, time_a, time_b, pa, pb)
+    if bool(pa.clocks) != bool(pb.clocks) and r in ("same", "ask", "a_covers_b", "b_covers_a"):
+        timed_a = bool(pa.clocks)
+        if r == "same" or r == "ask" or (r == "a_covers_b") != timed_a:
+            return "ask_a_covers_b" if timed_a else "ask_b_covers_a"
+    return r
+
+
+def _relate(a: str, b: str, time_a, time_b, pa: Profile, pb: Profile) -> str:
     if pa.neg != pb.neg or _times_apart(time_a, time_b):
         return "different"
     # dates in the words: two lines with different dates are never one fact (arrested in 2019 / 2024)
@@ -186,6 +233,10 @@ def relate(a: str, b: str, time_a: dict | None = None, time_b: dict | None = Non
     # the names both lines share (the subject, "Air Marshal Ashutosh Dixit") are compared as names and
     # left out of the word overlap: in a story about one person every line shares them, and they made
     # unrelated lines look alike (Oct 7 2026, story 13809)
+    # a name one line capitalises and the other writes in lower case is the same name ("Divyangjan Pension Scheme" /
+    # "divyangjan pension scheme", Oct 16 2026 audit: Hindi-sourced lines often lose the capitals)
+    na, nb = pa.names | (pb.names & pa.roots), pb.names | (pa.names & pb.roots)
+    pa, pb = _with_names(pa, na), _with_names(pb, nb)
     common = pa.names & pb.names
     ra, rb = pa.roots - common, pb.roots - common
     same_facts = pa.nums == pb.nums and pa.names == pb.names

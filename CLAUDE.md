@@ -1341,6 +1341,17 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   repaired, nothing waits. An unrepaired statement is KEPT and counted (`DROP_UNREPAIRED = False`): the audit showed
   real catches beside wrong-sentence matches, so dropping waits for the counts. Logged as "readcheck: {checked,
   sourced, flagged, repaired, kept, calls, no_quota, over_cap}". Tests: `tests/test_readcheck.py`.
+- **Matching across written forms (Oct 16 2026, session 8 of the translation/learning plan; `relate.py`).** The audit
+  showed the same fact left as two statements far more in mixed-language stories (11.6 near pairs per 100 statements
+  vs 6.1), while repeated sentence openings were rare (1.7% / 3.9%; runs of 3+ in 6 of 102 articles), so session 8
+  fixed matching, not the writer. (1) Currency words (Rs, INR, rupee/rupees) are neither names nor words to compare:
+  "Rs 375" = "375 rupees" (story 26318). (2) A name one line capitalises and the other writes in lower case is the
+  same name ("Divyangjan Pension Scheme" / "divyangjan pension scheme"). (3) Clock times (when.find) are times, not
+  figures or names ("12:30 PM" had added 12, 30 and a name "PM", the Ladakh pair): two different times = different
+  facts; a time only one line has is a detail, so code never lets the untimed line stand for both and asks the model
+  whether the timed line covers the other. These also reach `narrative._drop_repeats`, the last net on the written
+  article. Joining parallel sentences ("Modi will inaugurate X, Y and Z") is NOT built: the owner's decision, after
+  the plan. Tests: `tests/test_relate_forms.py`.
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:
   missed merges (statement pairs with 60%+ shared root words left apart, by the language mix of the story's sources:
   en / hi / mixed, and what code and the twice-asked question said of them), English left in Hindi pages (by field, top
