@@ -27,12 +27,14 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 import json
+import logging
 import pathlib
 import re
 import unicodedata
 
 import yaml
 
+log = logging.getLogger(__name__)
 MANUAL_FILE = pathlib.Path(__file__).resolve().parent.parent / "config" / "names.yaml"
 MIN_EN_SOURCES = 2          # the trust bar (owner, Oct 15 2026)
 MIN_HI_SOURCES = 2
@@ -358,7 +360,11 @@ def transliterate(router, words: list[str], to: str) -> dict[str, str]:
 def load(store) -> Registry:
     from sqlalchemy import select
     from .db import name_pairs
-    rows = store.rows(select(name_pairs))
+    try:
+        rows = store.rows(select(name_pairs))
+    except Exception as e:  # noqa: BLE001 - a copy of the newsroom from before the table existed (read-only tools)
+        log.info("names: no name_pairs table yet (%s)", str(e)[:80])
+        rows = []
     reg = Registry([Pair(r["en"], r["hi"], r["origin"] or "outlet", list(r["en_sources"] or []),
                          list(r["hi_sources"] or []), list(r["stories"] or []), r["first_seen"], r["last_seen"])
                     for r in rows])

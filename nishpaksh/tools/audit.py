@@ -145,7 +145,11 @@ def main() -> None:
                             "latin": (s["hindi"] or {}).get("with_latin"), "alike": s["openings"]["alike"]}
                            for s in rows]
     report["when"] = when_report(store)
-    report["fidelity"] = fidelity_report(store)
+    try:
+        report["fidelity"] = fidelity_report(store)
+    except Exception as e:  # noqa: BLE001 - one part failing must not lose the rest of the audit
+        log.exception("fidelity report failed")
+        report["fidelity"] = {"error": f"{type(e).__name__}: {str(e)[:500]}"}
     print(json.dumps({k: v for k, v in report.items() if k != "per_story"}, ensure_ascii=False, indent=1))
     with store.readers.engine.begin() as c:      # diagnostics live in Supabase (db.READER_TABLES), not the newsroom copy
         c.execute(sql("insert into diagnostics (kind, report) values ('audit', :r)"),
