@@ -145,6 +145,18 @@ story_links = Table(  # threads: a later story that develops an earlier one
     Column("reason", Text),
 )
 
+name_pairs = Table(  # the name registry (names.py): one name part in English and in Hindi, with its evidence
+    "name_pairs", md,
+    Column("en", String(120), primary_key=True),
+    Column("hi", String(120), primary_key=True),
+    Column("origin", String(10)),        # outlet (both spellings copied from outlets) / api (transliterated)
+    Column("en_sources", JSON),          # independent source keys that wrote the English form (names.source_key)
+    Column("hi_sources", JSON),
+    Column("stories", JSON),             # story ids the pair was seen in
+    Column("first_seen", DateTime),
+    Column("last_seen", DateTime),
+)
+
 quota_usage = Table(
     "quota_usage", md,
     Column("model", String(100), primary_key=True),
@@ -307,21 +319,27 @@ class Store:
                 cur.execute(f"set search_path to {schema}")
                 cur.close()
 
-    def init(self) -> None:
+    def init(self, only: frozenset[str] | set[str] | None = None) -> None:
         """Create missing tables (local SQLite, tests). On Supabase the app role may not create
         tables; there the schema comes from supabase/migrations, and a missing table is reported
-        here by name instead of failing later in some unrelated stage."""
+        here by name instead of failing later in some unrelated stage.
+
+        `only`: the tables this database holds. The readers' database (Supabase) holds READER_TABLES only (Oct 16
+        2026): it used to be asked for every table, so a new NEWSROOM table (name_pairs) would have stopped the run
+        and the gate, where the app role cannot create it, and would have taken Supabase space."""
+        tables = [md.tables[n] for n in sorted(only) if n in md.tables] if only is not None else None
+        names = (set(only) & set(md.tables)) if only is not None else set(md.tables)
         try:
-            md.create_all(self.engine)
+            md.create_all(self.engine, tables=tables)
         except Exception as e:  # noqa: BLE001
             from sqlalchemy import inspect
             insp = inspect(self.engine)
-            missing = sorted(set(md.tables) - set(insp.get_table_names()) - set(insp.get_view_names()))
+            missing = sorted(names - set(insp.get_table_names()) - set(insp.get_view_names()))
             if missing:
                 raise RuntimeError(f"tables missing and cannot be created by this role: {missing}. "
                                    "Apply supabase/migrations.") from e
         if self.readers is not self:
-            self.readers.init()
+            self.readers.init(READER_TABLES)
 
     # generic helpers ---------------------------------------------------------
     def route(self, stmt) -> "Store":

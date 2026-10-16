@@ -1250,6 +1250,24 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   Outlets' statements are compared by value and stay as written (the figures rule). `when.date_values` gives the dates a
   translation must keep (for the fidelity work). The audit (`tools/audit.when_report`) compares code's reading with the
   model's on the newest 20,000 stored statements. Tests: `tests/test_when.py`.
+- **The name registry (Oct 16 2026, session 3 of the translation/learning plan; `names.py`, table `name_pairs`).** Each
+  part of a name (Rahul, Sharma, Rimpochee) in English and Hindi. The owner's rules: EXACT spelling only, no similarity
+  ("Shrma" is unknown, not "Sharma"; Hindi variants of the same letters, गांधी / गाँधी, ज़ / ज, are counted as one and
+  shown as most outlets wrote them); both spellings are COPIED from outlets that covered the same story (learned only
+  where a story has Hindi and English sources); per language the spelling most independent sources used wins; a pair is
+  "attested" with 2+ independent English sources, 2+ independent Hindi sources and 2+ stories, else "seen" (usable,
+  low trust); a full name is split into parts only when both sides have the same number of parts. Sources are
+  `names.source_key` (agency byline, else wire group, else owner; state media never counts), stable across stories.
+  A part no outlet pair covers is transliterated by one batched call on the `quality` tier (Translator key only),
+  validated (one part in the target script, no echo) and stored as "translated" until outlets show their own
+  spellings; no quality quota = the part stays unknown, never an error. `config/names.yaml` holds the owner's own
+  pairs and the state names of `places.py` seed the registry; both always win. Two attested Hindi forms for one
+  English part are flagged (`Registry.conflicts`), never overwritten. `english_spelling` gives the spelling English
+  outlets use most for a variant, linked only through a Hindi word OUTLETS paired with both (never a transliteration).
+  Nothing in the pipeline calls it yet: session 4 pairs a story's names before reading and gives the reading model the
+  stored spellings; the Hindi page uses the Hindi forms later. **Supabase holds reader tables only:** `Store.init(only)`;
+  the readers' database and the gate (`runs`) create and check READER_TABLES alone, so a new newsroom table can no longer
+  stop the run or the gate, nor take Supabase space. `name_pairs` is in `TABLES` in `newsroom.sh`. Tests: `tests/test_names.py`.
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:
   missed merges (statement pairs with 60%+ shared root words left apart, by the language mix of the story's sources:
   en / hi / mixed, and what code and the twice-asked question said of them), English left in Hindi pages (by field, top

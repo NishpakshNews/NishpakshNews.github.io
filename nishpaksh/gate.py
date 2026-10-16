@@ -35,7 +35,8 @@ def main() -> None:
     p.add_argument("--min-gap", type=float, default=50)
     a = p.parse_args()
     store = Store(database_url())
-    store.init()
+    from .db import READER_TABLES
+    store.init(READER_TABLES)            # Supabase: `runs` lives there; newsroom tables never do
     go, why = should_run(store, a.min_gap)
     print(f"go={'true' if go else 'false'}")
     print(f"reason={why}")

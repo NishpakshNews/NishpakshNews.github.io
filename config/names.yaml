@@ -1,0 +1,6 @@
+# The owner's own name pairs (names.py). They always win over what outlets or the model gave.
+# A full name is split part by part when both sides have the same number of parts.
+# Use only for a rare person whose spelling the outlets get wrong, or to settle a flagged conflict.
+#   - {en: Kushok Bakula Rimpochee, hi: कुशोक बकुला रिम्पोछे}
+# The Hindi state names in nishpaksh/places.py are added the same way.
+pairs: []
