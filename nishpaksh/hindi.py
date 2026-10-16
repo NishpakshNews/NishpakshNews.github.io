@@ -23,6 +23,7 @@ Only strings with no hard problem are cached; a string with a remaining small pr
 """
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import re
@@ -32,6 +33,12 @@ from . import names as N
 
 log = logging.getLogger(__name__)
 STATS: dict[str, int] = {}
+
+# the story being translated (set per translation by compose._translate; one per thread, stories publish in parallel)
+SECTION: contextvars.ContextVar[str] = contextvars.ContextVar("hindi_section", default="")
+TEMPS: contextvars.ContextVar[tuple] = contextvars.ContextVar("hindi_temps", default=())
+SEEN_TEMPS: contextvars.ContextVar[list | None] = contextvars.ContextVar("hindi_seen_temps", default=None)
+TEMP_KIND = "glossary_temp"
 
 _LATIN_NAME = re.compile(r"(?<![\w/.@-])[A-Z][a-z][A-Za-z'’-]*")
 
@@ -121,10 +128,29 @@ def names_block(names: dict[str, str], strings: list[str]) -> str:
     return "\nNAMES (write them exactly so): " + "; ".join(f"{e} = {h}" for e, h in used) + "\n"
 
 
+def terms_for(english: str) -> list[tuple[str, str]]:
+    """The terms that bind this string: hand-written ones; learned ones whose context matches (fidelity.terms_in,
+    with the story's section); then, for a learned word no sense matches, a TEMPORARY sense saved from an earlier
+    translation in a matching context (owner, Oct 16 2026: the model translates a new context, its choice is kept
+    for that context until outlets give real evidence)."""
+    out = F.terms_in(english, SECTION.get())
+    have = {en for en, _ in out}
+    temps = TEMPS.get()
+    if temps:
+        t = F.fold(english)
+        for en in dict.fromkeys(x["en"] for x in temps):
+            if en in have or not F._pat(en, "en").search(t):
+                continue
+            hi = F.learned_sense(english, en, SECTION.get(), entries=list(temps))
+            if hi:
+                out.append((en, hi))
+    return out
+
+
 def terms_block(strings: list[str]) -> str:
     found: dict[str, str] = {}
     for s in strings:
-        for en, hi in F.terms_in(s):
+        for en, hi in terms_for(s):
             found.setdefault(en, hi)
     if not found:
         return ""
@@ -136,7 +162,13 @@ def terms_block(strings: list[str]) -> str:
 def problems(en: str, hi: str) -> tuple[str | None, list[F.Problem]]:
     """(the hard problem that keeps a string out of the cache, or None; the small ones)."""
     from .compose import translation_problem
-    return translation_problem(en, hi), F.check_translation(en, hi)
+    out = F.check_translation(en, hi, section=SECTION.get())
+    bound = {e for e, _ in terms_for(en)}
+    out = [p for p in out if p.kind != "term" or p.what in bound]
+    missing = [e for e, h in terms_for(en) if not F._pat(h, "hi").search(F.fold(hi))
+               and e not in {p.what for p in out if p.kind == "term"}]
+    out += [F.Problem("term", e) for e in missing]
+    return translation_problem(en, hi), out
 
 
 def better(en: str, draft: str | None, edited: str | None) -> str | None:
@@ -195,7 +227,7 @@ def _describe(p: F.Problem) -> str:
     if p.kind == "latin":
         return f"'{p.what}' is still in English letters"
     if p.kind == "term":
-        return f"'{p.what}' must be {dict(F.all_terms()).get(p.what, '')}"
+        return f"'{p.what}' must be {dict(F.all_terms() + tuple((t['en'], t['hi']) for t in TEMPS.get())).get(p.what, '')}"
     q = {q.id: q for q in F.glossary()["qualifiers"]}.get(p.what)
     words = "/".join(q.en[:3]) if q else p.what
     return (f"the draft drops '{words}'" if p.kind == "lost" else f"the draft adds '{words}', which the English lacks")
@@ -232,7 +264,69 @@ def finish(router, chunk: list[str], drafts: dict[int, str], names: dict[str, st
     for i in range(len(chunk)):
         if i not in keep and i not in why:
             why[i] = "not translated"
+    seen = SEEN_TEMPS.get()
+    if seen is not None:
+        for i, h in keep.items():
+            seen.extend(temporary_choices(chunk[i], h))
     return keep, why
+
+
+def temporary_choices(english: str, hindi: str) -> list[dict]:
+    """For each learned English word in a string that no learned sense matched: the known Hindi rendering the
+    translation used, if exactly one of them stands in it: [{en, hi, section, words}] to save as a temporary sense
+    of that context."""
+    from . import context
+    entries = F._learned_terms()
+    bound = {e for e, _ in terms_for(english)}
+    t, h = F.fold(english), F.fold(hindi)
+    out = []
+    for en in dict.fromkeys(x["en"] for x in entries):
+        if en in bound or not F._pat(en, "en").search(t):
+            continue
+        used = {x["hi"] for x in entries if x["en"] == en and F._pat(x["hi"], "hi").search(h)}
+        if len(used) == 1:
+            sentence = context.sentence_with(english, en, "en") or english
+            out.append({"en": en, "hi": used.pop(), "section": SECTION.get(),
+                        "words": sorted(context.words(sentence, "en", en))})
+    return out
+
+
+def load_temps(store) -> tuple:
+    """The temporary senses saved so far, as entries for fidelity.learned_sense: ({en, hi, section, context})."""
+    from . import learning as L
+    out = []
+    for c in L.load(store, TEMP_KIND).values():
+        f = c.facets
+        if f.get("en") and f.get("hi"):
+            out.append({"en": f["en"], "hi": f["hi"], "section": f.get("section", ""),
+                        "context": sorted(f.get("counts") or {})})
+    return tuple(out)
+
+
+def save_temps(store, seen: list[dict]) -> int:
+    """Add translations' choices to the temporary senses (one per word, rendering and section; its context words
+    accumulate). A temporary sense never counts as evidence for learning; outlets' senses always come first."""
+    if not seen:
+        return 0
+    import datetime as dt
+    from . import learning as L
+    cands = L.load(store, TEMP_KIND)
+    now = dt.datetime.utcnow()
+    for x in seen:
+        key = f"{x['en']} = {x['hi']} @{x['section']}"
+        c = cands.get(key) or L.Candidate(TEMP_KIND, key, facets={"en": x["en"], "hi": x["hi"],
+                                                                  "section": x["section"], "counts": {}})
+        cands[key] = c
+        counts = dict(c.facets.get("counts") or {})
+        for w in x["words"]:
+            counts[w] = counts.get(w, 0) + 1
+        c.facets["counts"] = counts
+        c.first_seen = c.first_seen or now
+        c.last_seen = now
+        c.dirty = True
+    L.save(store, cands, now)
+    stat("temporary_saved", len(seen))
+    return len(seen)
 
 
 def cache_version() -> str:

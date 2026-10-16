@@ -344,34 +344,64 @@ def latin_left(hindi: str, english: str | None = None) -> list[str]:
 
 
 @functools.lru_cache(maxsize=1)
-def _learned_terms() -> tuple[tuple[str, str], ...]:
-    """Terms learned from the outlets (learn_glossary.py), after the hand-written ones, which win."""
+def _learned_terms() -> tuple[dict, ...]:
+    """Terms learned from the outlets (learn_glossary.py), each with its section and context words; the
+    hand-written ones win (a hand-written English word is never taken from here)."""
     try:
         from .learn_glossary import learned_terms
         hand = {en.lower() for en, _ in glossary()["terms"]}
-        return tuple((en, hi) for en, hi in learned_terms() if en.lower() not in hand)
+        return tuple(t for t in learned_terms() if t["en"].lower() not in hand)
     except Exception:  # noqa: BLE001 - no file, or one that does not parse: hand-written terms only
         return ()
 
 
 def all_terms() -> tuple[tuple[str, str], ...]:
-    return tuple(glossary()["terms"]) + _learned_terms()
+    """Every term as (English, Hindi), whatever its context (for naming a term in a note)."""
+    return tuple(glossary()["terms"]) + tuple((t["en"], t["hi"]) for t in _learned_terms())
 
 
-def terms_in(english: str) -> list[tuple[str, str]]:
-    """The binding terms an English text uses: (English, our Hindi); hand-written, then learned."""
+def learned_sense(english: str, en_word: str, section: str | None, entries=None) -> str | None:
+    """The Hindi a learned term gives `en_word` in this English text, or None when no sense's context matches
+    (context.best: the section, and 2+ of the sense's context words in the sentence; 3+ with no section). A
+    learned term with no section and no context (written by hand in the learned file) applies everywhere."""
+    from . import context
+    entries = [t for t in (entries if entries is not None else _learned_terms()) if t["en"] == en_word]
+    if not entries:
+        return None
+    for t in entries:
+        if not t["section"] and not t["context"]:
+            return t["hi"]
+    senses = {i: context.Sense(t["section"], context.YOUNG + 1, {w: context.SIGNATURE_MIN for w in t["context"]})
+              for i, t in enumerate(entries)}
+    sentence = context.sentence_with(english, en_word, "en") or english
+    k = context.best(senses, section or "", context.words(sentence, "en", en_word))
+    return entries[k]["hi"] if k is not None else None
+
+
+def terms_in(english: str, section: str | None = None) -> list[tuple[str, str]]:
+    """The binding terms an English text uses: (English, our Hindi). Hand-written terms everywhere; a learned term
+    only where the text's context matches one of its senses (owner, Oct 16 2026: "bank" is not बैंक by a river)."""
     t = fold(english)
-    return [(en, hi) for en, hi in all_terms() if _pat(en, "en").search(t)]
+    out = [(en, hi) for en, hi in glossary()["terms"] if _pat(en, "en").search(t)]
+    seen = {en for en, _ in out}
+    for en in dict.fromkeys(x["en"] for x in _learned_terms()):
+        if en in seen or not _pat(en, "en").search(t):
+            continue
+        hi = learned_sense(english, en, section)
+        if hi:
+            out.append((en, hi))
+    return out
 
 
-def missing_terms(english: str, hindi: str) -> list[str]:
+def missing_terms(english: str, hindi: str, section: str | None = None) -> list[str]:
     h = fold(hindi)
-    return [en for en, hi in terms_in(english) if not _pat(hi, "hi").search(h)]
+    return [en for en, hi in terms_in(english, section) if not _pat(hi, "hi").search(h)]
 
 
-def check_translation(english: str, hindi: str, strict_only: bool = True) -> list[Problem]:
-    """Everything code can say is wrong with one Hindi string made from an English one."""
+def check_translation(english: str, hindi: str, strict_only: bool = True, section: str | None = None) -> list[Problem]:
+    """Everything code can say is wrong with one Hindi string made from an English one (`section`: the story's
+    context section, so a learned term is expected only where its context matches)."""
     out = compare(english, hindi, "en", "hi", strict_only)
     out += [Problem("latin", w) for w in dict.fromkeys(latin_left(hindi, english))]
-    out += [Problem("term", t) for t in missing_terms(english, hindi)]
+    out += [Problem("term", t) for t in missing_terms(english, hindi, section)]
     return out

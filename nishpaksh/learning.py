@@ -131,14 +131,18 @@ def save(store, cands: dict[str, Candidate], now: dt.datetime | None = None) -> 
     stale = [c for c in cands.values() if c.status == "candidate" and c.last_seen
              and (now - c.last_seen).days > EXPIRE_DAYS]
     dirty = [c for c in cands.values() if c.dirty and c not in stale]
+    gone = [c for c in dirty if c.status == "merged"]          # joined into another candidate: its row goes
     with store.route(insert(t)).engine.begin() as conn:
         for c in stale + dirty:
             conn.execute(delete(t).where(t.c.kind == c.kind, t.c.key == c.key))
         for c in dirty:
-            conn.execute(insert(t).values(**_row(c)))
+            if c.status != "merged":
+                conn.execute(insert(t).values(**_row(c)))
             c.dirty = False
     for c in stale:
         cands.pop(c.key, None)
+    for k in [k for k, c in cands.items() if c in gone]:
+        cands.pop(k, None)
     return {"saved": len(dirty), "expired": len(stale)}
 
 

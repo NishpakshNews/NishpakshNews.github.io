@@ -403,16 +403,24 @@ def translate_strings(store: Store, router: Router | None, strings: list[str]) -
 
 
 def translate_payload(store: Store, router: Router | None, payload: dict) -> dict:
+    from .context import section_of
     strings = _collect_strings(payload)
-    cache = _mended(store, _translate(store, router, strings), strings)
+    cache = _mended(store, _translate(store, router, strings, section_of(payload.get("category"))), strings)
 
     def tr(s):
         return cache.get(_key(s), s) if s else s
     return _apply(payload, strings, cache, tr)
 
 
-def _translate(store: Store, router: Router | None, strings: list[str]) -> dict:
+def _translate(store: Store, router: Router | None, strings: list[str], section: str = "") -> dict:
     from . import hindi
+    hindi.SECTION.set(section or "")                      # learned terms bind only where their context matches
+    try:
+        hindi.TEMPS.set(hindi.load_temps(store))
+    except Exception:  # noqa: BLE001
+        hindi.TEMPS.set(())
+    seen_temps: list = []
+    hindi.SEEN_TEMPS.set(seen_temps)
     cache = store.translation_get([_key(s) for s in strings])
     missing = [s for s in strings if _key(s) not in cache]
     if missing and router is not None:
@@ -441,6 +449,10 @@ def _translate(store: Store, router: Router | None, strings: list[str]) -> dict:
                 log.info("translation rejected (%s): %s", w, chunk[i][:80])
             store.translation_put(got)
             cache.update(got)
+        try:
+            hindi.save_temps(store, seen_temps)
+        except Exception as e:  # noqa: BLE001 - a temporary sense improves later pages, it never stops this one
+            log.warning("temporary senses not saved: %s", str(e)[:120])
         log.info("hindi: %s", dict(hindi.STATS))
     return cache
 

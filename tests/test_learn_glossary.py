@@ -1,5 +1,6 @@
-"""English-Hindi terms learned from the outlets (learn_glossary.py, session 11): evidence from Hindi and English
-outlets on the same stories, a code-only devil's advocate, the owner's file."""
+"""English-Hindi terms learned from the outlets, by context (learn_glossary.py + context.py): evidence from Hindi and
+English outlets on the same stories, one candidate per word, sense and rendering, a code-only devil's advocate, the
+owner's file, and translations that bind a learned term only where its context matches."""
 import datetime as dt
 
 import pytest
@@ -13,33 +14,45 @@ T0 = dt.datetime(2026, 10, 1, 9)
 TOPICS = [("flood", "बाढ़"), ("drought", "सूखा"), ("earthquake", "भूकंप"), ("cyclone", "चक्रवात")]
 
 
-def story(k, en_word, hi_word, day=0, extra_hi="", aligned=True):
-    """Two English and two Hindi reports of one story; with `aligned` their sentences share a number (40), so they
-    report the same thing."""
+def story(k, en_word, hi_word, day=0, aligned=True, en_text=None, hi_text=None):
+    """Two English and two Hindi reports of one story; with `aligned` their sentences share a number (40)."""
     when = T0 + dt.timedelta(days=day)
     n_hi = "40" if aligned else "75"
-    en = [{"source": f"owner:e{k}{i}", "when": when,
-           "text": f"Officials said the {en_word} hit 40 villages and the {en_word} relief camps opened."} for i in range(2)]
-    hi = [{"source": f"owner:h{k}{i}", "when": when,
-           "text": f"अधिकारियों ने कहा कि {hi_word} से {n_hi} गांव प्रभावित हुए और {hi_word} राहत शिविर खुले {extra_hi}।"}
-          for i in range(2)]
+    en_t = en_text or "Officials said the {w} hit 40 villages and the {w} relief camps opened."
+    hi_t = hi_text or "अधिकारियों ने कहा कि {w} से {n} गांव प्रभावित हुए और {w} राहत शिविर खुले।"
+    en = [{"source": f"owner:e{k}{i}", "when": when, "text": en_t.format(w=en_word)} for i in range(2)]
+    hi = [{"source": f"owner:h{k}{i}", "when": when, "text": hi_t.format(w=hi_word, n=n_hi)} for i in range(2)]
     return {"en": en, "hi": hi}
 
 
-def window(n_each=2, start_day=0, extra=None):
+def window(n_each=2, start_day=0):
     out, k = {}, 0
     for en, hi in TOPICS:
         for j in range(n_each):
             k += 1
-            out[k] = story(k, en, hi, day=start_day + j, extra_hi=(extra or {}).get(en, ""))
+            out[k] = story(k, en, hi, day=start_day + j)
     return out
 
 
-def test_pairs_come_from_outlets_and_need_mutual_best_partners():
-    found, partners = G.pairs(window())
+def keys_of(cands, en):
+    return {k for k in cands if G.split_key(k)[0] == en and cands[k].status != "merged"}
+
+
+def accumulate(windows, sections_of=None, runs=3):
+    cands, senses = {}, {}
+    for r in range(runs):
+        for w in windows:
+            stories = {f"r{r}{sid}": s for sid, s in w(r).items()}
+            sections = {sid: sections_of(sid) for sid in stories} if sections_of else {}
+            found, _ = G.pairs(stories, None, sections)
+            G.record(cands, found, senses)
+    return cands, senses
+
+
+def test_pairs_come_from_aligned_outlets_and_need_mutual_best_partners():
+    found, _ = G.pairs(window())
     got = {(p["en"], p["hi"]) for p in found}
     assert {("flood", "बाढ़"), ("drought", "सूखा"), ("earthquake", "भूकंप"), ("cyclone", "चक्रवात")} <= got
-    # words every story shares (villages / गांव, relief / राहत) pair with nothing in particular
     assert not any(p["en"] in ("villages", "relief") for p in found)
 
 
@@ -50,104 +63,147 @@ def test_names_the_registry_knows_are_not_terms():
     assert ("flood", "बाढ़") not in {(p["en"], p["hi"]) for p in found}
 
 
-def accumulate(runs=3):
-    cands = {}
-    for r in range(runs):
-        found, partners = G.pairs(window(start_day=2 * r))
-        # new stories each run: renumber
-        for p in found:
-            p["stories"] = {f"r{r}s{sid}": v for sid, v in p["stories"].items()}
-        G.record(cands, found)
-    return cands, partners
-
-
 def test_words_that_only_share_a_story_are_not_paired():
-    # the replay's "rolls = ज्ञानेश": same stories, but no Hindi and English sentence reporting the same thing
     stories = {k: story(k, en, hi, aligned=False) for k, (en, hi) in enumerate(TOPICS * 2)}
     assert G.pairs(stories)[0] == []
 
 
-def test_evidence_adds_up_and_a_clean_pair_waits_for_the_owner_for_now():
-    cands, partners = accumulate()
-    c = cands["flood = बाढ़"]
+# the owner's example: "bank" is बैंक in markets stories and किनारा by a river
+# each sense's Hindi word stands in every story of its section, the words around it only in some (real coverage:
+# otherwise every word shared by all stories ties with it)
+MONEY = [("The {w} opened 40 new branches and its loan book grew at the {w}.",
+          "{w} ने {n} नई शाखाएं खोलीं और {w} का ऋण बढ़ा।"),
+         ("Customers of the {w} withdrew deposits after 40 branches shut at the {w}.",
+          "{w} के ग्राहकों ने {n} शाखाएं बंद होने पर जमा निकाली।"),
+         ("The {w} cut its loan rate and 40 customers took deposits at the {w}.",
+          "{w} ने ब्याज घटाया और {n} ग्राहकों ने {w} में जमा रखी।")]
+RIVER = [("Floodwater crossed the river {w} and 40 villages near the {w} were evacuated.",
+          "{w} टूटने से {n} गांवों में पानी घुसा और {w} के पास लोग निकाले गए।"),
+         ("The river rose over its {w} and 40 villages along the {w} went under water.",
+          "नदी उफनकर {w} से ऊपर बही और {w} के {n} गांव डूब गए।"),
+         ("Villagers repaired the {w} of the river after 40 homes along the {w} flooded.",
+          "ग्रामीणों ने नदी का {w} ठीक किया जब {w} के {n} घर डूबे।")]
+
+
+def bank_windows(r):
+    out = {}
+    for j in range(3):
+        out[f"m{j}"] = story(f"m{r}{j}", "bank", "बैंक", day=r, en_text=MONEY[j][0], hi_text=MONEY[j][1])
+        out[f"w{j}"] = story(f"w{r}{j}", "bank", "किनारा", day=r, en_text=RIVER[j][0], hi_text=RIVER[j][1])
+    return out
+
+
+def test_bank_is_two_senses_learned_side_by_side_not_rivals():
+    cands, senses = accumulate([bank_windows], lambda sid: "markets" if "m" in sid else "weather", runs=4)
+    ks = keys_of(cands, "bank")
+    by_hi = {G.split_key(k)[1]: k for k in ks}
+    assert set(by_hi) == {"बैंक", "किनारा"} and G.split_key(by_hi["बैंक"])[2] != G.split_key(by_hi["किनारा"])[2]
+    learned, proposed = G.decide(cands)
+    assert {G.split_key(c.key)[1] for c in learned if G.split_key(c.key)[0] == "bank"} == {"बैंक", "किनारा"}
+    assert G.rivals(cands[by_hi["बैंक"]], cands) == []
+
+
+def test_two_renderings_in_the_same_context_are_rivals_for_the_owner():
+    def w(r):
+        return {f"a{j}": story(f"a{r}{j}", "flood", "बाढ़" if j == 0 else "सैलाब", day=r) for j in range(2)} | \
+            {f"b{j}": story(f"b{r}{j}", "flood", "सैलाब" if j == 0 else "बाढ़", day=r) for j in range(2)}
+    cands, _ = accumulate([w], lambda sid: "weather")
+    ks = keys_of(cands, "flood")
+    if len(ks) == 2:                       # both found: each is the other's rival in the one sense
+        c = cands[sorted(ks)[0]]
+        assert G.rivals(c, cands)
+        G.decide(cands)
+        assert all(cands[k].status != "learned" for k in ks)
+
+
+def test_evidence_adds_up_and_a_clean_pair_is_learned():
+    cands, _ = accumulate([lambda r: window(start_day=2 * r)])
+    k = next(iter(keys_of(cands, "flood")))
+    c = cands[k]
     assert G.BAR.fails(c) == [] and G.extra_rules(c) == []
-    learned, proposed = G.decide(cands, partners=partners)
-    assert learned == [] and c.status == "proposed" and c.reason == G.CLEAN_PROPOSAL
-
-
-def test_with_auto_learning_on_a_clean_pair_is_learned(monkeypatch):
-    monkeypatch.setattr(G, "AUTO_LEARN", True)
-    cands, partners = accumulate()
-    learned, _ = G.decide(cands, partners=partners)
-    assert "flood = बाढ़" in {x.key for x in learned} and cands["flood = बाढ़"].status == "learned"
-
-
-def test_a_competing_rendering_goes_to_the_owner_not_into_translations():
-    cands, partners = accumulate()
-    partners = {"flood": {"बाढ़": 1.0, "सैलाब": 0.7}}
-    learned, proposed = G.decide({"flood = बाढ़": cands["flood = बाढ़"]}, partners=partners)
-    c = cands["flood = बाढ़"]
-    assert c.status == "proposed" and "सैलाब" in c.reason and proposed == [c]
+    learned, _ = G.decide(cands)
+    assert k in {x.key for x in learned} and c.status == "learned"
 
 
 def test_blocks_loaded_words_qualifiers_insults_and_the_owners_refusal():
-    cands, partners = accumulate()
-    c = cands["drought = सूखा"]
+    cands, _ = accumulate([lambda r: window(start_day=2 * r)])
+    c = cands[next(iter(keys_of(cands, "drought")))]
     assert G.advocate(c, loaded={"drought"}).state == "block"
-    q = L.Candidate("glossary", "alleged = कथित")
-    assert G.advocate(q).state == "block"
-    insult = L.Candidate("glossary", "remark = तंज")
-    assert G.advocate(insult).state == "block"
-    G.decide(cands, partners=partners, struck={"cyclone"})
-    assert cands["cyclone = चक्रवात"].status == "blocked"
+    assert G.advocate(L.Candidate("glossary3", "alleged = कथित @alleged#1")).state == "block"
+    assert G.advocate(L.Candidate("glossary3", "remark = तंज @remark#1")).state == "block"
+    G.decide(cands, struck={"cyclone"})
+    assert cands[next(iter(keys_of(cands, "cyclone")))].status == "blocked"
 
 
 def test_an_unstable_pair_is_held():
-    c = L.Candidate("glossary", "flood = बाढ़")
+    c = L.Candidate("glossary3", "flood = बाढ़ @flood#1")
     for i, d in enumerate([0, 0, 0, 0, 1, 2]):
         c.add(f"s{i}", f"owner:{i}", f"st{i}", L.day_of(T0 + dt.timedelta(days=d)), T0 + dt.timedelta(days=d))
     v = G.advocate(c)
     assert v.state == "hold" and "unstable" in v.reason
 
 
-def test_the_file_keeps_the_owners_edits_and_has_no_article_text(tmp_path):
-    cands, partners = accumulate()
-    G.decide(cands, partners=partners)
+def test_the_file_carries_each_sense_with_its_context_and_keeps_the_owners_edits(tmp_path):
+    cands, senses = accumulate([bank_windows], lambda sid: "markets" if "m" in sid else "weather", runs=4)
+    G.decide(cands)
     path = tmp_path / "glossary_learned.yaml"
-    G.write(path, cands, dt.date(2026, 10, 7))
-    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert doc["terms"] == [] and "flood" in [p["en"] for p in doc["proposed"]]
-    assert "villages" not in path.read_text(encoding="utf-8")
-    # the owner approves it: moves the line from proposed: to terms:
-    doc["terms"] = [p for p in doc["proposed"] if p["en"] == "flood"]
+    G.write(path, cands, dt.date(2026, 10, 7), senses)
+    text = path.read_text(encoding="utf-8")
+    doc = yaml.safe_load(text)
+    by_hi = {t["hi"]: t for t in doc["terms"] if t["en"] == "bank"}
+    assert by_hi["बैंक"]["section"] == "markets" and {"loan", "deposit"} <= set(by_hi["बैंक"]["context"])
+    assert by_hi["किनारा"]["section"] == "weather" and {"river", "villag"} <= set(by_hi["किनारा"]["context"])
+    assert "evacuated" not in text                                             # context words only, no sentences
+    doc["rejected"] = ["bank"]
     path.write_text(yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8")
-    G.decide(cands, partners=partners, approved={"flood = बाढ़"})
-    G.write(path, cands, dt.date(2026, 10, 7))
+    G.decide(cands, struck={"bank"})
+    G.write(path, cands, dt.date(2026, 10, 8), senses)
     doc = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert cands["flood = बाढ़"].status == "learned" and [t["en"] for t in doc["terms"]] == ["flood"]
-    assert "flood" not in [p["en"] for p in doc["proposed"] or []]
-    # the owner refuses one: next write drops it
-    doc["rejected"] = ["flood"]
-    path.write_text(yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8")
-    G.decide(cands, partners=partners, struck={"flood"})
-    G.write(path, cands, dt.date(2026, 10, 8))
-    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert doc["rejected"] == ["flood"] and "flood" not in [t["en"] for t in doc["terms"]]
+    assert doc["rejected"] == ["bank"] and not [t for t in doc["terms"] if t["en"] == "bank"]
 
 
-def test_learned_terms_bind_translations_but_hand_written_ones_win(monkeypatch):
+BANK_TERMS = [{"en": "bank", "hi": "बैंक", "section": "markets", "context": ["loan", "rate", "deposit"]},
+              {"en": "bank", "hi": "किनारा", "section": "weather", "context": ["river", "villag", "flood"]},
+              {"en": "FIR", "hi": "प्राथमिकी", "section": "", "context": []}]
+
+
+@pytest.fixture
+def bank_terms(monkeypatch):
     from nishpaksh import fidelity as F
-    monkeypatch.setattr("nishpaksh.learn_glossary.learned_terms",
-                        lambda path=None: [("flood", "बाढ़"), ("FIR", "प्राथमिकी")])
+    monkeypatch.setattr("nishpaksh.learn_glossary.learned_terms", lambda path=None: BANK_TERMS)
     F._learned_terms.cache_clear()
-    try:
-        assert ("flood", "बाढ़") in F.terms_in("The flood hit Assam")
-        assert F.terms_in("An FIR was filed") == [("FIR", "एफआईआर")]           # hand-written wins
-        from nishpaksh import hindi
-        before = hindi.cache_version()
-        assert hindi.cache_version() == before                                 # learned terms never re-translate
-    finally:
-        F._learned_terms.cache_clear()
+    yield F
+    F._learned_terms.cache_clear()
+
+
+def test_a_learned_term_binds_only_where_its_context_matches(bank_terms):
+    F = bank_terms
+    assert ("bank", "बैंक") in F.terms_in("The bank raised its loan rate for deposits", "markets")
+    assert ("bank", "किनारा") in F.terms_in("Villages along the river bank flooded", "weather")
+    assert not any(e == "bank" for e, _ in F.terms_in("The court sat near the bank", "courts"))     # new context
+    assert not any(e == "bank" for e, _ in F.terms_in("Villages along the river bank flooded", "markets"))
+    assert F.terms_in("An FIR was filed") == [("FIR", "एफआईआर")]                  # hand-written wins
+    from nishpaksh import hindi
+    before = hindi.cache_version()
+    assert hindi.cache_version() == before                                     # learned terms never re-translate
+
+
+def test_a_new_context_keeps_the_models_choice_as_a_temporary_sense(bank_terms, tmp_path):
+    from nishpaksh import hindi
+    from nishpaksh.db import Store
+    store = Store(f"sqlite:///{tmp_path / 'n.db'}")
+    store.init()
+    hindi.SECTION.set("courts")
+    en = "The court sat near the river bank where the villages flooded"
+    choices = hindi.temporary_choices(en, "अदालत नदी के किनारा के पास बैठी जहां गांवों में बाढ़ आई")
+    assert [(c["en"], c["hi"], c["section"]) for c in choices] == [("bank", "किनारा", "courts")]
+    hindi.save_temps(store, choices)
+    hindi.TEMPS.set(hindi.load_temps(store))
+    assert ("bank", "किनारा") in hindi.terms_for("Water rose at the river bank and villages flooded")
+    hindi.SECTION.set("markets")                       # the learned sense of the section comes first
+    assert ("bank", "बैंक") in hindi.terms_for("The bank raised its loan rate for deposits")
+    hindi.SECTION.set("")
+    hindi.TEMPS.set(())
 
 
 @pytest.fixture

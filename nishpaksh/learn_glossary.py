@@ -15,12 +15,17 @@ across runs and days.
 
 THE BAR: 2+ independent English and 2+ independent Hindi sources, 3+ stories, 3+ days, no day over half.
 
+CONTEXT (context.py, owner Oct 16 2026): partners are found within each SECTION, and inside a section each sighting
+joins a SENSE by the words of its English sentence. One candidate per English word, sense and Hindi rendering:
+"bank = बैंक" in markets and "bank = किनारा" in weather are two senses, never rivals. A learned term carries its
+section and context words in the file and binds a translation only where a sentence's context matches it.
+
 THE DEVIL'S ADVOCATE, code only (no model call):
   - BLOCK: the English word is a reading's loaded word or a qualifier (fidelity glossary); the Hindi word is a dispute
     or insult cue; on `rejected:`.
-  - TO THE OWNER (proposed, not learned): a COMPETING rendering (another Hindi word as strongly tied to the same English word,
-    Dice >= 0.6: binding one would pick a side's usage); UNSTABLE (without its best day and its best
-    source it no longer passes the bar); the Hindi word already bound to another English word.
+  - TO THE OWNER (proposed, not learned): a COMPETING rendering IN THE SAME SENSE (another Hindi word with at least
+    half the stories: binding one would pick a side's usage); UNSTABLE (without its best day and its best source it
+    no longer passes the bar); the Hindi word already bound to another English word in the same section.
   - Otherwise LEARNED automatically into config/glossary_learned.yaml `terms` (words and counts only, no article
     text: the repository is public). Hand-written terms in glossary.yaml always win; learned terms bind translations
     from the next run (fidelity.terms_in) but do not change the translation cache's version (owner, Oct 14 2026: no
@@ -45,8 +50,8 @@ from . import learning as L
 log = logging.getLogger(__name__)
 
 FILE = "glossary_learned.yaml"
-KIND = "glossary2"          # sentence-aligned evidence (Oct 16 2026); "glossary" rows held story-level pairs: removed
-LEGACY_KINDS = ("glossary",)
+KIND = "glossary3"          # one candidate per English word, sense and Hindi rendering (context.py, Oct 16 2026)
+LEGACY_KINDS = ("glossary", "glossary2")   # story-level pairs; then aligned pairs with no sense: removed
 BAR = L.Bar(sources=4, stories=3, days=3, max_day_share=0.5)
 MIN_SIDE_SOURCES = 2        # per language
 MIN_STORY_SOURCES = 2       # independent sources of one language in one story
@@ -54,10 +59,10 @@ MIN_PAIR_STORIES = 2        # stories the pair shares within the window
 DICE = 0.6
 MAX_SHARE = 0.25            # of the window's stories: commoner words go with everything
 MAX_NEW = 5
-# Proposals only, for now (Oct 16 2026): the first replay on 14 days of stored stories showed story-level pairing
-# learning "rolls = ज्ञानेश" (a name) and proposing "shipping = ईरान". Sentence alignment fixes the signal; until the
-# owner has seen what it learns, clean pairs wait in `proposed:` too. Set True to bind clean pairs automatically.
-AUTO_LEARN = False
+COMPETING = 0.5            # a rival rendering in the same sense with at least half the stories
+# Clean pairs are learned automatically (owner, Oct 16 2026, once senses keep "bank" in its own context). A pair
+# with a rival rendering in the same context, unstable evidence, or a Hindi word bound elsewhere waits for the owner.
+AUTO_LEARN = True
 CLEAN_PROPOSAL = "passed the bar and the devil's advocate: waiting for the owner"
 
 HEADER = """# English-Hindi terms learned from the outlets by nishpaksh/learn_glossary.py (Oct 16 2026). Evidence: Hindi
@@ -93,13 +98,15 @@ def _doc(path: Path) -> dict:
         return {}
 
 
-def learned_terms(path: Path | None = None) -> list[tuple[str, str]]:
-    """(English, Hindi) of the learned and approved terms, for translations."""
+def learned_terms(path: Path | None = None) -> list[dict]:
+    """The learned and approved terms with their context, for translations: [{en, hi, section, context}]. A term
+    with no `section` and no `context` (one the owner wrote by hand here) applies everywhere."""
     from .config import CONFIG_DIR
     out = []
     for t in _doc(path or (CONFIG_DIR / FILE)).get("terms") or []:
         if isinstance(t, dict) and isinstance(t.get("en"), str) and isinstance(t.get("hi"), str):
-            out.append((t["en"], t["hi"]))
+            out.append({"en": t["en"], "hi": t["hi"], "section": str(t.get("section") or ""),
+                        "context": [str(w) for w in t.get("context") or []]})
     return out
 
 
@@ -137,9 +144,11 @@ def _sentence_numbers(text: str) -> set[str]:
     return out
 
 
-def aligned_pairs(en_arts: list[dict], hi_arts: list[dict], en_words: set[str], hi_words: set[str]) -> set:
-    """(English word, Hindi word) pairs that stand in an English and a Hindi sentence of one story sharing a number
-    (by value, any script): the two sentences report the same thing, so their words may translate each other."""
+def aligned_pairs(en_arts: list[dict], hi_arts: list[dict], en_words: set[str], hi_words: set[str]) -> dict:
+    """{(English word, Hindi word): [the English sentence's context words, ...]} for word pairs that stand in an
+    English and a Hindi sentence of one story sharing a number (by value, any script): the two sentences report the
+    same thing, so their words may translate each other; the English sentence is the pair's context there."""
+    from . import context
     from .fidelity import sentences
     def sents(arts, words, rx, stop):
         out = []
@@ -149,22 +158,32 @@ def aligned_pairs(en_arts: list[dict], hi_arts: list[dict], en_words: set[str], 
                 if nums:
                     ws = (set(rx.findall(s)) - stop) & words
                     if ws:
-                        out.append((nums, ws))
+                        out.append((nums, ws, s))
         return out[:MAX_SENTENCES]
     en_s = sents(en_arts, en_words, _EN_WORD, EN_STOP)
     hi_s = sents(hi_arts, hi_words, _HI_WORD, HI_STOP)
-    out = set()
-    for en_nums, en_ws in en_s:
-        for hi_nums, hi_ws in hi_s:
+    out: dict = {}
+    for en_nums, en_ws, en_sent in en_s:
+        for hi_nums, hi_ws, _ in hi_s:
             if en_nums & hi_nums:
-                out.update((e, h) for e in en_ws for h in hi_ws)
+                for e in en_ws:
+                    ctx = context.words(en_sent, "en", e)
+                    for h in hi_ws:
+                        lst = out.setdefault((e, h), [])
+                        if len(lst) < 5:
+                            lst.append(ctx)
     return out
 
 
-def pairs(stories: dict, names=None) -> tuple[list[dict], dict]:
-    """From {story id: {"en": [articles], "hi": [articles]}} (each article: source, text, when): the pairs that
-    pass within this window, as [{en, hi, stories: {story: (en sources, hi sources, when)}}], and {English word:
-    {Hindi partner: Dice}} (for competing renderings)."""
+def pairs(stories: dict, names=None, sections: dict | None = None) -> tuple[list[dict], dict]:
+    """From {story id: {"en": [articles], "hi": [articles]}} (each article: source, text, when): the pairs that pass
+    within this window, as [{en, hi, section, stories: {story: (en sources, hi sources, when, [contexts])}}], and
+    {(section, English word): {Hindi partner: Dice}}.
+
+    Partners are found WITHIN EACH SECTION (context.section_of; "" for stories not yet published): "bank" pairs with
+    बैंक in markets stories and with किनारा in weather stories, instead of one global best partner that would hide
+    the second sense. Within a section, senses are told apart later by the sentence words (record)."""
+    sections = sections or {}
     per_story, aligned = {}, {}
     for sid, s in stories.items():
         en, hi = story_words(s.get("en") or [], "en"), story_words(s.get("hi") or [], "hi", names)
@@ -172,52 +191,109 @@ def pairs(stories: dict, names=None) -> tuple[list[dict], dict]:
             when = min((a.get("when") for a in (s.get("en") or []) + (s.get("hi") or []) if a.get("when")), default=None)
             per_story[sid] = (en, hi, when)
             aligned[sid] = aligned_pairs(s.get("en") or [], s.get("hi") or [], set(en), set(hi))
-    n = len(per_story)
-    if not n:
-        return [], {}
-    en_count, hi_count, both = Counter(), Counter(), Counter()
-    for sid, (en, hi, _) in per_story.items():
-        en_count.update(list(en))
-        hi_count.update(list(hi))
-        # a pair counts in a story only when the two words stand in a Hindi and an English sentence that report the
-        # same thing (they share a number): words that merely share a story ("rolls" / "ज्ञानेश", "shipping" /
-        # "ईरान" in the replay of Oct 16 2026) are not translations of each other
-        for pair in aligned[sid]:
-            both[pair] += 1
-    common = lambda c, w: c[w] / n > MAX_SHARE and n >= 8          # with few stories every word looks common
-    best_hi: dict[str, tuple[float, str]] = {}
-    best_en: dict[str, tuple[float, str]] = {}
-    partners: dict[str, Counter] = defaultdict(Counter)
-    for (e, h), k in both.items():
-        if k < MIN_PAIR_STORIES:
-            continue
-        d = 2 * k / (en_count[e] + hi_count[h])
-        partners[e][h] = d
-        if d > best_hi.get(e, (0, ""))[0] or (d == best_hi.get(e, (0, ""))[0] and h < best_hi[e][1]):
-            best_hi[e] = (d, h)
-        if d > best_en.get(h, (0, ""))[0] or (d == best_en.get(h, (0, ""))[0] and e < best_en[h][1]):
-            best_en[h] = (d, e)
-    out = []
-    for e, (d, h) in best_hi.items():
-        if d < DICE or best_en.get(h, (0, ""))[1] != e or common(en_count, e) or common(hi_count, h):
-            continue
-        ties = [x for x, v in partners[e].items() if x != h and v == d]
-        if ties:
-            continue                                     # two equally good partners teach nothing
-        st = {sid: (sorted(per_story[sid][0][e]), sorted(per_story[sid][1][h]), per_story[sid][2])
-              for sid in per_story if (e, h) in aligned[sid]}
-        out.append({"en": e, "hi": h, "stories": st})
-    return out, partners
+    groups: dict[str, list] = defaultdict(list)
+    for sid in per_story:
+        groups[sections.get(sid, "")].append(sid)
+    out, partners_all = [], {}
+    for section, sids in groups.items():
+        n = len(sids)
+        en_count, hi_count, both = Counter(), Counter(), Counter()
+        for sid in sids:
+            en, hi, _ = per_story[sid]
+            en_count.update(list(en))
+            hi_count.update(list(hi))
+            # a pair counts in a story only when the two words stand in a Hindi and an English sentence that report
+            # the same thing (they share a number): words that merely share a story ("rolls" / "ज्ञानेश") are not
+            # translations of each other
+            for pair in aligned[sid]:
+                both[pair] += 1
+        common = lambda c, w: c[w] / n > MAX_SHARE and n >= 8          # with few stories every word looks common
+        best_hi: dict[str, tuple[float, str]] = {}
+        best_en: dict[str, tuple[float, str]] = {}
+        partners: dict[str, Counter] = defaultdict(Counter)
+        for (e, h), k in both.items():
+            if k < MIN_PAIR_STORIES:
+                continue
+            d = 2 * k / (en_count[e] + hi_count[h])
+            partners[e][h] = d
+            if d > best_hi.get(e, (0, ""))[0] or (d == best_hi.get(e, (0, ""))[0] and h < best_hi[e][1]):
+                best_hi[e] = (d, h)
+            if d > best_en.get(h, (0, ""))[0] or (d == best_en.get(h, (0, ""))[0] and e < best_en[h][1]):
+                best_en[h] = (d, e)
+        for e, (d, h) in best_hi.items():
+            if d < DICE or best_en.get(h, (0, ""))[1] != e or common(en_count, e) or common(hi_count, h):
+                continue
+            if [x for x, v in partners[e].items() if x != h and v == d]:
+                continue                                 # two equally good partners teach nothing
+            st = {sid: (sorted(per_story[sid][0][e]), sorted(per_story[sid][1][h]), per_story[sid][2],
+                        aligned[sid][(e, h)]) for sid in sids if (e, h) in aligned[sid]}
+            out.append({"en": e, "hi": h, "section": section, "stories": st})
+        for e, ps in partners.items():
+            partners_all[(section, e)] = dict(ps)
+    return out, partners_all
 
 
-def record(cands: dict, found: list[dict]) -> int:
+# -- senses (context.py): one candidate per English word, sense and Hindi rendering ---------------------------------
+
+SENSE_KIND = "glossary_ctx"     # per English word: its senses (section + signature), in the newsroom
+
+
+def cand_key(en: str, hi: str, sense: str) -> str:
+    return f"{en} = {hi} @{sense}"
+
+
+def split_key(key: str) -> tuple[str, str, str]:
+    left, _, sense = key.partition(" @")
+    en, _, hi = left.partition(" = ")
+    return en, hi, sense
+
+
+def load_senses(store) -> dict:
+    """{English word: L.Candidate holding facets["senses"] = {sense key: Sense dict}}."""
+    return L.load(store, SENSE_KIND)
+
+
+def senses_of(holder: L.Candidate) -> dict:
+    from .context import Sense
+    return {k: Sense.from_dict(v) for k, v in (holder.facets.get("senses") or {}).items()}
+
+
+def _keep_senses(holder: L.Candidate, senses: dict) -> None:
+    holder.facets["senses"] = {k: v.to_dict() for k, v in senses.items()}
+    holder.status = "learned"                   # the sense store itself never expires
+    holder.dirty = True
+
+
+def record(cands: dict, found: list[dict], sense_store: dict | None = None) -> int:
+    """Add the window's pairs to memory, each story's sighting under the SENSE its context belongs to (context.assign:
+    the story's section and the English sentence's words). A sighting that shows two senses are one merges their
+    candidates."""
+    from . import context
+    sense_store = sense_store if sense_store is not None else {}
     n = 0
     for p in found:
-        key = f"{p['en']} = {p['hi']}"
-        c = cands.get(key)
-        if c is None:
-            c = cands[key] = L.Candidate(KIND, key)
-        for sid, (en_src, hi_src, when) in p["stories"].items():
+        e, h, section = p["en"], p["hi"], p.get("section", "")
+        holder = sense_store.get(e)
+        if holder is None:
+            holder = sense_store[e] = L.Candidate(SENSE_KIND, e)
+        senses = senses_of(holder)
+        for sid, (en_src, hi_src, when, contexts) in p["stories"].items():
+            ws = set().union(*contexts) if contexts else set()
+            before = set(senses)
+            counter = [int(holder.facets.get("next") or 0)]
+
+            def new_key():
+                counter[0] += 1
+                return f"{e}#{counter[0]}"
+            sense = context.assign(senses, section, ws, new_key)
+            holder.facets["next"] = counter[0]
+            for gone in before - set(senses):            # merged into `sense`: their candidates join it
+                for key in [k for k in cands if split_key(k)[0] == e and split_key(k)[2] == gone]:
+                    _merge_into(cands, key, cand_key(*split_key(key)[:2], sense))
+            key = cand_key(e, h, sense)
+            c = cands.get(key)
+            if c is None:
+                c = cands[key] = L.Candidate(KIND, key)
             new = False
             for src in en_src + hi_src:
                 if c.add(f"{sid}:{src}", src, sid, L.day_of(when), when):
@@ -228,7 +304,33 @@ def record(cands: dict, found: list[dict]) -> int:
                     c.put("en_sources", src)
                 for src in hi_src:
                     c.put("hi_sources", src)
+                if section:
+                    c.facets["section"] = section
+        _keep_senses(holder, senses)
     return n
+
+
+def _merge_into(cands: dict, old: str, new: str) -> None:
+    a = cands.pop(old)
+    b = cands.get(new)
+    if b is None:
+        a.key = new
+        a.dirty = True
+        cands[new] = a
+        return
+    b.sources = list(dict.fromkeys(b.sources + a.sources))[-L.KEEP:]
+    b.stories = list(dict.fromkeys(b.stories + a.stories))[-L.KEEP:]
+    b.articles = list(dict.fromkeys(b.articles + a.articles))[-L.KEEP:]
+    for d, k in a.days.items():
+        b.days[d] = b.days.get(d, 0) + k
+    for f in ("en_sources", "hi_sources"):
+        b.facets[f] = list(dict.fromkeys((b.facets.get(f) or []) + (a.facets.get(f) or [])))
+    b.first_seen = min(filter(None, [a.first_seen, b.first_seen]), default=None)
+    b.last_seen = max(filter(None, [a.last_seen, b.last_seen]), default=None)
+    b.dirty = True
+    a.status = "merged"
+    a.dirty = True
+    cands["__merged__" + old] = a           # kept until saved, so its row is deleted (learning.save)
 
 
 # -- the bar and the devil's advocate (pure, code only) -----------------------------------------------------------
@@ -253,12 +355,27 @@ def _without_best(c: L.Candidate) -> L.Candidate:
     return L.Candidate(c.kind, c.key, srcs, c.stories, d, facets=c.facets, first_seen=c.first_seen, last_seen=c.last_seen)
 
 
-def advocate(c: L.Candidate, loaded=frozenset(), partners: dict | None = None, bound: dict[str, str] | None = None,
+def rivals(c: L.Candidate, cands: dict) -> list[str]:
+    """Other Hindi renderings of the same English word IN THE SAME SENSE with at least half this one's stories: two
+    renderings in use in one context. A rendering in another sense is not a rival (बैंक in markets, किनारा in
+    weather)."""
+    en, hi, sense = split_key(c.key)
+    out = []
+    for k, o in cands.items():
+        e2, h2, s2 = split_key(k)
+        if o is not c and e2 == en and s2 == sense and h2 != hi and o.status != "merged" \
+                and len(o.stories) >= COMPETING * max(1, len(c.stories)):
+            out.append(h2)
+    return sorted(set(out))
+
+
+def advocate(c: L.Candidate, loaded=frozenset(), cands: dict | None = None, bound: dict | None = None,
              struck=frozenset()) -> L.Verdict:
-    """Block (never learned), "owner" (a proposal for the owner, not learned), or clear."""
+    """Block (never learned), hold (a proposal for the owner, not binding), or clear."""
     from . import fidelity
-    en, hi = c.key.split(" = ", 1)
-    if en in struck:
+    en, hi, sense = split_key(c.key)
+    section = c.facets.get("section", "")
+    if en.lower() in struck:
         return L.Verdict("block", "refused by the owner")
     if en in loaded:
         return L.Verdict("block", "a reading tagged the English word as loaded")
@@ -266,21 +383,21 @@ def advocate(c: L.Candidate, loaded=frozenset(), partners: dict | None = None, b
         return L.Verdict("block", "a word that limits a claim: the fidelity glossary keeps it")
     if L.cue_pattern("dispute").search(hi):
         return L.Verdict("block", "the Hindi word is a dispute or insult cue")
-    if partners and en in partners:
-        # another Hindi word as strongly tied to the English one (Dice): two renderings in use
-        rivals = [x for x, v in partners[en].items() if x != hi and v >= DICE]
-        if rivals:
-            return L.Verdict("hold", f"a competing Hindi rendering: {', '.join(sorted(rivals)[:3])}")
-    if bound and bound.get(hi) and bound[hi] != en:
-        return L.Verdict("hold", f"the Hindi word is already bound to '{bound[hi]}'")
+    r = rivals(c, cands or {})
+    if r:
+        return L.Verdict("hold", f"a competing Hindi rendering in the same context: {', '.join(r[:3])}")
+    other = (bound or {}).get((section, hi))
+    if other and other != en:
+        return L.Verdict("hold", f"the Hindi word is already bound to '{other}' in this section")
     if BAR.fails(_without_best(c)):
         return L.Verdict("hold", "unstable: without its best day and best source it no longer passes")
     return L.CLEAR
 
 
-def decide(cands: dict, loaded=frozenset(), partners=None, bound=None, struck=frozenset(), hand=frozenset(),
-           now=None, approved=frozenset()) -> tuple[list, list]:
-    """(newly learned, newly proposed to the owner). Holds become proposals once the bar is met."""
+def decide(cands: dict, loaded=frozenset(), bound=None, struck=frozenset(), hand=frozenset(), now=None,
+           approved=frozenset()) -> tuple[list, list]:
+    """(newly learned, newly proposed to the owner), sense by sense. Holds become proposals once the bar is met.
+    `approved`: (English, Hindi, section) the owner moved to `terms:`."""
     now = now or dt.datetime.utcnow()
     learned, proposed = [], []
     bound = dict(bound or {})
@@ -290,26 +407,27 @@ def decide(cands: dict, loaded=frozenset(), partners=None, bound=None, struck=fr
             setattr(c, k, v)
         c.checked_at, c.dirty = now, True
 
-    for c in sorted(cands.values(), key=lambda x: (-len(x.stories), x.key)):
-        en, hi = c.key.split(" = ", 1)
+    for c in sorted([c for c in cands.values() if c.status != "merged"], key=lambda x: (-len(x.stories), x.key)):
+        en, hi, sense = split_key(c.key)
+        section = c.facets.get("section", "")
         if en.lower() in struck:                         # the owner's word wins, whatever the status
             if c.status != "blocked":
                 mark(c, status="blocked", verdict="block", reason="refused by the owner")
             continue
-        if c.key in approved:                            # the owner moved a proposal to `terms:`
+        if (en, hi, section) in approved:                # the owner moved a proposal to `terms:`
             if c.status != "learned":
                 mark(c, status="learned", verdict="clear", reason="approved by the owner")
             continue
         if c.status in ("blocked", "learned"):
             continue
-        v = advocate(c, loaded, partners, bound, struck)
+        v = advocate(c, loaded, cands, bound, struck)
         if v.state == "block":
             mark(c, status="blocked", verdict="block", reason=v.reason)
             continue
         if en in hand or BAR.fails(c) or extra_rules(c):
             continue
         if v.state == "hold":
-            if c.status != "proposed":
+            if c.status != "proposed" or c.reason != v.reason:
                 mark(c, status="proposed", verdict="hold", reason=v.reason)
                 proposed.append(c)
             continue
@@ -321,47 +439,60 @@ def decide(cands: dict, loaded=frozenset(), partners=None, bound=None, struck=fr
         if len(learned) >= MAX_NEW:
             continue
         mark(c, status="learned", verdict="clear", reason="passed the bar and the devil's advocate")
-        bound[hi] = en
+        bound[(section, hi)] = en
         learned.append(c)
     return learned, proposed
 
 
 # -- the file ------------------------------------------------------------------------------------------------------
 
-def _line(c: L.Candidate, today: dt.date, reason: str = "") -> str:
-    en, hi = c.key.split(" = ", 1)
-    e = {"en": en, "hi": hi, "learned": today.isoformat(), "stories": len(c.stories), "days": len(c.days),
+CONTEXT_WORDS = 12          # signature words written per learned sense
+
+
+def _entry(c: L.Candidate, today: dt.date, sense_store: dict, reason: str = "") -> dict:
+    from .context import Sense
+    en, hi, sense = split_key(c.key)
+    holder = sense_store.get(en)
+    s = Sense.from_dict((holder.facets.get("senses") or {}).get(sense)) if holder else Sense()
+    ctx = sorted(s.signature(), key=lambda w: (-s.counts.get(w, 0), w))[:CONTEXT_WORDS]
+    e = {"en": en, "hi": hi, "section": s.section or c.facets.get("section", ""), "context": ctx,
+         "learned": today.isoformat(), "stories": len(c.stories), "days": len(c.days),
          "en_sources": len(c.facets.get("en_sources") or []), "hi_sources": len(c.facets.get("hi_sources") or [])}
     if reason:
         e["why"] = reason
+    return e
+
+
+def _flow(e: dict) -> str:
     return "  - {" + ", ".join(f"{k}: {json.dumps(v, ensure_ascii=False)}" for k, v in e.items()) + "}\n"
 
 
-def write(path: Path, cands: dict, today: dt.date) -> None:
-    """The file from the memory: rejected words as the owner left them, learned terms, proposals. Lines the owner
-    moved from `proposed:` to `terms:` are kept as terms."""
+def write(path: Path, cands: dict, today: dt.date, sense_store: dict | None = None) -> None:
+    """The file from the memory: rejected words as the owner left them, learned terms with their context, proposals.
+    Lines the owner moved from `proposed:` to `terms:` are kept as terms."""
+    sense_store = sense_store or {}
     doc = _doc(path) if path.exists() else {}
     struck = [str(x) for x in doc.get("rejected") or []]
-    gone = {c.key for c in cands.values() if c.status == "blocked"}
+    gone = {split_key(c.key)[:2] + (c.facets.get("section", ""),) for c in cands.values() if c.status == "blocked"}
     owner_terms = [t for t in doc.get("terms") or [] if isinstance(t, dict) and t.get("en") and t.get("hi")
-                   and f"{t['en']} = {t['hi']}" not in gone]
-    have = {f"{t['en']} = {t['hi']}" for t in owner_terms}
+                   and (t["en"], t["hi"], t.get("section", "")) not in gone]
+    have = {(t["en"], t["hi"], t.get("section", "")) for t in owner_terms}
     body = HEADER.replace("rejected: []", "rejected: " + json.dumps(struck, ensure_ascii=False))
-    lines_t = ["  - {" + ", ".join(f"{k}: {json.dumps(v, ensure_ascii=False)}" for k, v in t.items()) + "}\n"
-               for t in owner_terms]
-    lines_t += [_line(c, today) for c in sorted(cands.values(), key=lambda c: c.key)
-                if c.status == "learned" and c.key not in have]
-    lines_p = [_line(c, today, c.reason) for c in sorted(cands.values(), key=lambda c: c.key)
-               if c.status == "proposed" and c.key not in have]
-    body += "\n" + (("terms:\n" + "".join(lines_t)) if lines_t else "terms: []\n")
-    body += "\n" + (("proposed:\n" + "".join(lines_p)) if lines_p else "proposed: []\n")
+    live = [c for c in sorted(cands.values(), key=lambda c: c.key) if c.status != "merged"]
+    terms = [_flow(t) for t in owner_terms]
+    terms += [_flow(_entry(c, today, sense_store)) for c in live if c.status == "learned"
+              and split_key(c.key)[:2] + (c.facets.get("section", ""),) not in have]
+    props = [_flow(_entry(c, today, sense_store, c.reason)) for c in live if c.status == "proposed"
+             and split_key(c.key)[:2] + (c.facets.get("section", ""),) not in have]
+    body += "\n" + (("terms:\n" + "".join(terms)) if terms else "terms: []\n")
+    body += "\n" + (("proposed:\n" + "".join(props)) if props else "proposed: []\n")
     path.write_text(body, encoding="utf-8")
 
 
 # -- the run -------------------------------------------------------------------------------------------------------
 
 def _drop_legacy(store) -> None:
-    """The first hours' memory paired words that merely shared a story; it is not evidence under the aligned rule."""
+    """Memory under earlier rules (story-level pairs; then pairs with no sense) is not evidence under the current one."""
     from sqlalchemy import delete
     from .db import learn_candidates as t
     try:
@@ -371,7 +502,7 @@ def _drop_legacy(store) -> None:
 
 
 def run(store, days: float = 3, dry_run: bool = False, path: Path | None = None) -> dict:
-    from . import fidelity, heavy, names as N
+    from . import context, fidelity, heavy, names as N
     from .config import CONFIG_DIR
     from .db import articles, claims, select
     path = path or (CONFIG_DIR / FILE)
@@ -395,25 +526,31 @@ def run(store, days: float = 3, dry_run: bool = False, path: Path | None = None)
         for c in store.rows(select(claims.c.loaded_words).where(claims.c.article_id.in_(ids[start:start + 400]))):
             for w in c.get("loaded_words") or []:
                 loaded_tags.extend(x.lower() for x in str(w).split())
-    found, partners = pairs(stories, N.load(store))
+    sections = context.story_sections(store, stories)
+    found, _ = pairs(stories, N.load(store), sections)
     if not dry_run:
         _drop_legacy(store)
     cands = L.load(store, KIND)
-    new = record(cands, found)
+    sense_store = load_senses(store)
+    new = record(cands, found, sense_store)
     doc = _doc(path) if path.exists() else {}
     struck = {str(x).lower() for x in doc.get("rejected") or []}
     hand = {en.lower() for en, _ in fidelity.glossary()["terms"]}
-    bound = {c.key.split(" = ", 1)[1]: c.key.split(" = ", 1)[0] for c in cands.values() if c.status == "learned"}
-    approved = {f"{t['en']} = {t['hi']}" for t in doc.get("terms") or [] if isinstance(t, dict)}
+    bound = {(c.facets.get("section", ""), split_key(c.key)[1]): split_key(c.key)[0]
+             for c in cands.values() if c.status == "learned"}
+    approved = {(t["en"], t["hi"], t.get("section", "")) for t in doc.get("terms") or [] if isinstance(t, dict)}
     loaded = L.loaded_set(loaded_tags)
-    learned, proposed = decide(cands, loaded, partners, bound, struck, hand, now, approved)
+    learned, proposed = decide(cands, loaded, bound, struck, hand, now, approved)
+    live = [c for c in cands.values() if c.status != "merged"]
     out = {"articles": len(rows), "mixed_stories": len(stories), "pairs_in_window": len(found), "new_evidence": new,
-           "candidates": len(cands), "funnel": L.funnel(cands.values(), BAR, extra_rules), "near": L.near(cands.values(), BAR, extra_rules),
+           "candidates": len(live), "senses": sum(len(h.facets.get("senses") or {}) for h in sense_store.values()),
+           "funnel": L.funnel(live, BAR, extra_rules), "near": L.near(live, BAR, extra_rules),
            "learned_now": [c.key for c in learned], "proposed_now": [c.key for c in proposed]}
     if dry_run:
         return out
     out.update(L.save(store, cands, now))
-    write(path, cands, now.date())
+    L.save(store, sense_store, now)
+    write(path, cands, now.date(), sense_store)
     return out
 
 

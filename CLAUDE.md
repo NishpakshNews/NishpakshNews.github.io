@@ -1424,6 +1424,24 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   section), strictly more than any other; no match = nothing stored is used (a new context never borrows another
   context's entry). Two renderings in different contexts are two senses, not rivals. `story_sections` reads published
   pages' sections. The learners and translation move onto senses in the next sessions. Tests: `tests/test_context.py`.
+- **The glossary by context (Oct 16 2026, context plan session 2; `learn_glossary.py`, `fidelity.terms_in`,
+  `hindi.terms_for`).** LEARNING: partners are found WITHIN EACH SECTION (stories grouped by `context.story_sections`;
+  "" before publication), so "bank" can pair with बैंक in markets and with किनारा in weather; inside a section each
+  sighting joins a SENSE by its English sentence's words (`context.assign`; senses per English word in
+  `learn_candidates` kind "glossary_ctx"). One candidate per word, sense and rendering (kind "glossary3", key
+  "bank = बैंक @bank#1"; senses a sighting bridges are merged with their candidates; earlier kinds "glossary",
+  "glossary2" deleted). RIVALS only within one sense (another rendering with at least half the stories); "already
+  bound" only within one section. AUTOMATIC learning ON (owner, Oct 16 2026). The file's terms carry `section` and
+  `context` (up to 12 signature words; no sentences). USE: `fidelity.terms_in(english, section)` binds a learned term
+  only where the sentence's context matches one of its senses (`learned_sense`, context.best: the section and 2+
+  context words, strictly best; a hand-written line with no section or context applies everywhere; hand-written
+  glossary.yaml terms always win and apply everywhere). The story's section reaches translation through
+  `hindi.SECTION` (a context variable set in `compose._translate`; one per thread). TEMPORARY SENSES (owner: a new
+  context is translated by the model and kept as temporary until real evidence comes): after a batch, for a learned
+  word no sense matched, if exactly one of its known renderings stands in our Hindi, that choice is saved with the
+  section and sentence words (`learn_candidates` kind "glossary_temp", expires after 30 days unused) and binds later
+  sentences of a matching context (`hindi.terms_for`, after learned senses, which always come first). A temporary
+  sense is never evidence for learning. Tests: `tests/test_learn_glossary.py` (the bank example end to end).
 - **Open (Oct 16 2026):** `tests/test_express_db.py::test_nothing_is_embedded_while_the_pacing_curve_has_given_the_slice_out`
   fails at some hours of the day (failed at ~05:30 UTC with and without the session 9 changes, passed at 04:xx).
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:
