@@ -41,7 +41,7 @@ Published: {published} (India time)
 Title: {title}
 Text:
 \"\"\"{text}\"\"\"
-
+{names}
 Return ONE JSON object with exactly these keys:
 {{
   "signature": "one neutral English sentence naming the core event: who, what, where",
@@ -275,9 +275,11 @@ def store_extraction(store: Store, article_id: int, story_id: int | None, ex: di
             c.execute(insert(claims), rows)
 
 
-def _extract_one(store: Store, router: Router, a: dict) -> str:
+def _extract_one(store: Store, router: Router, a: dict, names: str = "") -> str:
+    # names: the registry's English spellings of the names this Hindi article uses (namepair.py, Oct 16 2026)
     prompt = EXTRACT_PROMPT.format(outlet=a["outlet"], published=_fmt_ist(a["published_at"]),
-                                   title=a["title"] or "", text=(a["text"] or "")[: SETTINGS.max_article_chars])
+                                   title=a["title"] or "", text=(a["text"] or "")[: SETTINGS.max_article_chars],
+                                   names=names)
     try:
         res = router.call("bulk", prompt, json_out=True, max_output_tokens=6000)   # room for each item's frame
         ex = normalize_extraction(res.data)
@@ -334,7 +336,7 @@ def select_for_extraction(store: Store, focus: set[int] | None = None, express: 
     from .wire import independence_groups, independent
     # the text itself is fetched only for the articles chosen (egress, Oct 8 2026): choosing needs its length
     q = (select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.agency, articles.c.wire_group,
-                articles.c.story_id, articles.c.title, func.length(articles.c.text).label("text_len"),
+                articles.c.lang, articles.c.story_id, articles.c.title, func.length(articles.c.text).label("text_len"),
                 articles.c.published_at, articles.c.extract_failures, articles.c.extracted_at, articles.c.text_source)
          .where(articles.c.story_id.is_not(None), articles.c.text.is_not(None)))
     if focus is not None:
@@ -480,6 +482,10 @@ def extract_pending(store: Store, router: Router, deadline: float, workers: int 
     pending = select_for_extraction(store, focus, express)
     if not pending:
         return 0
+    # a story's names paired across languages before any of its articles is read (namepair.py, Oct 16 2026):
+    # the readings run in parallel, so this cannot wait for one of them
+    from . import namepair
+    name_hints = namepair.prepare(store, router, pending, deadline)
     stop = threading.Event()
     counts = {"done": 0, "failed": 0, "quota": 0}
     lock = threading.Lock()
@@ -494,7 +500,7 @@ def extract_pending(store: Store, router: Router, deadline: float, workers: int 
                 a = next(queue, None)
             if a is None:
                 return
-            outcome = _extract_one(store, router, a)
+            outcome = _extract_one(store, router, a, name_hints.get(a["id"], ""))
             with lock:
                 counts[outcome] += 1
             if outcome == "quota":

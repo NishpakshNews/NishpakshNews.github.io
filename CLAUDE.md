@@ -1268,6 +1268,22 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   stored spellings; the Hindi page uses the Hindi forms later. **Supabase holds reader tables only:** `Store.init(only)`;
   the readers' database and the gate (`runs`) create and check READER_TABLES alone, so a new newsroom table can no longer
   stop the run or the gate, nor take Supabase space. `name_pairs` is in `TABLES` in `newsroom.sh`. Tests: `tests/test_names.py`.
+- **Names paired before reading (Oct 16 2026, session 4 of the translation/learning plan; `namepair.py`).** In
+  `extract.extract_pending`, before the reading threads start (they run in parallel and in no order), for the
+  articles chosen this run: (1) LEARN, stories with English and Hindi articles: the English names are read by code
+  from the English outlets' text (people.py's capitalised names; titles, bodies ending in an institution word,
+  acronyms and a trailing kind-of-place word such as "Airport" taken off: Hindi translates those), and from the stored
+  statements of English articles read in earlier runs (their text is not fetched again). A name whose stored Hindi
+  form appears word for word in a Hindi outlet's text is confirmed with no call; the rest go to ONE closed question
+  on the `quality` tier, asked twice with the names in reverse order: "copy the words this Hindi report uses for each
+  name, or NONE". THE MODEL POINTS, IT NEVER TYPES: an answer counts only when both askings give the same string,
+  it appears verbatim (whole words) in a Hindi outlet's text, has as many words as the English name, and no other
+  name got it. Each pair is stored part by part in `name_pairs` with the source keys of the outlets whose text holds
+  each spelling. At most 8 stories asked per run. (2) HINT, every Hindi article: runs of up to 4 Devanagari words the
+  registry knows (exact lookup) go into the reading prompt's NAMES block ("रिम्पोछे = Rimpochee"), so a Hindi
+  outlet's statement spells names as the English outlets do before matching. No quality quota, a refusal or any
+  error: reading goes on exactly as before (`prepare` never raises); consolidate.py's spelling step stays the
+  backstop. Logged as "namepair: {confirmed, asked, agreed, pairs, hinted}". Tests: `tests/test_namepair.py`.
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:
   missed merges (statement pairs with 60%+ shared root words left apart, by the language mix of the story's sources:
   en / hi / mixed, and what code and the twice-asked question said of them), English left in Hindi pages (by field, top
