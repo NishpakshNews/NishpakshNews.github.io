@@ -1244,7 +1244,10 @@
   .cseg { flex: 1 1 0; min-height: 2px; width: 4px; border-radius: 2px; opacity: 0.22; transition: opacity 220ms ease, width 220ms cubic-bezier(.3,.1,.2,1); }
   .cseg.inview { opacity: 0.62; width: 6px; }
   .cseg.brk { margin-top: 5px; }
-  .crail.scrub .csegs { width: 11px; } .crail.scrub .cseg { width: 6px; } .crail.scrub .cseg.inview { width: 10px; opacity: 0.7; }
+  .crail.scrub .csegs { width: 11px; } .crail.scrub .cseg { width: 6px; } .crail.scrub .cseg.inview { width: 6px; opacity: 0.22; }
+  /* dragging the rail (owner, Oct 16 2026): the mark under the finger and 2 on each side pop out (at the rail's ends the five
+     slide inwards), whatever happens to be on screen */
+  .crail.scrub .cseg.pop { width: 10px; opacity: 0.7; }
   .crail.scrub .cseg.finger { width: 11px; opacity: 0.95; box-shadow: 0 0 0 2px #fff, 0 0 0 3px rgba(31,37,80,0.28); }
   #sheet[data-spot] .cseg { opacity: 0.1; } #sheet[data-spot] .cseg.hit { opacity: 0.45; } #sheet[data-spot] .cseg.hit.inview { opacity: 0.8; }
   #sheet[data-spot] .cseg.hit.cur { opacity: 0.95; width: 10px; box-shadow: 0 0 0 1.5px #fff, 0 0 0 2.5px color-mix(in srgb, var(--c) 55%, #fff); }
@@ -4684,7 +4687,7 @@ function placeCRail() {
   clab.style.right = ctip.style.right = `${innerWidth - x + 10}px`;
 }
 function syncCRail() {
-  if (!CR.sents.length) return;
+  if (!CR.sents.length || crail.classList.contains("scrub")) return;
   const top = headBottom() + 4, bot = innerHeight, segs = crail.firstChild.children;
   CR.sents.forEach((x, i) => { const r = x.el.getBoundingClientRect(); if (segs[i]) segs[i].classList.toggle("inview", r.bottom > top && r.top < bot); });
 }
@@ -4703,7 +4706,18 @@ fillSheet = function (row, card) { fillSheetBase(row, card); if (!row) clearCRai
   addEventListener("resize", kick);
   if (window.ResizeObserver) { const ro = new ResizeObserver(kick); ro.observe($("chrome")); ro.observe($("cpane")); }
   let drag = null;
-  const segAt = y => { const segs = crail.firstChild.children; let best = 0, bd = 1e9; for (let i = 0; i < segs.length; i++) { const r = segs[i].getBoundingClientRect(), d = Math.abs((r.top + r.bottom) / 2 - y); if (d < bd) { bd = d; best = i; } } return best; };
+  // the mark nearest the finger: the marks' middles are kept relative to the rail (they only move with it), so a drag frame
+  // reads one box, not every mark's
+  let segMids = null, segKey = "";
+  const segAt = y => {
+    const segs = crail.firstChild.children, box = crail.getBoundingClientRect(), top = box.top;
+    const key = `${segs.length}|${Math.round(box.height)}`;          // the rail shortens when the header's pane opens
+    if (!segMids || segKey !== key || !crail.classList.contains("scrub")) {
+      segMids = [...segs].map(s => { const r = s.getBoundingClientRect(); return (r.top + r.bottom) / 2 - top; }); segKey = key;
+    }
+    let best = 0, bd = 1e9; for (let i = 0; i < segMids.length; i++) { const d = Math.abs(segMids[i] + top - y); if (d < bd) { bd = d; best = i; } }
+    return best;
+  };
   const placeLabels = () => { const segs = crail.firstChild.children; let last = -1e9; clab.querySelectorAll(".sl").forEach(el => { const s = CR.secs[Number(el.dataset.s)], seg = segs[s.first]; if (!seg) return; const y = Math.max(seg.offsetTop, last + 26); el.style.top = `${y}px`; el.dataset.y = y; last = y; }); };
   const showTip = (i, y) => {
     const x = CR.sents[i], s = CR.secs[x.sec], g = x.g[0], t = T[lang];
@@ -4715,24 +4729,58 @@ fillSheet = function (row, card) { fillSheetBase(row, card); if (!row) clearCRai
     clab.querySelectorAll(".sl").forEach(el => { el.classList.toggle("near", Math.abs(Number(el.dataset.y) + 11 - ly) < 30); el.classList.toggle("act", Number(el.dataset.s) === x.sec); });
   };
   const flash = el => { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1500); };
+  /* Dragging the rail (owner, Oct 16 2026: "the scroll needs to be smooth; the bar under my finger in the middle of the ones
+     popped up, 2 above and 2 below; the sentence I select at the centre of the screen; not at the bar's ends"). It used to
+     jump the page (no animation) to put each line at the TOP, and the popped marks were whatever was on screen, so most of
+     them sat below the finger. Now: the line goes to the middle of what is visible under the header (as far as the page
+     allows at its ends), the page GLIDES there (one follower that only changes its target as the finger moves, never a
+     restarted scroll), and the five popped marks are the finger's and two on each side, slid inwards at the rail's ends. */
+  const POP = 2;
+  const popAround = i => {
+    const segs = crail.firstChild.children, n = segs.length;
+    let a = i - POP, b = i + POP;
+    if (a < 0) { b = Math.min(n - 1, b - a); a = 0; }
+    if (b > n - 1) { a = Math.max(0, a - (b - (n - 1))); b = n - 1; }
+    for (let k = 0; k < n; k++) segs[k].classList.toggle("pop", k >= a && k <= b);
+  };
+  // where the page must be for a line's middle to sit in the middle of the visible part (below the header)
+  const centreOf = el => {
+    const sc = sheetScroll, sr = sc.getBoundingClientRect(), r = el.getBoundingClientRect();
+    const mid = (headBottom() + Math.min(innerHeight, sr.bottom)) / 2;
+    const y = r.top + r.height / 2 - sr.top + sc.scrollTop;          // the line's middle in the page
+    return Math.max(0, Math.min(sc.scrollHeight - sc.clientHeight, y - (mid - sr.top)));
+  };
+  const glide = {to: null, raf: 0, last: 0};
+  const glideStep = t => {
+    const sc = sheetScroll, dt = glide.last ? Math.min(64, t - glide.last) : 16; glide.last = t;
+    const d = glide.to - sc.scrollTop;
+    if (Math.abs(d) < 0.6) { sc.scrollTop = glide.to; glide.raf = 0; glide.last = 0; return; }
+    sc.scrollTop += d * (1 - Math.exp(-dt / 85));                    // eases in on every new target, about 0.25 s to settle
+    glide.raf = requestAnimationFrame(glideStep);
+  };
+  const glideTo = y => { glide.to = y; if (!glide.raf) { glide.last = 0; glide.raf = requestAnimationFrame(glideStep); } };
+  sheetScroll.addEventListener("touchstart", () => { if (glide.raf) { cancelAnimationFrame(glide.raf); glide.raf = 0; } }, {passive: true});
   crail.addEventListener("pointerdown", e => {
     if (!CR.sents.length) return;
     crail.setPointerCapture(e.pointerId);
     drag = {y: e.clientY, moved: false, i: segAt(e.clientY)};
-    crail.classList.add("scrub"); sheet.classList.add("scrubbing"); placeLabels(); showTip(drag.i, e.clientY);
+    crail.classList.add("scrub"); sheet.classList.add("scrubbing"); placeLabels(); showTip(drag.i, e.clientY); popAround(drag.i);
   });
   crail.addEventListener("pointermove", e => {
     if (!drag) return;
     if (Math.abs(e.clientY - drag.y) > 4) drag.moved = true;
-    const i = segAt(e.clientY); showTip(i, e.clientY);
-    if (drag.moved && i !== drag.i) { drag.i = i; toSent(CR.sents[i].el, false); }
+    const i = segAt(e.clientY);
+    if (i !== drag.last) { showTip(i, e.clientY); popAround(i); drag.last = i; }
+    else { const yy = Math.max(headBottom() + 24, Math.min(innerHeight - 30, e.clientY)); ctip.style.top = `${yy}px`; }
+    if (drag.moved && i !== drag.i) { drag.i = i; glideTo(centreOf(CR.sents[i].el)); }
   });
   const end = () => {
     if (!drag) return;
     const d = drag; drag = null;
     crail.classList.remove("scrub"); sheet.classList.remove("scrubbing"); ctip.classList.remove("on");
-    crail.querySelectorAll(".cseg.finger").forEach(e => e.classList.remove("finger"));
-    if (!d.moved && CR.sents[d.i]) { toSent(CR.sents[d.i].el, true); flash(CR.sents[d.i].el); }
+    crail.querySelectorAll(".cseg.finger, .cseg.pop").forEach(e => e.classList.remove("finger", "pop"));
+    if (!d.moved && CR.sents[d.i]) { glideTo(centreOf(CR.sents[d.i].el)); flash(CR.sents[d.i].el); }
+    syncCRail();
   };
   crail.addEventListener("pointerup", end); crail.addEventListener("pointercancel", end);
 })();

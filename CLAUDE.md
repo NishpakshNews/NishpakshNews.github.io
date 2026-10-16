@@ -1203,6 +1203,18 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   list that held the page for 0.3 s: now sized to what is on screen. `sw.js` np-main-62. Tested in the throttled
   harness, not on a phone.
 
+- **Dragging the colour rail (owner, Oct 16 2026: "the scroll needs to be smooth; the bar under my finger in the middle of the
+  popped ones, 2 above and 2 below; the sentence I select at the centre of the screen; not at the bar's ends").** It jumped
+  the page (no animation) to put each line at the TOP, and the popped marks were the lines on screen (measured: 1 above the
+  finger and 4-6 below, the line ~257 px above the middle). Now (block "the colour rail", the drag handlers): the line goes
+  to the middle of the visible part under the header (`centreOf`; as far as the page allows at its ends), the page glides
+  there with one follower that only changes its target as the finger moves (`glideTo`, exponential, ~0.25 s; a touch on
+  the article stops it), and the popped marks are the finger's and `POP` (2) on each side, slid inwards at the rail's ends
+  (`popAround`, class `pop`; the on-screen `inview` lights are neither updated nor shown while dragging). The nearest mark
+  is found from positions cached relative to the rail (`segAt`, refreshed when the rail's height changes as the header's
+  pane opens). A tap glides to the line and centres it too. Measured: 2/2 popped in the middle, the line within 2-20 px of
+  the centre. `sw.js` np-main-63.
+
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →
 retract headline-only reads → Tavily reads blocked pages → wire copies → grouping (`stories.py`) →
