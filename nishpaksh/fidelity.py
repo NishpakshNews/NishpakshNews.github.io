@@ -32,7 +32,7 @@ import yaml
 
 FILE = pathlib.Path(__file__).resolve().parent.parent / "config" / "glossary.yaml"
 _DEV = "ऀ-ॿ"
-NEAR_NUMBER = 3             # words between a number-bound qualifier and its number
+NEAR_NUMBER = 2             # words between a number-bound qualifier and its number ("over Rs 40")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -77,10 +77,14 @@ def fold(text: str) -> str:
 
 
 def _pattern(phrase: str, lang: str) -> re.Pattern:
-    words = [re.escape(fold(w)) for w in phrase.split()]
-    body = r"[\s-]+".join(words)
+    """A glossary phrase as a whole-word pattern; "…" in it stands for up to 12 words ("कभी … नहीं")."""
+    parts = []
+    for chunk in phrase.split("…"):
+        words = [re.escape(fold(w)) for w in chunk.split()]
+        parts.append(r"[\s-]+".join(words))
+    body = r"(?:\s+\S+){0,12}?\s+".join(p for p in parts if p)
     if lang == "hi":
-        return re.compile(rf"(?<![{_DEV}\w]){body}(?![{_DEV}\w])")
+        return re.compile(rf"(?<![{_DEV}\w-]){body}(?![{_DEV}\w-])")
     if phrase.startswith("n't"):
         return re.compile(rf"\w{body}\b")
     return re.compile(rf"(?<![\w-]){body}(?![\w-])")
@@ -101,10 +105,20 @@ def _numbers_near(text: str, start: int, end: int, lang: str) -> set[str]:
     """The number a number-bound qualifier is about: the one right after it ("about 40", "करीब 40"), or right before
     it when the qualifier follows its number ("40 से अधिक", "50 percent maximum"). A number word ("dozens",
     "करोड़") with no value counts as "#"."""
-    after = " ".join(re.split(r"\s+", text[end:].strip())[:NEAR_NUMBER + 1])
-    before = " ".join(re.split(r"\s+", text[:start].strip())[-NEAR_NUMBER:])
-    follows = lang == "hi" and text[start:end].startswith("से")
-    for side in ((before,) if follows else (after, before)):
+    words_after = re.split(r"\s+", text[end:].strip())
+    words_before = re.split(r"\s+", text[:start].strip())
+    word = _HI_NUMWORD if lang == "hi" else _EN_NUMWORD
+    q = text[start:end]
+    # the qualifier follows its number in Hindi "40 से अधिक" and English "50 percent maximum"; else it comes first
+    follows = (lang == "hi" and q.startswith("से")) or (lang == "en" and q in ("maximum", "minimum"))
+    if follows:
+        side = " ".join(words_before[-NEAR_NUMBER:])
+    else:
+        near = " ".join(words_after[:NEAR_NUMBER])          # the number starts within two words ("about Rs 40")
+        if not (re.search(r"[0-9\u0966-\u096F]", near) or word.search(near)):
+            return set()
+        side = " ".join(words_after[:NEAR_NUMBER + 1])      # with its scale word ("Rs 3,350 crore")
+    for side in (side,):
         vals = numbers(side)
         if vals:
             return vals
@@ -134,6 +148,8 @@ def _prepare(text: str, lang: str) -> str:
     if lang == "en":
         t = re.sub(r"(?<![\w-])no\.\s*\d", " ", t)          # "No. 5" is a number, not a negation
         t = re.sub(r"(?<![\w-])not out(?![\w-])", "unbeaten", t)   # cricket: नाबाद
+        t = re.sub(r"(?<![\w-])spread (?:over|across)(?![\w-])", "spread in", t)  # an area, not "more than"
+        t = re.sub(r"(?<![\w-])exceed(?:ing|s|ed)? the(?![\w-])", "breaching the", t)  # "exceeding the 50% limit"
     return t
 
 
@@ -168,8 +184,16 @@ _STOP = {"that", "this", "with", "from", "have", "were", "been", "they", "their"
          "which", "there", "into", "than", "also", "over", "after", "before", "under"}
 
 
+def _stem(w: str) -> str:
+    return re.sub(r"(?:ing|ed|es|s)$", "", w) if len(w) > 5 else w
+
+
 def _words(text: str) -> set[str]:
-    return {w[:5] for w in re.findall(r"[a-z]{4,}", text) if w not in _STOP} | set(re.findall(r"\d+", text))
+    return {_stem(w) for w in re.findall(r"[a-z]{4,}", text) if w not in _STOP} | set(re.findall(r"\d+", text))
+
+
+# a text that attributes ("X alleged that", "claimed", "आरोप लगाया") keeps the caveat "alleged" carries
+_ATTRIBUTES = {"en": re.compile(r"(?<![\w-])(?:alleg\w*|claim\w*|accus\w*)"), "hi": re.compile(r"आरोप|दावा|दावे")}
 
 
 _CLAUSE = re.compile(r"[,;:\u2014\u2013]|\s(?:लेकिन|जबकि|बल्कि|मगर|while|whereas|but)\s")
@@ -202,12 +226,16 @@ def compare(source: str, target: str, src_lang: str, tgt_lang: str, strict_only:
     bound_a = {(q, x) for q, _, _, n in oa for x in n}
     bound_b = {(q, x) for q, _, _, n in ob for x in n}
     lost, added = set(), set(plain_b - plain_a)
+    if _ATTRIBUTES[src_lang].search(fold(source)):
+        added.discard("alleged")
     st = _prepare(source, src_lang)
     for q, a, b, n in oa:
         if n or q in plain_b or q in lost:
             continue
         if not scoped or _in_scope(st, a, b, target, src_lang, registry):
             lost.add(q)
+    if _ATTRIBUTES[tgt_lang].search(fold(target)):
+        lost.discard("alleged")
     lost |= {q for q, x in bound_a - bound_b if x != "#" and x in nb}
     added |= {q for q, x in bound_b - bound_a if x != "#" and x in na}
     out = [Problem("lost", q, strict[q]) for q in sorted(lost)] + [Problem("added", q, strict[q]) for q in sorted(added)]

@@ -115,3 +115,23 @@ def test_glossary_refuses_yaml_booleans(tmp_path):
     f.write_text("qualifiers:\n  - {id: negation, en: [no], hi: [नहीं]}\n", encoding="utf-8")
     with pytest.raises(ValueError):
         F.glossary(str(f))
+
+
+def test_second_audit_cases():
+    # Hindi "never" stands around the verb
+    assert "never" in F.qualifiers("भाजपा की लोकतंत्र को बनाने में कभी कोई भूमिका नहीं रही।", "hi")
+    en = "Hockey India never informed them of any retirement decision."
+    assert F.check_translation(en, "हॉकी इंडिया ने उन्हें कभी भी किसी संन्यास के निर्णय के बारे में सूचित नहीं किया।") == []
+    # "over" binds only to a number right after it
+    assert F.qualifiers("India won by 14 runs over West Indies", "en") == set()
+    assert F.qualifiers("an investment over the next six years", "en") == set()
+    assert F.qualifiers("a terminal spread over 23,800 square metres", "en") == set()
+    # hyphenated "-specific", "fixed" papers, महज़
+    assert F.qualifiers("भारत-विशिष्ट उपकरण", "hi") == set() and F.qualifiers("India-specific tools", "en") == set()
+    assert F.qualifiers("निश्चित प्रश्नपत्रों", "hi") == set()
+    assert F.qualifiers("महज़ एक हफ़्ते पहले", "hi") == {"only"}
+    # an attributing verb keeps the caveat of "alleged"
+    assert F.check_translation("The petition is against Kumar and alleged vote theft.",
+                               "याचिका कुमार और कथित वोट चोरी के खिलाफ है।") == []
+    src = "The remarks came ahead of a planned march over alleged electoral irregularities in Delhi."
+    assert F.check_reading("Opposition leaders alleged electoral irregularities in Delhi.", src, "en")[1] == []

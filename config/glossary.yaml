@@ -12,26 +12,28 @@
 qualifiers:
   - {id: negation, strict: true, en: ["not", "n't", "never", "no", "neither", "nor", "none", "cannot"],
      hi: [नहीं, न, ना, मत, कभी नहीं, कतई नहीं]}
-  - {id: never, strict: true, en: [never], hi: [कभी नहीं, कभी भी नहीं, कभी न]}
+  # "…" lets up to 12 words stand between: Hindi says कभी ... नहीं around the verb ("कभी कोई भूमिका नहीं रही")
+  - {id: never, strict: true, en: ["never"], hi: [कभी … नहीं, कभी … न]}
   - {id: directly, strict: true, en: [directly, direct], hi: [सीधे, सीधा, सीधी, प्रत्यक्ष, प्रत्यक्ष रूप से]}
-  - {id: only, strict: true, en: [only, solely, merely], hi: [केवल, सिर्फ, सिर्फ़, मात्र]}
+  - {id: only, strict: true, en: [only, solely, merely], hi: [केवल, सिर्फ, सिर्फ़, मात्र, महज, महज़]}
   - {id: at_least, strict: true, en: [at least, a minimum of, minimum], hi: [कम से कम, कम-से-कम, न्यूनतम]}
   - {id: up_to, strict: true, number: true, en: [up to, at most, at the most, a maximum of, maximum],
      hi: [अधिकतम, ज्यादा से ज्यादा, ज़्यादा से ज़्यादा]}
   - {id: more_than, strict: true, number: true, en: [more than, over, above, upwards of, in excess of, exceeding,
-     exceeds, exceeded, beyond],
+     exceeds, exceeded],
      hi: [से अधिक, से ज्यादा, से ज़्यादा, से ऊपर, अधिक]}
   # "alleged" only as an adjective ("the alleged bribe"): "X alleged that" is a verb (आरोप लगाया), not a qualifier
   - {id: alleged, strict: true, en: [allegedly, purported, purportedly, the alleged, an alleged, his alleged,
-     her alleged, their alleged, its alleged, of alleged, over alleged, for alleged, in alleged, on alleged],
+     her alleged, their alleged, its alleged, of alleged, over alleged, for alleged, in alleged, on alleged,
+     and alleged, or alleged, about alleged, against alleged, into alleged, with alleged, by alleged, to alleged],
      hi: [कथित, कथित तौर पर, कथित रूप से]}
   # not "विशेष" alone: it is also "special" (विशेष गहन पुनरीक्षण = Special Intensive Revision)
   - {id: specific, strict: true, en: [specific, specifically, particular, particularly, exclusively],
-     hi: [विशिष्ट, विशेष रूप से, विशेषकर, खास तौर पर, ख़ास तौर पर, खासकर, ख़ासकर, निश्चित]}
+     hi: [विशिष्ट, विशेष रूप से, विशेषकर, खास तौर पर, ख़ास तौर पर, खासकर, ख़ासकर]}   # not निश्चित: also "fixed"
   - {id: approximately, strict: false, number: true, en: [about, around, nearly, approximately, roughly, almost],
      hi: [लगभग, करीब, क़रीब, तकरीबन, तक़रीबन, आसपास]}
   - {id: hedge, strict: false, en: [might, possibly, probably, likely, perhaps],
-     hi: [शायद, संभवतः, संभवत, संभावना, आशंका]}
+     hi: [शायद, संभवतः, संभवत, संभावना, आशंका, सकता है, सकती है, सकते हैं]}
   - {id: reportedly, strict: false, en: [reportedly], hi: [बताया जाता है, सूत्रों के अनुसार, सूत्रों के मुताबिक]}
 
 entities:
