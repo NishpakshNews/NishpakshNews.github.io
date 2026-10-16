@@ -1801,9 +1801,10 @@ function updatesHtml(p, t) {
   const kids = new Set((p.children || []).map(c => String(c.story_id)));
   const rows = ups.map(u => {
     const more = kids.has(String(u.story_id)) ? ` <a href="#/story/${encodeURIComponent(u.story_id)}" data-story="${esc(u.story_id)}">→</a>` : "";
-    const was = u.was ? `<span class="s struck">${esc(u.was)}</span> ` : "";
-    return `<p class="uline">${was}<span class="s ${esc(cls(u.class))}">${esc(u.text)}</span>${more}</p>`;
+    // only the line that was struck, struck through (owner, Oct 16 2026): not the line that replaced it
+    return u.was ? `<p class="uline"><span class="s struck">${esc(u.was)}</span>${more}</p>` : "";
   }).join("");
+  if (!rows) return "";
   return `<div class="sechead" data-sec="updates"><span>+</span><h3>${esc(t.updates || "Updates since published")}</h3></div>` +
          `<div class="paper essay updates">${rows}</div>`;
 }
