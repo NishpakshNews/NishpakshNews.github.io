@@ -72,3 +72,17 @@ def test_the_copy_check_rephrases_only_what_repeats_the_report():
                 "Prithvi Shaw returned to Delhi Capitals for the 2026 IPL season but did not play a match."]})
     out, stats = N._rephrase_copies(R(), paras, by, set(), [], rep)
     assert stats == {"copied": 1, "rephrased": 1} and out[0][0]["text"].startswith("Prithvi Shaw returned")
+
+
+def test_an_express_layout_fills_its_paragraphs_instead_of_one_per_sentence():
+    from nishpaksh import plan
+    items = [item(k, t, kind="event") for k, t in enumerate(
+        ["Athletes with lower-limb impairments play SL4", "SL3 and SU5 classes are combined in mixed doubles",
+         "Amputees compete in this classification", "Short-stature players compete in SH6"], start=1)]
+    sec = {i["id"]: "background" for i in items}
+    N._TL.keys = D.LAYOUTS["match"]
+    try:
+        pl = plan.build(items, sec)
+    finally:
+        N._TL.keys = N.SECTION_KEYS
+    assert [len(p.ids) for p in pl] == [4]

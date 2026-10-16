@@ -243,9 +243,13 @@ def build(items: list[dict], sec: dict[int, str]) -> list[Para]:
                 chunks = [c for c in chunks if c]
             else:
                 chunks = [ordered]
+            # an express layout's sections are already one subject each (a match's performers, a person's journey):
+            # paragraphs are filled up to MAX_STATEMENTS instead of cut at every change of words (Oct 16 2026: the
+            # first express pages had a paragraph per sentence)
+            express_layout = narrative._keys() is not narrative.SECTION_KEYS
             for chunk in chunks:
                 for part, topical in _by_topic(chunk):
-                    for group in _pack(_units(part), words, topical=topical):
+                    for group in _pack(_units(part), words, topical=topical or express_layout):
                         made.append(Para(0, key, [i["id"] for i in group]))
         _open(made, key, {i["id"]: i for i in mine})
         plan += made

@@ -1548,7 +1548,9 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   the normal sections in the order written; new headings in both languages (site/index.html); "words" paragraphs get
   the speaker label like "say". COPY CHECK: a sentence sharing COPY_RUN (10) words in a row with the report outside
   quotation marks is sent in ONE writer call (REPHRASE_PROMPT, at most 12) to be said in our words; kept only if it
-  passes every check and no longer copies (`flow.copied` / `flow.rephrased`). Tests: `tests/test_express_desk.py`.
+  passes every check and no longer copies (`flow.copied` / `flow.rephrased`). PARAGRAPHS: in an express layout
+  plan.build fills each paragraph up to MAX_STATEMENTS (`_pack(..., topical=True)`), since a layout section is one
+  subject (the first live express pages had one sentence per paragraph). Tests: `tests/test_express_desk.py`.
 - **Facts shared along a thread; updates since published (Oct 16 2026, owner; step 3; `threads.save_links`,
   `pooled_origins`, `verify.base_verdicts`, `editions.attach_updates`, site `updatesHtml`).** The follow-up check
   (`editions._classify`) now numbers the parent's statements (E1, E2 ...) and returns, per later statement, `same_as`
