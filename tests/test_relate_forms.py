@@ -22,3 +22,17 @@ def test_a_clock_time_is_extra_detail_not_a_different_number_or_name():
     assert relate(a, b) == "ask_b_covers_a"                  # the timed line may stand for both; the model decides
     assert relate("The meeting began at 10 am.", "The meeting began at 4 pm.") == "different"
     assert relate("The meeting began at 4 pm.", "The meeting began at 4 p.m.") == "same"
+
+
+def test_one_result_however_it_is_worded():
+    """Oct 16 2026: an express page wrote one match result twice ("defeated" / "overcame ... 21-8, 21-11")."""
+    from nishpaksh import relate as R
+    a = "Suhas LY defeated Joytu Dhar in the men's singles SL4 Group E opener on Friday."
+    b = "Suhas LY overcame Joytu Dhar with scores of 21-8 and 21-11 during Friday's men's singles SL4 Group E match."
+    c = "Manasi Joshi and Ruthick Raghupati lost to Khalimatus Sadiyah and Fredy Setiawan in the mixed doubles SL3-SU5 competition on Friday."
+    d = "Khalimatus Sadiyah and Fredy Setiawan defeated Manasi Joshi and Ruthick Raghupati 21-15, 21-4 in their group fixture on Friday."
+    assert R.relate(a, b) == "b_covers_a" and R.relate(c, d) == "b_covers_a"
+    assert R.relate(a, "Joytu Dhar defeated Suhas LY in the men's singles on Friday.") == "different"
+    assert R.relate("India beat Pakistan by 19 runs in the final.", "On Saturday, India defeated Pakistan by 19 runs in the final.") == "same"
+    assert R.relate("India beat Pakistan by 19 runs in the final.", "India beat Pakistan by 25 runs in the final.") != "same"
+    assert R.relate("India beat Pakistan in the hockey semifinal.", "India beat Pakistan in the cricket final.") not in ("same", "a_covers_b", "b_covers_a")

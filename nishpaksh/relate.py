@@ -271,6 +271,10 @@ def relate(a: str, b: str, time_a: dict | None = None, time_b: dict | None = Non
         return "different"
     r = _relate(a, b, time_a, time_b, pa, pb)
     if r not in ("same", "a_covers_b", "b_covers_a"):
+        rr = _result_relation(a, b, time_a, time_b, pa, pb)
+        if rr:
+            r = rr
+    if r not in ("same", "a_covers_b", "b_covers_a"):
         m = learned_map(pa, pb)
         if m:                                 # a learned pair whose context fits these two lines: one word here
             r2 = _relate(a, b, time_a, time_b, _with_roots(pa, m), _with_roots(pb, m))
@@ -281,6 +285,96 @@ def relate(a: str, b: str, time_a: dict | None = None, time_b: dict | None = Non
         if r == "same" or r == "ask" or (r == "a_covers_b") != timed_a:
             return "ask_a_covers_b" if timed_a else "ask_b_covers_a"
     return r
+
+
+# -- a contest's result, however it is worded (Oct 16 2026: one express page said "Suhas LY defeated Joytu Dhar ..."
+# and "Suhas LY overcame Joytu Dhar 21-8, 21-11 ...", and "Joshi and Raghupati lost to Sadiyah and Setiawan" next to
+# "Sadiyah and Setiawan defeated Joshi and Raghupati 21-15, 21-4"). Two lines that name the same winner and the same
+# loser report one result; the line with the score covers the one without; two different scores are left to the rest.
+_WIN = (r"defeated|defeats|defeat|beat|beats|overcame|overcomes|overcome|edged(?:\s+out|\s+past)?|edges|thrashed|"
+        r"outclassed|outplayed|downed|stunned|upset|prevailed\s+over|got\s+the\s+better\s+of|knocked\s+out|eliminated|"
+        r"won\s+against|triumphed\s+over")
+_LOSE = (r"lost\s+to|loses\s+to|lose\s+to|went\s+down\s+to|goes\s+down\s+to|fell\s+to|falls\s+to|"
+         r"(?:was|were)\s+(?:defeated|beaten|edged|knocked\s+out|eliminated|stunned|upset|outclassed)\s+by")
+_WIN_RE = re.compile(rf"^(?P<x>.*?)\s+(?:{_WIN})\s+(?P<y>.+)$", re.I)
+_LOSE_RE = re.compile(rf"^(?P<y>.*?)\s+(?:{_LOSE})\s+(?P<x>.+)$", re.I)
+_SIDE_JOIN = {"and", "&", "of", "de", "van", "der", "bin", "al"}
+_OPENERS_CAP = {"on", "in", "at", "after", "before", "the", "a", "an", "when", "while", "earlier", "later", "then"}
+_CODE = re.compile(r"[A-Z]{1,3}\d+[A-Z]?")          # a category or class code (SL3, SU5, U23, T20): not a score
+# what tells two contests between the same sides apart, one dimension at a time: two lines that both name a stage, a
+# kind of event or a sport, and share none of it, are two contests
+_EVENT_DIMS = [{_stem(w) for w in s.split()} for s in (
+    "final finals semifinal semi-final semi quarterfinal quarter-final quarter league qualifier qualifying playoff "
+    "play-off heat repechage",
+    "singles doubles mixed men women boys girls junior senior",
+    "hockey cricket football kabaddi badminton tennis wrestling boxing shooting archery athletics chess volleyball "
+    "basketball test odi t20 t20i ipl ranji")]
+
+
+def _score_nums(text: str) -> frozenset:
+    """The numbers of a result line without its category codes ("SL3-SU5", "U23"): the score and margin."""
+    return frozenset(round(x, 3) for x in _numbers(_CODE.sub(" ", text or "")))
+
+
+def _side(text: str, tail: bool) -> frozenset:
+    """The names of one side of a result: the run of capitalised words that ends the text before the verb (`tail`)
+    or starts the text after it ("Joytu Dhar in the men's singles" -> {joytu, dhar})."""
+    if tail:
+        text = text.split(",")[-1]             # "On Saturday, India" -> "India"
+    toks = re.findall(r"[\w'.-]+", text)
+    if tail:
+        toks = toks[::-1]
+    out = []
+    for t in toks:
+        w = t.strip(".'")
+        if w.lower() in _OPENERS_CAP or _stem(w.lower()) in _DATE_WORDS:
+            break
+        if w[:1].isupper() and not _CODE.fullmatch(w) and not w[:1].isdigit():
+            out.append(w.lower())
+        elif w.lower() in _SIDE_JOIN and out:
+            continue
+        else:
+            break
+    return frozenset(_stem(w) for w in out if w != "the" and len(w) > 1)
+
+
+def result_of(text: str) -> tuple[frozenset, frozenset] | None:
+    """(winner names, loser names) of a line that reports who beat whom, or None."""
+    t = re.sub(r"\s+", " ", (text or "").strip().rstrip("."))
+    for rx in (_LOSE_RE, _WIN_RE):
+        m = rx.match(t)
+        if m:
+            x, y = _side(m.group("x"), tail=rx is _WIN_RE), _side(m.group("y"), tail=rx is _LOSE_RE)
+            if x and y and not x & y:
+                return x, y
+    return None
+
+
+def _result_relation(a: str, b: str, time_a, time_b, pa: "Profile", pb: "Profile") -> str | None:
+    if pa.neg != pb.neg or _times_apart(time_a, time_b):
+        return None
+    if pa.years and pb.years and not pa.years & pb.years:
+        return None
+    ra, rb = result_of(a), result_of(b)
+    if not ra or not rb:
+        return None
+    if ra == (rb[1], rb[0]):
+        return "different"                    # the same two sides, opposite results
+    if ra != rb:
+        return None
+    # the same two sides in two different contests (a semi-final and a final, hockey and cricket): not one result
+    for dim in _EVENT_DIMS:
+        ea, eb = pa.roots & dim, pb.roots & dim
+        if ea and eb and not ea & eb:
+            return None
+    na, nb = _score_nums(a), _score_nums(b)
+    if na == nb:
+        return "same"
+    if na <= nb:
+        return "b_covers_a"
+    if nb <= na:
+        return "a_covers_b"
+    return None
 
 
 def _relate(a: str, b: str, time_a, time_b, pa: Profile, pb: Profile) -> str:

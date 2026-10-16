@@ -1591,6 +1591,16 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   notification per reader per article per IST clock hour (kind "colour", ref "story@hour"): "2 lines now established
   · 1 line now sources now disagree". For every live article, not only followed ones (owner). Tests:
   `tests/test_notify_colours.py`.
+- **One result however it is worded (Oct 16 2026, owner; `relate.result_of`, `_result_relation`).** An express page
+  wrote one match twice ("Suhas LY defeated Joytu Dhar ..." / "Suhas LY overcame Joytu Dhar 21-8, 21-11 ..."; and
+  "Joshi and Raghupati lost to Sadiyah and Setiawan" / "Sadiyah and Setiawan defeated Joshi and Raghupati 21-15,
+  21-4"). `result_of` reads (winner names, loser names) from a line with a win verb (defeated, beat, overcame, edged,
+  thrashed ...) or a loss verb (lost to, went down to, was beaten by ...): the capitalised run right before / after
+  the verb (class codes such as SL4 and leading "On Saturday," left out). Two lines with the same winner and loser are
+  one result: same score numbers (class codes removed) = "same", one score inside the other = the scored line covers;
+  opposite sides = "different"; two contests told apart by stage, kind of event or sport (`_EVENT_DIMS`: both name
+  one and share none) = left to the normal rules. Runs inside `relate.relate` when the word rules found no relation,
+  so matching, consolidation and `narrative._drop_repeats` all see it. Tests: `tests/test_relate_forms.py`.
 - **Open (Oct 16 2026):** `tests/test_express_db.py::test_nothing_is_embedded_while_the_pacing_curve_has_given_the_slice_out`
   fails at some hours of the day (failed at ~05:30 UTC with and without the session 9 changes, passed at 04:xx).
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:
