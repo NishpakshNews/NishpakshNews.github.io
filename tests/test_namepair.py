@@ -126,5 +126,5 @@ def test_prepare_never_raises(store):
 
 def test_reading_prompt_carries_the_names_block():
     from nishpaksh.extract import EXTRACT_PROMPT
-    p = EXTRACT_PROMPT.format(outlet="o", published="p", title="t", text="x", names=P.hint_block([("मोदी", "Modi")]))
+    p = EXTRACT_PROMPT.format(outlet="o", published="p", title="t", text="x", part="", names=P.hint_block([("मोदी", "Modi")]))
     assert "मोदी = Modi" in p and p.index("मोदी = Modi") < p.index("Return ONE JSON")

@@ -225,7 +225,18 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
             "frame": (c.get("rel") or {}).get("frame") if c["kind"] != "relation" else None,
             # what a generic reference in it points to (refs.py): from the statement or any report behind it
             "refs": _item_refs(c, members.get(cid, [])),
+            # a speaker's exact words, as an English report printed them (checked word for word when read)
+            "words": _exact_words(members.get(cid, [])),
         }
+
+    def _exact_words(rows: list[dict]) -> str | None:
+        """The exact words most reports behind a statement print (the longest on a tie), or None."""
+        from collections import Counter
+        got = Counter(str((r.get("rel") or {}).get("words") or "").strip() for r in rows)
+        got.pop("", None)
+        if not got:
+            return None
+        return max(got, key=lambda w: (got[w], len(w)))
 
     all_items = {cid: item(cid) for cid in canon if members.get(cid)}
     # the story's own event drives the timeline, sections and headline; context (background, related

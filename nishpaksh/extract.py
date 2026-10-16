@@ -39,27 +39,27 @@ ARTICLE
 Outlet: {outlet}
 Published: {published} (India time)
 Title: {title}
-Text:
+{part}Text:
 \"\"\"{text}\"\"\"
 {names}
 Return ONE JSON object with exactly these keys:
 {{
   "signature": "one neutral English sentence naming the core event: who, what, where",
   "events": [
-    {{"id": "e1", "text": "...", "quote": "...", "when_text": "...", "start": "YYYY-MM-DDTHH:MM or null",
+    {{"id": "e1", "text": "...", "quote": "...", "words": "...", "when_text": "...", "start": "YYYY-MM-DDTHH:MM or null",
       "end": "YYYY-MM-DDTHH:MM or null", "precision": "exact|hour|part_of_day|day|week|month|unknown",
       "stance": "asserts|attributes|denies", "attributed_to": "...", "evidence": "...", "loaded_words": ["..."],
       "frame": {{"who": "...", "action": "...", "what": "...", "value": "...", "where": "...", "negated": false}}}}
   ],
   "claims": [
-    {{"id": "c1", "text": "...", "quote": "...", "stance": "asserts|attributes|denies", "attributed_to": "...",
+    {{"id": "c1", "text": "...", "quote": "...", "words": "...", "stance": "asserts|attributes|denies", "attributed_to": "...",
       "evidence": "...", "loaded_words": ["..."], "frame": {{"who": "...", "action": "...", "what": "...", "value": "...", "where": "...", "negated": false}}}}
   ],
   "relations": [
     {{"from": "e1", "to": "e2", "type": "before|caused", "stance": "asserts|attributes|denies", "attributed_to": "..."}}
   ],
   "context": [
-    {{"id": "x1", "type": "background|related|explanation|reaction|next", "text": "...", "quote": "...", "event": "...",
+    {{"id": "x1", "type": "background|related|explanation|reaction|next", "text": "...", "quote": "...", "words": "...", "event": "...",
       "when_text": "...", "start": "YYYY-MM-DDTHH:MM or null", "end": "YYYY-MM-DDTHH:MM or null",
       "precision": "exact|hour|part_of_day|day|week|month|unknown",
       "stance": "asserts|attributes|denies", "attributed_to": "...", "evidence": "...", "loaded_words": ["..."],
@@ -109,7 +109,8 @@ Rules:
 6. evidence: what the article cites: fir | court_record | official_data | video | official_statement |
    named_witness | unnamed_source | none.
 7. Record every factual detail about the article's core event (the "signature") in events/claims,
-   including small ones. One fact per item; do not merge.
+   including small ones. One fact per item; do not merge. Every sentence of the article that states a fact
+   gets an item: a long article gives many items.
 8. Record in "context" what the article tells around the core event, so a reader understands it:
    "background" = earlier events that led to this one; "related" = a SEPARATE event the article itself
    connects to this one (put a short name of that event, with its date if given, in "event", e.g.
@@ -135,7 +136,12 @@ Rules:
 10. "quote": the FIRST SIX WORDS of the article sentence the item is read from, copied exactly as the article
    writes them, in the article's language and script (Hindi stays in Devanagari; do not translate, fix or shorten
    them). When the item comes from two sentences, the first six words of the first one.
-11. Reply with the JSON only.
+11. "words": when the item is what a named person or body said and the article prints their EXACT words in
+   quotation marks, copy those words exactly as printed (no quotation marks, no "he said"; at most 40 words; a
+   longer quote: its most important sentence). Every such quote is an item of its own: stance "attributes",
+   attributed_to the speaker, "text" its point in plain English, "words" the quote. Otherwise "words" is "".
+   In a Hindi article "words" is always "" (an English quote there would be our translation, not their words).
+12. Reply with the JSON only.
 """
 
 
@@ -180,6 +186,7 @@ def normalize_extraction(data: dict) -> dict | None:
                 "id": local,
                 "text": str(it["text"]).strip()[:500],
                 "quote": str(it.get("quote") or "").strip()[:200],
+                "words": str(it.get("words") or "").strip().strip('"“”\'‘’ ')[:400],
                 "stance": it.get("stance") if it.get("stance") in STANCES else "asserts",
                 "attributed_to": str(it.get("attributed_to") or "article")[:200],
                 "evidence": it.get("evidence") if it.get("evidence") in EVIDENCE else "none",
@@ -254,6 +261,8 @@ def _rel(it: dict) -> dict | None:
         rel["refs_open"] = it["refs_open"]
     if it.get("quote"):
         rel["quote"] = it["quote"]          # the source sentence's first words (newsroom only): the audit's coverage
+    if it.get("words"):
+        rel["words"] = it["words"]          # a speaker's exact words, checked word for word against the report
     return rel or None
 
 
@@ -284,17 +293,127 @@ def store_extraction(store: Store, article_id: int, story_id: int | None, ex: di
             c.execute(insert(claims), rows)
 
 
-def _extract_one(store: Store, router: Router, a: dict, names: str = "", registry=None) -> str:
-    # names: the registry's English spellings of the names this Hindi article uses (namepair.py, Oct 16 2026)
-    prompt = EXTRACT_PROMPT.format(outlet=a["outlet"], published=_fmt_ist(a["published_at"]),
-                                   title=a["title"] or "", text=(a["text"] or "")[: SETTINGS.max_article_chars],
-                                   names=names)
-    try:
-        res = router.call("bulk", prompt, json_out=True, max_output_tokens=6000)   # room for each item's frame
+# ------------------------------------------------------------------ long reports and exact words (Oct 16 2026, owner)
+# A report longer than one reading was cut at `max_article_chars`: the second half of a long feature was never seen.
+# It is now read in PIECES of up to PIECE_CHARS, split at paragraph breaks, each piece starting with the last paragraph
+# of the one before (a fact on the border is seen whole), each told the article's opening (who "he" is). At most
+# MAX_PIECES pieces (a reading call each). The items of all pieces are one reading: ids prefixed by piece, the same
+# statement read twice in the overlap kept once.
+PIECE_CHARS = 5000
+MAX_PIECES = 4
+_QUOTE_FOLD = str.maketrans({"“": '"', "”": '"', "‘": "'", "’": "'", "\u00a0": " "})
+
+
+def pieces(text: str, cap: int | None = None) -> list[str]:
+    """The report as one piece (it fits one reading) or as overlapping pieces split at paragraph breaks."""
+    cap = cap or SETTINGS.max_article_chars
+    t = text or ""
+    if len(t) <= cap:
+        return [t]
+    paras = [p for p in re.split(r"\n+", t) if p.strip()]
+    out: list[str] = []
+    cur: list[str] = []
+    for p in paras:
+        while len(p) > PIECE_CHARS:                    # a paragraph longer than a piece is cut at a sentence end
+            cut = max(p.rfind(". ", 0, PIECE_CHARS), p.rfind("। ", 0, PIECE_CHARS))
+            cut = cut + 1 if cut > 0 else PIECE_CHARS
+            paras_head, p = p[:cut], p[cut:].lstrip()
+            if cur:
+                out.append("\n".join(cur))
+                cur = [cur[-1]]
+            out.append(paras_head)
+        if cur and sum(len(x) + 1 for x in cur) + len(p) > PIECE_CHARS:
+            out.append("\n".join(cur))
+            cur = [cur[-1]]                            # the overlap: the piece before's last paragraph
+        cur.append(p)
+    if cur:
+        out.append("\n".join(cur))
+    if len(out) > MAX_PIECES:
+        log.info("extract: a %d-character report read in its first %d pieces of %d", len(t), MAX_PIECES, len(out))
+    return out[:MAX_PIECES]
+
+
+def _norm_words(t: str) -> str:
+    return re.sub(r"\s+", " ", (t or "").translate(_QUOTE_FOLD)).strip().lower()
+
+
+def check_words(ex: dict, source: str, lang: str) -> int:
+    """Exact words are kept only when they stand word for word in the report (English reports only: in a Hindi
+    report they would be our translation). Returns how many were taken away."""
+    src = _norm_words(source)
+    n = 0
+    for kind in ("events", "claims", "context"):
+        for it in ex.get(kind) or []:
+            w = it.get("words") or ""
+            if w and (lang == "hi" or len(w.split()) < 3 or _norm_words(w) not in src):
+                it["words"] = ""
+                n += 1
+    return n
+
+
+def _merge_pieces(parts: list[dict]) -> dict:
+    """One reading from the readings of a report's pieces."""
+    from .relate import relate
+    out = {"signature": parts[0]["signature"], "events": [], "claims": [], "relations": [], "context": []}
+    kept: list[str] = []
+    for k, ex in enumerate(parts):
+        pre = "" if k == 0 else f"p{k + 1}-"
+        ids = {}
+        for kind in ("events", "claims", "context"):
+            for it in ex.get(kind) or []:
+                t = it["text"]
+                if any(t.lower() == x.lower() or relate(t, x) == "same" for x in kept):
+                    continue                           # read twice in the overlap
+                kept.append(t)
+                ids[it["id"]] = pre + it["id"]
+                out[kind].append(dict(it, id=pre + it["id"]))
+        for r in ex.get("relations") or []:
+            if r["from"] in ids and r["to"] in ids:
+                out["relations"].append(dict(r, **{"from": ids[r["from"]], "to": ids[r["to"]]}))
+    return out
+
+
+def read_report(router: Router, a: dict, names: str = "") -> tuple[dict | None, str | None]:
+    """(the reading of one report, the model) in one call, or in one call per piece for a long report. A later piece
+    the model cannot read leaves the pieces already read (and is logged); the first piece failing fails the report."""
+    texts = pieces(a["text"] or "")
+    opening = (texts[0] if texts else "")[:400]
+    parts, model = [], None
+    for k, t in enumerate(texts):
+        part = "" if len(texts) == 1 else (
+            f"PART {k + 1} of {len(texts)} of a long article: read only the text below. "
+            + (f"The article opened with: \"{opening}\" (people named there may be called by surname below).\n"
+               if k else "\n"))
+        prompt = EXTRACT_PROMPT.format(outlet=a["outlet"], published=_fmt_ist(a["published_at"]),
+                                       title=a["title"] or "", text=t, names=names, part=part)
+        try:
+            res = router.call("bulk", prompt, json_out=True, max_output_tokens=6000)   # room for each item's frame
+        except (QuotaExhausted, CallFailed):
+            if not parts:
+                raise
+            log.info("extract: piece %d of %d of article %s not read", k + 1, len(texts), a["id"])
+            break
         ex = normalize_extraction(res.data)
         if ex is None:
+            if not parts:
+                return None, res.model
+            continue
+        parts.append(ex)
+        model = model or res.model
+    if not parts:
+        return None, model
+    return (parts[0] if len(parts) == 1 else _merge_pieces(parts)), model
+
+
+def _extract_one(store: Store, router: Router, a: dict, names: str = "", registry=None) -> str:
+    # names: the registry's English spellings of the names this Hindi article uses (namepair.py, Oct 16 2026)
+    try:
+        ex, model = read_report(router, a, names)
+        if ex is None:
             raise ValueError("empty extraction")
+        res = type("R", (), {"model": model})()
         ground(ex, f"{a['title'] or ''} {a['text'] or ''}")
+        check_words(ex, f"{a['title'] or ''}. {a['text'] or ''}", a.get("lang") or "en")
         # the dates are code's (when.py, Oct 16 2026): the model copies the time words, code places them
         from . import when as _when
         for kind in ("events", "context"):

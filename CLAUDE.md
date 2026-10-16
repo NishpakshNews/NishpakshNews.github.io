@@ -1515,6 +1515,21 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   on the run's `by_id` (never written to the payload); the fill pass reads them from `by_id`. `sentences.stats` counts
   `parallel` groups and `parallel_apart` (kept in separate sentences) in the page's flow stats. WRITER_VERSION not
   bumped: pages are not all rewritten; new and rewritten pages get it. Tests: `tests/test_parallel.py`.
+- **Long reports read in pieces; exact words kept (Oct 16 2026, owner; step 1 of the express plan; `extract.pieces`,
+  `read_report`, `_merge_pieces`, `check_words`, `compose._exact_words`, `narrative._validate` quotes).** The express
+  review (`tools/express_review.py`, workflow `audit` with tool `express_review`, private diagnostics) showed a report
+  gave 7-9 statements whatever its length (a page ~1/6 of its source), long reports were cut at `max_article_chars`
+  (17 of 35 live normal stories had one), and quotes were almost never kept. Both routes now: a report past the cap is
+  read in pieces of up to PIECE_CHARS (5000) split at paragraph breaks, each starting with the last paragraph of the
+  one before and told the article's opening (MAX_PIECES = 4 reading calls at most); ids prefixed "p2-", an item read
+  twice in the overlap (same text or relate "same") kept once; a later piece the model cannot read leaves the
+  pieces read. Rule 7: every fact sentence gets an item. Rule 11: `words` = a named speaker's EXACT words as an
+  English report prints them in quotation marks (each quote its own "attributes" item); `check_words` keeps them only
+  when they stand word for word in the report (3+ words; Hindi reports: never, a translation is not their words);
+  stored in `claims.rel["words"]`; the payload item's `words` = the most printed version. The writer sees
+  `EXACT WORDS: "..."` and may quote them (prompt "QUOTES"); `_validate` refuses words in double quotation marks
+  (3+ words) that do not stand in a cited statement's words or text ("quote not in statements"), and a loaded word
+  inside a quote is the speaker's, not refused. Tests: `tests/test_reading_long.py`.
 - **Open (Oct 16 2026):** `tests/test_express_db.py::test_nothing_is_embedded_while_the_pacing_curve_has_given_the_slice_out`
   fails at some hours of the day (failed at ~05:30 UTC with and without the session 9 changes, passed at 04:xx).
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:

@@ -156,6 +156,10 @@ Attribution, the way a good newspaper does it (important):
 - ONE OUTLET ONLY: a single outlet reports it; include it, written plainly (pinned on its speaker if
   it has one). The page colours it purple; never add "one report said".
 
+QUOTES: a statement with EXACT WORDS may be written with those words in quotation marks, word for word as given
+(or a whole part of them), with its speaker: "It is me versus me," Shaw said. Use them where a person's own words
+say it best, especially for what someone says about themselves. Never put any other words in quotation marks and
+never change a word inside them.
 Never add any fact, name, number, place, cause, motive, adjective or opinion that is not in the
 statements. Events may be told in order ("after", "later", "then"), but never link two events by cause
 ("because", "due to", "led to") unless a statement says so. Use "said", "alleged", "claimed", "denied"
@@ -204,6 +208,7 @@ disputes give both versions and whose they are; statements marked PARALLEL are j
 verb once, the things listed); a sentence joining statements of different statuses is
 written in "parts" (two or three, one per statement for PARALLEL ones), each with only its own ids (as before); a speaker is named once, then the surname or role
 (he/she only for people marked so), never "X also stated ... X further stated", the verb the statements use or "said";
+a statement's EXACT WORDS may be quoted word for word in quotation marks with its speaker, no other words ever;
 write as one author: never "according to reports",
 "reportedly" or "one report said" (the page colours each sentence); no cause words unless a statement has them; nothing loaded: {banned}.
 
@@ -474,6 +479,8 @@ def _statement_line(i: dict) -> str:
     if i.get("adds_to"):
         line += (f" | says all of #{i['adds_to']} and more: write the two as ONE sentence in two parts, "
                  f"#{i['adds_to']}'s fact first, then what this adds")
+    if i.get("words"):
+        line += f' | EXACT WORDS: "{i["words"]}"'
     shape = grammar.shape_line(i, CLASS[RANK.get(shade(i), 2)])
     if shape:
         line += f" | SHAPE: {shape}"
@@ -549,7 +556,17 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
     if not FULL_START.match(text) or not FULL_END.search(text):
         return _no("not a full sentence")
     low = text.lower()
-    if any(re.search(rf"(?<!\w){re.escape(w)}(?!\w)", low) for w in banned):
+    # words in quotation marks are someone's exact words: they must stand word for word in a cited statement (its
+    # EXACT WORDS or its text), and a loaded word inside them is that speaker's, not ours (Oct 16 2026, owner)
+    quoted = _quoted_spans(text)
+    if quoted:
+        said = " ".join(_norm_q(str(by_id[i].get("words") or "") + " " + by_id[i]["text"]) for i in ids)
+        if any(len(q.split()) >= 3 and _norm_q(q) not in said for q in quoted):
+            return _no("quote not in statements")
+    outside = low
+    for q in quoted:
+        outside = outside.replace(q.lower(), " ")
+    if any(re.search(rf"(?<!\w){re.escape(w)}(?!\w)", outside) for w in banned):
         return _no("loaded word")
     # outlet names never appear in the article as sources (the source links carry them); an outlet the
     # statements themselves name is part of the story ("The Wire journalist Mohammad Irfan was detained")
@@ -557,7 +574,8 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
     if style and any(re.search(rf"(?<!\w){re.escape(o)}(?!\w)", text) and not re.search(rf"(?<!\w){re.escape(o)}(?!\w)", stmt_text)
                      for o in outlets if len(o) >= 3):
         return _no("names an outlet")
-    source_text = " ".join(by_id[i]["text"] + " " + ((by_id[i].get("time") or {}).get("when_text") or "")
+    source_text = " ".join(by_id[i]["text"] + " " + str(by_id[i].get("words") or "") + " "
+                           + ((by_id[i].get("time") or {}).get("when_text") or "")
                            + " " + " ".join(by_id[i]["check"]["reasons"] if by_id[i].get("check") else [])
                            for i in ids)
     if not _numbers(text, written=True) <= _numbers(source_text):
@@ -642,6 +660,19 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
     if style and len(ids) > 1 and not _connected([by_id[i] for i in ids]):
         return _no("unrelated statements joined")
     return ids
+
+
+_QUOTED = re.compile(r'"([^"]{3,})"|“([^”]{3,})”')
+
+
+def _quoted_spans(text: str) -> list[str]:
+    """The words a sentence puts in double quotation marks (a closing comma or full stop inside left out)."""
+    return [(a or b).strip().rstrip(",.") for a, b in _QUOTED.findall(text or "")]
+
+
+def _norm_q(t: str) -> str:
+    t = t.translate(str.maketrans({"“": '"', "”": '"', "‘": "'", "’": "'"}))
+    return re.sub(r"[^\w']+", " ", t.lower()).strip()
 
 
 SUBJECT_STOP = {"which", "their", "there", "these", "those", "about", "after", "before", "while", "would",
