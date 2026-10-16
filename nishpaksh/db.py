@@ -157,6 +157,19 @@ name_pairs = Table(  # the name registry (names.py): one name part in English an
     Column("last_seen", DateTime),
 )
 
+learn_candidates = Table(  # what the learners have seen so far (learning.py): words, pairs, their evidence
+    "learn_candidates", md,
+    Column("kind", String(20), primary_key=True),      # title / synonym / glossary / meta
+    Column("key", String(200), primary_key=True),
+    Column("status", String(12)),                      # candidate / proposed / learned / blocked
+    Column("verdict", String(8)),                      # the devil's advocate: clear / hold / block
+    Column("reason", Text),
+    Column("evidence", JSON),
+    Column("first_seen", DateTime),
+    Column("last_seen", DateTime),
+    Column("checked_at", DateTime),
+)
+
 quota_usage = Table(
     "quota_usage", md,
     Column("model", String(100), primary_key=True),

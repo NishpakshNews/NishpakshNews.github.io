@@ -1352,6 +1352,27 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   whether the timed line covers the other. These also reach `narrative._drop_repeats`, the last net on the written
   article. Joining parallel sentences ("Modi will inaugurate X, Y and Z") is NOT built: the owner's decision, after
   the plan. Tests: `tests/test_relate_forms.py`.
+- **The learners' base and the titles learner (Oct 16 2026, session 9 of the translation/learning plan; `learning.py`,
+  `learn.py`, `config/devils_advocate.yaml`, `.github/scripts/learn.sh`).** The learned files stayed empty because each
+  run counted from scratch inside a 3-day window. MEMORY: `learn_candidates` in the NEWSROOM (never Supabase, never
+  the public repo; in `TABLES`): per candidate its independent sources (`names.source_key`, the same in every story;
+  state media never counts), stories, days, the articles already counted (a re-read adds nothing), learner facets,
+  status (candidate / proposed / learned / blocked), the devil's advocate's verdict and reason; forgotten after 30
+  days without new evidence unless decided. `learning.Bar` (sources, stories, days, max one-day share, probation) and
+  `funnel` (where candidates stop, logged). DEVIL'S ADVOCATE: only holds or blocks, never approves; code cues
+  (devils_advocate.yaml: label words, dispute/insult words, `never_titles`, English and Hindi); a model look at most
+  once a day per learner on the quality tier, asked twice with the choices swapped (`learning.ask_twice`), only to
+  block or hold. TITLES (`learn.py`): sightings of a word mid-sentence before a quoted person's full name in English
+  articles; bar 3+ sources, 3+ days, no day over half, 7 days of probation, 2+ people, 1+ wire agency or foreign
+  outlet, also used in lower case. Code advocate: never list, loaded word, over 70% of sightings before ONE person
+  (the owner's "Pappu"), label cue in over 20%, insult/dispute word near in over 10%, mostly quoted (hold). Then the
+  model's "title held or label?" NEVER learned automatically: written to `config/titles_proposed.yaml` (words, people,
+  counts; no article text), rewritten each run; the owner APPROVES by moving the line to `titles_learned.yaml` `roles:`
+  and REFUSES via `rejected:`; `review:` lists approved titles the advocate now objects to. One job script `learn.sh
+  <name> <module> <files>` (learn_titles.sh removed). Logged "title candidates: {funnel}". Tests:
+  `tests/test_learn_titles.py`.
+- **Open (Oct 16 2026):** `tests/test_express_db.py::test_nothing_is_embedded_while_the_pacing_curve_has_given_the_slice_out`
+  fails at some hours of the day (failed at ~05:30 UTC with and without the session 9 changes, passed at 04:xx).
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:
   missed merges (statement pairs with 60%+ shared root words left apart, by the language mix of the story's sources:
   en / hi / mixed, and what code and the twice-asked question said of them), English left in Hindi pages (by field, top

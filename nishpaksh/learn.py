@@ -1,32 +1,36 @@
-"""Titles learned from the outlets (owner, Oct 10 2026): the registry grows from the news, in a file on GitHub.
+"""Titles learned from the outlets, PROPOSED to the owner (owner, Oct 10 and Oct 14 2026; session 9 of the
+translation/learning plan, Oct 16 2026).
 
 config/titles.yaml is written by hand and cannot hold every title in Indian news ("Captain", "Chancellor",
-"Superintendent", ...). A title the registry does not know is a word the name pass cannot place: it cannot tell
-the title from the name, nor when the person may be called by the surname. This module finds such words in the
-articles the newsroom already holds and APPENDS them to config/titles_learned.yaml, which the job commits to the
-repository (.github/scripts/learn_titles.sh) and titles.py reads together with the hand-written file.
+"Superintendent", ...). A word that stands, mid-sentence, right before the full name of a person the statements quote
+("... said Skipper Rohit Sharma") may be a title. Each run reads the newsroom's recent English articles, finds such
+words, and adds what it saw to the word's memory (learning.py: evidence builds up across runs and days; an article
+read again adds nothing).
 
-A word is learned only on plain counting, with no model (a model alone is never the source of an entry):
+THE BAR (conventional, with the devil's advocate behind it; owner, Oct 14 2026):
+  3+ independent sources (state media never counts), 3+ days with no single day holding over half the sightings,
+  7 days from first to latest sighting, 2+ different people, 1+ sighting from a wire agency or a foreign outlet
+  (outside any one owner's pressure), and the word also used in lower case ("the skipper said": a common noun).
 
-  - it stands directly before the full name of a person the statements attribute something to (the name comes
-    from `claims.attributed_to`, so "Anchor Rohit Sharma" counts and "Yesterday Rohit Sharma" is looked at below),
-  - in the middle of a sentence (after a lower-case word): a sentence opener ("Meanwhile", "Yesterday") also
-    stands before names but only at the start,
-  - in at least 2 INDEPENDENT groups of outlets (wire copies, one owner, state media are one: wire.independence_groups)
-    and at least 2 outlets,
-  - before at least 2 different people (a title is shared; an organisation's name before its one spokesman is not),
-  - and the same word also appears in lower case in the articles at least twice (\"the captain said\": a common
-    noun, not a place, a party or a company).
+THE DEVIL'S ADVOCATE (only holds or blocks): a nickname is not a title someone holds because outlets repeat it
+(the owner's example: "Pappu"). Code: the word is on `never_titles` (config/devils_advocate.yaml); a reading tagged
+it as a loaded word; over 70% of sightings stand before ONE person (a real title is shared: Justice X, Justice Y); a
+label cue before it in over 20% ("dubbed", "called", "so-called", "कहकर"); a dispute or insult word near it in over
+10% ("jibe", "taunt", "तंज"); inside quotation marks in over half (hold). Then, for words code clears, one question on
+the quality tier (at most once a day for all titles together, asked twice with the choices swapped): "a formal title
+or office the person holds, or a nickname, label or insult?". "label" blocks; no agreed answer or no quota holds.
 
-An entry carries the date it was first seen and who it was seen before. Entries are only ever appended. A wrong one
-is deleted by hand from the file and its word added to `rejected:` (at the top of the file), which this module reads
-and never learns again. People change office, so the file records dates, not claims about who holds what.
+NOTHING IS LEARNED AUTOMATICALLY: a word that passes is written to config/titles_proposed.yaml (words, people and
+counts only: no article text, the repository is public). To APPROVE, move its line into titles_learned.yaml under
+`roles:`; to REFUSE, add the word to `rejected:` in titles_learned.yaml. The proposals file is rewritten every run
+from the newsroom's memory; its `review:` part lists approved titles the devil's advocate now objects to.
 
-    python -m nishpaksh.learn [--file config/titles_learned.yaml] [--days 3] [--dry-run]
+    python -m nishpaksh.learn [--days 3] [--dry-run]
 """
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime as dt
 import json
 import logging
@@ -34,31 +38,43 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
+from . import learning as L
 from . import titles
 
 log = logging.getLogger(__name__)
 
 FILE = "titles_learned.yaml"
-MIN_GROUPS = 2          # independent groups of outlets
-MIN_OUTLETS = 2
-MIN_NAMES = 2           # different people the word stood before
-MIN_LOWER = 2           # lower-case uses of the same word in the articles
-MAX_NEW = 20            # most entries one run adds: a bug cannot flood the file
+PROPOSED = "titles_proposed.yaml"
+KIND = "title"
+BAR = L.Bar(sources=3, stories=1, days=3, max_day_share=0.5, probation_days=7)
+MIN_NAMES = 2
+MIN_LOWER = 2
+MIN_ANCHORS = 1
+CONCENTRATION = 0.7
+LABEL_SHARE = 0.2
+DISPUTE_SHARE = 0.1
+QUOTED_SHARE = 0.5
+CONTEXTS = 5                # sample contexts kept per word (in the newsroom only), for the model's look
+WAITING = "waiting for the model's look (once a day)"
 
-HEADER = """# Titles learned from the news by nishpaksh/learn.py (owner, Oct 10 2026). The job appends here and commits it.
-# A title enters this file only when the same word stood in the middle of a sentence directly before the full
-# name of 2+ different people, in 2+ independent outlets, and also appears in lower case in the articles.
-# `seen` says before whom, and `learned` on what day. Entries are only appended; the hand-written
-# titles.yaml always wins over an entry here.
+HEADER = """# Titles learned from the news (nishpaksh/learn.py, owner Oct 10 2026). titles.py reads this file after the
+# hand-written titles.yaml, which always wins. Titles are never learned automatically (owner, Oct 14 2026): the job
+# proposes them in titles_proposed.yaml; to APPROVE one, move its line from there to `roles:` below.
 #
-# A WRONG ENTRY: delete its line below and add its word to `rejected:`, so it is never learned again.
-# Keep `roles:` LAST in this file: new entries are appended at the end.
+# A WRONG ENTRY: delete its line below and add its word to `rejected:`, so it is never proposed again.
+# Keep `roles:` LAST in this file.
 rejected: []
 
 roles:
 """
 
-# a capitalised word before a name that is not a title: names of months and days, openers, honorifics
+PROPOSED_HEADER = """# Titles the outlets use, PROPOSED by nishpaksh/learn.py (rewritten every run; the owner approves, Oct 14 2026).
+# Each passed the bar (3+ independent sources, 3+ days, 7 days of probation, 2+ people, a wire or foreign outlet)
+# and the devil's advocate (not one person's nickname, no label or insult cues, the model's look).
+#   APPROVE: move the line into titles_learned.yaml under `roles:`.   REFUSE: add the word to `rejected:` there.
+# `review:` lists approved titles the devil's advocate now objects to (look again; nothing changes by itself).
+"""
+
 _NOT = {"the", "a", "an", "and", "but", "or", "for", "from", "with", "that", "this", "also", "after", "before",
         "while", "when", "then", "later", "earlier", "meanwhile", "however", "yesterday", "today", "tomorrow",
         "according", "said", "says", "told", "by", "on", "in", "at", "to", "of", "as", "if", "since", "during"}
@@ -66,13 +82,28 @@ _NOT = {"the", "a", "an", "and", "but", "or", "for", "from", "with", "that", "th
 _WORD = r"[A-Z][a-z][\w'’]*(?:-[A-Z][a-z]+)?"
 
 
-def rejected() -> set[str]:
-    """The words the owner has struck out, lower case."""
+# -- the owner's files ----------------------------------------------------------------------------------------------
+
+def _learned_doc() -> dict:
     try:
         from .config import load_yaml
-        return {str(x).lower() for x in (load_yaml(FILE).get("rejected") or [])}
-    except Exception:  # noqa: BLE001 (no file, or one that does not parse: nothing is rejected, nothing breaks)
-        return set()
+        return load_yaml(FILE) or {}
+    except Exception:  # noqa: BLE001 (no file, or one that does not parse: nothing breaks)
+        return {}
+
+
+def rejected() -> set[str]:
+    """The words the owner has struck out, lower case."""
+    return {str(x).lower() for x in (_learned_doc().get("rejected") or [])}
+
+
+def approved() -> set[str]:
+    """The words the owner moved into the learned file, lower case."""
+    out = set()
+    for r in _learned_doc().get("roles") or []:
+        if isinstance(r, dict):
+            out.update(str(f).lower() for f in r.get("forms") or [])
+    return out
 
 
 def _known(word: str) -> bool:
@@ -98,93 +129,270 @@ def person_names(attributed: list[str]) -> set[str]:
     return out
 
 
-def scan(articles: list[dict], names_of: dict[int, set[str]], groups: dict[int, str],
-         outlets_known: set[str] = frozenset()) -> dict[str, dict]:
-    """Evidence per word: {word: {groups, outlets, names, lower, first_name}}. `articles`: id, outlet, text;
-    `names_of`: article id -> the full names of its speakers; `groups`: article id -> independence group."""
-    ev: dict[str, dict] = defaultdict(lambda: {"groups": set(), "outlets": set(), "names": set(), "lower": 0})
-    corpus = "\n".join(a.get("text") or "" for a in articles)
+# -- sightings (pure) ------------------------------------------------------------------------------------------------
+
+@dataclasses.dataclass(frozen=True)
+class Sighting:
+    word: str
+    article_id: int
+    name: str
+    context: str
+    label: bool
+    dispute: bool
+    quoted: bool
+
+
+def _quoted(text: str, i: int) -> bool:
+    """Inside quotation marks: an odd number of straight quotes before it, or a curly quote opened and not closed."""
+    before = text[max(0, i - 400):i]
+    return before.count('"') % 2 == 1 or before.rfind("“") > before.rfind("”")
+
+
+def sightings(articles: list[dict], names_of: dict[int, set[str]], outlets_known=frozenset()) -> list[Sighting]:
+    """Every word standing mid-sentence right before a quoted person's full name. `articles`: id, text;
+    `names_of`: article id -> the full names of its speakers."""
+    label, dispute = L.cue_pattern("label"), L.cue_pattern("dispute")
     skip = {o.lower() for o in outlets_known}
+    out = []
     for a in articles:
         text = a.get("text") or ""
         for name in names_of.get(a["id"]) or ():
             sur = {w.lower() for w in name.split()}
-            # mid-sentence only: the word follows a lower-case word, and stands right before the full name
-            for m in re.finditer(rf"(?<=[a-z] )({_WORD})\s+{re.escape(name)}(?![\w-])", text):
+            for m in re.finditer(rf"(?<=[a-z,] )({_WORD})\s+{re.escape(name)}(?![\w-])", text):
                 word = m.group(1)
                 if _known(word) or word.lower() in sur or word.lower() in skip or len(word) < 3:
                     continue
-                e = ev[word]
-                e["groups"].add(groups.get(a["id"], f"a{a['id']}"))
-                e["outlets"].add(a.get("outlet") or f"a{a['id']}")
-                e["names"].add(name)
-    for word, e in ev.items():
-        e["lower"] = len(re.findall(rf"(?<![\w-]){re.escape(word.lower())}(?![\w-])", corpus))
-    return dict(ev)
+                s, e = m.start(1), m.end()
+                around = text[max(0, s - 80):min(len(text), e + 80)]
+                out.append(Sighting(word, a["id"], name, " ".join(around.split()),
+                                    bool(label.search(text[max(0, s - 40):s])), bool(dispute.search(around)),
+                                    _quoted(text, s)))
+    return out
 
 
-def pick(ev: dict[str, dict], today: dt.date | None = None) -> list[dict]:
-    """The words with enough evidence, as role entries for the file (most evidence first, at most MAX_NEW)."""
-    today = today or dt.date.today()
-    no = rejected()
+def lower_uses(word: str, corpus: str) -> int:
+    return len(re.findall(rf"(?<![\w-]){re.escape(word.lower())}(?![\w-])", corpus))
+
+
+def record(cands: dict[str, L.Candidate], seen: list[Sighting], info: dict[int, dict], corpus: str) -> int:
+    """Add the sightings to the words' memory. `info`: article id -> {source, story, when, anchor}. Returns how many
+    sightings were new evidence."""
+    n = 0
+    for s in seen:
+        a = info.get(s.article_id) or {}
+        c = cands.get(s.word)
+        if c is None:
+            c = cands[s.word] = L.Candidate(KIND, s.word)
+        if not c.add(s.article_id, a.get("source"), a.get("story"), L.day_of(a.get("when")), a.get("when")):
+            continue
+        n += 1
+        c.bump("sightings")
+        per = dict(c.facets.get("per_person") or {})
+        per[s.name] = per.get(s.name, 0) + 1
+        c.facets["per_person"] = per
+        c.put("people", s.name)
+        for flag in ("label", "dispute", "quoted"):
+            if getattr(s, flag):
+                c.bump(flag)
+        if a.get("anchor"):
+            c.put("anchors", a["source"])
+        ctx = list(c.facets.get("contexts") or [])
+        if len(ctx) < CONTEXTS:
+            c.facets["contexts"] = ctx + [s.context[:240]]
+    for w, c in cands.items():
+        if c.dirty:
+            c.facets["lower"] = max(int(c.facets.get("lower") or 0), lower_uses(w, corpus))
+    return n
+
+
+# -- the bar and the devil's advocate (pure) ----------------------------------------------------------------------
+
+def extra_rules(c: L.Candidate) -> list[str]:
     out = []
-    for word, e in sorted(ev.items(), key=lambda kv: (-len(kv[1]["groups"]), -len(kv[1]["names"]), kv[0])):
-        if (len(e["groups"]) >= MIN_GROUPS and len(e["outlets"]) >= MIN_OUTLETS and len(e["names"]) >= MIN_NAMES
-                and e["lower"] >= MIN_LOWER and word.lower() not in no and not _known(word)):
-            out.append({"id": f"learned_{re.sub(r'[^a-z0-9]+', '_', word.lower()).strip('_')}", "forms": [word],
-                        "ref": f"the {word.lower()}", "learned": today.isoformat(), "seen": sorted(e["names"])[:3]})
-    return out[:MAX_NEW]
+    if len(c.facets.get("people") or []) < MIN_NAMES:
+        out.append("people")
+    if len(c.facets.get("anchors") or []) < MIN_ANCHORS:
+        out.append("anchor")
+    if int(c.facets.get("lower") or 0) < MIN_LOWER:
+        out.append("lower_case")
+    return out
 
 
-def line(entry: dict) -> str:
-    """One entry as one flow-style YAML line (JSON strings are valid YAML strings), appended to the file."""
-    return "  - {" + ", ".join(f"{k}: {json.dumps(v, ensure_ascii=False)}" for k, v in entry.items()) + "}\n"
+def advocate(c: L.Candidate, loaded=frozenset()) -> L.Verdict:
+    """Code's case against a word (hold or block, never approve)."""
+    w = c.key.lower()
+    n = int(c.facets.get("sightings") or 0) or 1
+    if w in {x.lower() for x in L.cues().get("never_titles", [])}:
+        return L.Verdict("block", "on the never list")
+    if w in loaded:
+        return L.Verdict("block", "a reading tagged it as a loaded word")
+    per = c.facets.get("per_person") or {}
+    total = sum(per.values())
+    if total and max(per.values()) / total > CONCENTRATION:
+        top = max(per, key=per.get)
+        return L.Verdict("block", f"{per[top]} of {total} sightings stand before {top}: a nickname sticks to one person")
+    out = []
+    if int(c.facets.get("label") or 0) / n > LABEL_SHARE:
+        out.append(L.Verdict("block", "outlets report it as what someone was called (dubbed, branded, so-called)"))
+    if int(c.facets.get("dispute") or 0) / n > DISPUTE_SHARE:
+        out.append(L.Verdict("block", "insult or dispute words stand near it (jibe, taunt, तंज)"))
+    if int(c.facets.get("quoted") or 0) / n > QUOTED_SHARE:
+        out.append(L.Verdict("hold", "mostly inside quotation marks: someone's words, not the outlets'"))
+    return L.worst(*out) if out else L.CLEAR
 
 
-def append(entries: list[dict], path: Path) -> int:
-    """Add the entries the file does not hold yet (by id or by form, case-insensitive), at its end. The file is
-    created with its header when missing. Returns how many lines were added."""
-    if not path.exists():
-        path.write_text(HEADER, encoding="utf-8")
-    text = path.read_text(encoding="utf-8")
-    have = text.lower()
-    new = [e for e in entries if f"forms: {json.dumps(e['forms'], ensure_ascii=False)}".lower() not in have
-           and f"id: {json.dumps(e['id'])}" not in text]
-    if new:
-        path.write_text(text + ("" if text.endswith("\n") else "\n") + "".join(line(e) for e in new), encoding="utf-8")
-    return len(new)
+MODEL_QUESTION = ("Each numbered line is a word that news outlets wrote right before a person's name, with sentences "
+                  "it stood in. Is the word a formal TITLE or office the person holds (like Justice, Captain, "
+                  "Commissioner), or a LABEL: a nickname, an epithet or an insult someone gave them?")
 
 
-def run(store, path: Path | None = None, days: float = 3, dry_run: bool = False) -> dict:
-    """Read the newsroom's recent articles and their speakers, append what has the evidence."""
-    from . import heavy, wire
+def model_look(router, cands: list[L.Candidate]) -> dict[str, L.Verdict]:
+    items = [f'"{c.key}": ' + " | ".join(c.facets.get("contexts") or []) for c in cands]
+    answers = L.ask_twice(router, MODEL_QUESTION, items, ("title", "label", "unsure"), max_tokens=60 + 20 * len(items))
+    out = {}
+    for c, a in zip(cands, answers):
+        if a == "title":
+            out[c.key] = L.CLEAR
+        elif a == "label":
+            out[c.key] = L.Verdict("block", "the model's look: a nickname or label, not a title held")
+        else:
+            out[c.key] = L.Verdict("hold", "the model's look gave no agreed answer")
+    return out
+
+
+def decide(cands: dict[str, L.Candidate], loaded=frozenset(), router=None, model_allowed: bool = True,
+           now: dt.datetime | None = None, no=None, yes=None) -> tuple[list[L.Candidate], list[dict], bool]:
+    """Statuses from the owner's files, the bar and the devil's advocate: (newly proposed, review notes, whether the
+    model was asked)."""
+    now = now or dt.datetime.utcnow()
+    no = rejected() if no is None else no
+    yes = approved() if yes is None else yes
+    review, fresh, waiting = [], [], []
+
+    def mark(c, **kw):
+        for k, v in kw.items():
+            setattr(c, k, v)
+        c.checked_at, c.dirty = now, True
+
+    for c in cands.values():
+        w = c.key.lower()
+        if w in no:
+            if c.status != "blocked":
+                mark(c, status="blocked", verdict="block", reason="refused by the owner")
+            continue
+        if w in yes:
+            if c.status != "learned":
+                mark(c, status="learned")
+            v = advocate(c, loaded)
+            if v.state == "block":
+                review.append({"word": c.key, "reason": v.reason})
+            continue
+        if c.status in ("blocked", "proposed"):
+            if c.status == "proposed" and advocate(c, loaded).state == "block":
+                v = advocate(c, loaded)
+                mark(c, status="blocked", verdict="block", reason=v.reason)
+            continue
+        v = advocate(c, loaded)
+        if v.state == "block":
+            mark(c, status="blocked", verdict="block", reason=v.reason)
+            continue
+        if BAR.fails(c) or extra_rules(c):
+            continue
+        if v.state == "hold":
+            if c.reason != v.reason:
+                mark(c, verdict="hold", reason=v.reason)
+            continue
+        waiting.append(c)
+    used = False
+    if waiting and model_allowed and router is not None:
+        used = True
+        looks = model_look(router, waiting)
+        for c in waiting:
+            v = looks.get(c.key, L.Verdict("hold", "not looked at"))
+            if v.state == "clear":
+                mark(c, status="proposed", verdict="clear", reason="the model's look: a title held")
+                fresh.append(c)
+            elif v.state == "block":
+                mark(c, status="blocked", verdict="block", reason=v.reason)
+            else:
+                mark(c, verdict="hold", reason=v.reason)
+    else:
+        for c in waiting:
+            if c.reason != WAITING:
+                mark(c, verdict="hold", reason=WAITING)
+    return fresh, review, used
+
+
+# -- the proposals file --------------------------------------------------------------------------------------------
+
+def entry(c: L.Candidate) -> dict:
+    return {"id": f"learned_{re.sub(r'[^a-z0-9]+', '_', c.key.lower()).strip('_')}", "forms": [c.key],
+            "ref": f"the {c.key.lower()}", "learned": (c.checked_at or dt.datetime.utcnow()).date().isoformat(),
+            "seen": sorted(c.facets.get("people") or [])[:3], "sources": len(c.sources), "days": len(c.days)}
+
+
+def line(e: dict) -> str:
+    """One entry as one flow-style YAML line (JSON strings are valid YAML strings)."""
+    return "  - {" + ", ".join(f"{k}: {json.dumps(v, ensure_ascii=False)}" for k, v in e.items()) + "}\n"
+
+
+def write_proposals(path: Path, proposed: list[dict], review: list[dict]) -> None:
+    body = PROPOSED_HEADER + "\n"
+    body += ("proposed:\n" + "".join(line(e) for e in proposed)) if proposed else "proposed: []\n"
+    body += "\n" + (("review:\n" + "".join(line(r) for r in review)) if review else "review: []\n")
+    path.write_text(body, encoding="utf-8")
+
+
+# -- the run -------------------------------------------------------------------------------------------------------
+
+def run(store, router=None, days: float = 3, dry_run: bool = False, config_dir: Path | None = None) -> dict:
+    """Read the newsroom's recent English articles and their speakers, add to the memory, decide, write proposals."""
+    from . import heavy, names as N
     from .config import CONFIG_DIR
     from .db import articles, claims, select
-    path = path or (CONFIG_DIR / FILE)
-    since = dt.datetime.utcnow() - dt.timedelta(days=days)
-    rows = store.rows(select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.agency,
-                             articles.c.wire_group, *heavy.columns(store, "text"))
-                      .where(articles.c.published_at >= since))
-    rows = heavy.fill(store, rows, "text")
-    rows = [r for r in rows if r.get("text")]
+    from .ownership import region_of
+    cfg = config_dir or CONFIG_DIR
+    now = dt.datetime.utcnow()
+    since = now - dt.timedelta(days=days)
+    rows = store.rows(select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.agency, articles.c.lang,
+                             articles.c.wire_group, articles.c.story_id, articles.c.published_at,
+                             *heavy.columns(store, "text")).where(articles.c.published_at >= since))
+    rows = [r for r in heavy.fill(store, rows, "text") if r.get("text") and (r.get("lang") or "en") == "en"]
     ids = [r["id"] for r in rows]
     attributed: dict[int, list[str]] = defaultdict(list)
+    loaded: set[str] = set()
     for start in range(0, len(ids), 400):
-        for c in store.rows(select(claims.c.article_id, claims.c.attributed_to)
+        for c in store.rows(select(claims.c.article_id, claims.c.attributed_to, claims.c.loaded_words)
                             .where(claims.c.article_id.in_(ids[start:start + 400]))):
             if c.get("attributed_to"):
                 attributed[c["article_id"]].append(c["attributed_to"])
+            for w in c.get("loaded_words") or []:
+                loaded.update(x.lower() for x in str(w).split())
     names_of = {i: person_names(v) for i, v in attributed.items()}
-    ev = scan(rows, names_of, wire.independence_groups(rows), {r["outlet"] for r in rows if r.get("outlet")})
-    found = pick(ev)
-    added = 0 if dry_run else append(found, path)
-    return {"articles": len(rows), "candidates": len(ev), "qualified": len(found), "added": added,
-            "words": [e["forms"][0] for e in found]}
+    info = {r["id"]: {"source": N.source_key(r), "story": r.get("story_id"), "when": r.get("published_at"),
+                      "anchor": bool(r.get("agency")) or region_of(r.get("outlet"), r.get("url"), r.get("lang")) == "world"}
+            for r in rows}
+    seen = sightings(rows, names_of, {r["outlet"] for r in rows if r.get("outlet")})
+    cands = L.load(store, KIND)
+    new = record(cands, seen, info, "\n".join(r["text"] for r in rows))
+    fresh, review, used = decide(cands, loaded, router, L.model_due(store, KIND, now), now)
+    out = {"articles": len(rows), "sightings": len(seen), "new_evidence": new, "candidates": len(cands),
+           "funnel": L.funnel(cands.values(), BAR, extra_rules), "proposed_now": [c.key for c in fresh],
+           "review": review, "model_asked": used}
+    if dry_run:
+        return out
+    if used:
+        L.model_used(store, KIND, now)
+    out.update(L.save(store, cands, now))
+    if not (cfg / FILE).exists():
+        (cfg / FILE).write_text(HEADER, encoding="utf-8")
+    write_proposals(cfg / PROPOSED, [entry(c) for c in sorted(cands.values(), key=lambda c: c.key)
+                                     if c.status == "proposed"], review)
+    return out
 
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--file", default=None)
     p.add_argument("--days", type=float, default=3)
     p.add_argument("--dry-run", action="store_true")
     a = p.parse_args()
@@ -192,9 +400,10 @@ def main() -> None:
     from .config import database_url
     from .db import Store
     store = Store(database_url())
-    res = run(store, Path(a.file) if a.file else None, a.days, a.dry_run)
-    log.info("learned titles: %s", res)
-    print(json.dumps(res))
+    store.init()
+    res = run(store, L.router_for(store), a.days, a.dry_run)
+    log.info("title candidates: %s", res.get("funnel"))
+    print(json.dumps(res, ensure_ascii=False, default=str))
 
 
 if __name__ == "__main__":

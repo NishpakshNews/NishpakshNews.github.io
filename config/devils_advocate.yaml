@@ -1,0 +1,14 @@
+# Cue words the devil's advocate looks for (nishpaksh/learning.py and the three learners). Written by hand, in
+# English and Hindi. A cue can only HOLD or BLOCK a learned word, never approve one: add freely.
+
+# someone else's label: the outlet reports what a person was CALLED, it does not use a title
+label: [called, calls, calling, dubbed, dubs, branded, brands, nicknamed, labelled, labeled, so-called,
+        referred to as, termed, mocked as, described as, कहकर, कहा जाता, उपनाम, तमगा]
+
+# a dispute or an insult near the word: a slur everyone repeats is not a title, a loaded word is not a synonym
+dispute: [jibe, jibes, taunt, taunts, taunted, derogatory, insult, insults, insulted, insulting, mock, mocks,
+          mocked, mocking, slur, slurs, ridicule, ridiculed, abuse, abusive, offensive, sarcastic, sarcasm,
+          तंज, ताना, तंज कसा, अपमानजनक, अपमान, मज़ाक, मजाक, उपहास, व्यंग्य, गाली]
+
+# titles never learned, whatever the counts (owner's list; add a word to stop it for good)
+never_titles: [Pappu, Feku]
