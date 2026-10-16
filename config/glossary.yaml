@@ -1,0 +1,54 @@
+# Fidelity glossary (nishpaksh/fidelity.py). Written by hand: a wrong line here makes the check itself wrong.
+#
+# qualifiers: small words that change what a sentence claims. A statement read from a report, or a translation, must
+#   keep each one the source has and add none it lacks. Several Hindi words may say the same thing.
+#     strict: true  -> a lost or added word is a problem (the reading and translation fixes act on it)
+#     strict: false -> only counted (the audit), until the numbers show it is not noisy
+#     number: true  -> counted only next to a number ("about 40", "करीब 40"): "about" also means "concerning"
+# entities: one body or party in both languages, in any of its usual renderings. Used ONLY to find which sentence of
+#   a report a statement came from; never to choose a word.
+# terms: OUR rendering of a term in Hindi translations (binding). Only terms Hindi outlets render one way.
+
+qualifiers:
+  - {id: negation, strict: true, en: [not, "n't", never, no, neither, nor, none, cannot],
+     hi: [नहीं, न, ना, मत, कभी नहीं, कतई नहीं]}
+  - {id: never, strict: true, en: [never], hi: [कभी नहीं, कभी भी नहीं, कभी न]}
+  - {id: directly, strict: true, en: [directly, direct], hi: [सीधे, सीधा, सीधी, प्रत्यक्ष, प्रत्यक्ष रूप से]}
+  - {id: only, strict: true, en: [only, solely, merely], hi: [केवल, सिर्फ, सिर्फ़, मात्र]}
+  - {id: at_least, strict: true, en: [at least, a minimum of], hi: [कम से कम, कम-से-कम, न्यूनतम]}
+  - {id: up_to, strict: true, number: true, en: [up to, at most, at the most, a maximum of],
+     hi: [अधिकतम, ज्यादा से ज्यादा, ज़्यादा से ज़्यादा]}
+  - {id: more_than, strict: true, number: true, en: [more than, over, above, upwards of, in excess of],
+     hi: [से अधिक, से ज्यादा, से ज़्यादा, से ऊपर, अधिक]}
+  - {id: alleged, strict: true, en: [alleged, allegedly, purported, purportedly], hi: [कथित, कथित तौर पर, कथित रूप से]}
+  - {id: specific, strict: true, en: [specific, particular], hi: [विशिष्ट, विशेष, खास, ख़ास, निश्चित]}
+  - {id: approximately, strict: false, number: true, en: [about, around, nearly, approximately, roughly, almost],
+     hi: [लगभग, करीब, क़रीब, तकरीबन, तक़रीबन, आसपास]}
+  - {id: hedge, strict: false, en: [might, possibly, probably, likely, perhaps],
+     hi: [शायद, संभवतः, संभवत, संभावना, आशंका]}
+  - {id: reportedly, strict: false, en: [reportedly], hi: [बताया जाता है, सूत्रों के अनुसार, सूत्रों के मुताबिक]}
+
+entities:
+  - {en: [BJP, Bharatiya Janata Party], hi: [भाजपा, बीजेपी, भारतीय जनता पार्टी]}
+  - {en: [Congress], hi: [कांग्रेस]}
+  - {en: [AAP, Aam Aadmi Party], hi: [आम आदमी पार्टी]}       # not "आप": also "you"
+  - {en: [Supreme Court, SC], hi: [सुप्रीम कोर्ट, सर्वोच्च न्यायालय, शीर्ष अदालत]}
+  - {en: [High Court, HC], hi: [हाईकोर्ट, हाई कोर्ट, उच्च न्यायालय]}
+  - {en: [Election Commission, EC, ECI], hi: [चुनाव आयोग, निर्वाचन आयोग]}
+  - {en: [police], hi: [पुलिस]}
+  - {en: [court], hi: [कोर्ट, अदालत, न्यायालय]}
+  - {en: [Prime Minister, PM], hi: [प्रधानमंत्री, पीएम]}
+  - {en: [Chief Minister, CM], hi: [मुख्यमंत्री, सीएम]}
+  - {en: [CBI], hi: [सीबीआई]}
+  - {en: [ED, Enforcement Directorate], hi: [ईडी, प्रवर्तन निदेशालय]}
+  - {en: [Pakistan], hi: [पाकिस्तान]}
+  - {en: [China], hi: [चीन]}
+  - {en: [India], hi: [भारत]}
+
+terms:
+  - {en: criminal defamation, hi: आपराधिक मानहानि}
+  - {en: anticipatory bail, hi: अग्रिम जमानत}
+  - {en: chargesheet, hi: आरोपपत्र}
+  - {en: charge sheet, hi: आरोपपत्र}
+  - {en: FIR, hi: एफआईआर}
+  - {en: monsoon session, hi: मानसून सत्र}

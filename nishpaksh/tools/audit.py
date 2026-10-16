@@ -80,6 +80,61 @@ def when_report(store: Store, limit: int = 20000) -> dict:
     return out
 
 
+def fidelity_report(store: Store, articles_limit: int = 600) -> dict:
+    """The fidelity checks (fidelity.py) over stored data, no model: (1) every live page's Hindi strings against
+    their English ones; (2) the statements read from the newest articles that still have their text, against the
+    sentence of the report each came from. Counts by problem, with a few examples."""
+    import collections
+    from .. import fidelity as F, heavy, names as N
+    out: dict = {"translation": {"strings": 0, "with_problem": 0, "problems": {}, "examples": []},
+                 "reading": {}}
+    tp: collections.Counter = collections.Counter()
+    for r in store.rows(select(published.c.payload_en, published.c.payload_hi)):
+        en, hi = audit.hindi_strings(r["payload_en"] or {}), audit.hindi_strings(r["payload_hi"] or {})
+        if len(en) != len(hi) or [f for f, _ in en] != [f for f, _ in hi]:
+            continue
+        for (field, e), (_, h) in zip(en, hi):
+            out["translation"]["strings"] += 1
+            probs = [p for p in F.check_translation(e, h, strict_only=False)]
+            if probs:
+                out["translation"]["with_problem"] += 1
+                tp.update(p.kind if p.kind == "latin" else str(p) for p in probs)
+                if len(out["translation"]["examples"]) < 30 and any(p.kind in ("lost", "added") for p in probs):
+                    out["translation"]["examples"].append({"field": field, "en": e[:300], "hi": h[:300],
+                                                           "problems": [str(p) for p in probs]})
+    out["translation"]["problems"] = dict(tp.most_common())
+    reg = N.load(store)
+    arts = store.rows(select(articles.c.id, articles.c.lang).where(articles.c.extracted_at.is_not(None),
+                                                                    articles.c.text.is_not(None))
+                      .order_by(articles.c.id.desc()).limit(articles_limit))
+    texts = {r["id"]: r["text"] for r in heavy.fill(store, store.rows(
+        select(articles.c.id, *heavy.columns(store, "text")).where(articles.c.id.in_([a["id"] for a in arts] or [-1]))),
+        "text")}
+    lang = {a["id"]: (a["lang"] or "en") for a in arts}
+    rows = store.rows(select(claims.c.article_id, claims.c.text).where(claims.c.article_id.in_(list(texts) or [-1]),
+                                                                       claims.c.kind != "relation"))
+    for lg in ("hi", "en"):
+        c: collections.Counter = collections.Counter()
+        ex = []
+        n = found = flagged = 0
+        for r in rows:
+            if lang.get(r["article_id"]) != lg or not r["text"]:
+                continue
+            n += 1
+            win, probs = F.check_reading(r["text"], texts.get(r["article_id"]) or "", lg, reg, strict_only=False)
+            if win is None:
+                continue
+            found += 1
+            if probs:
+                flagged += 1
+                c.update(str(p) for p in probs)
+                if len(ex) < 30 and any(p.strict for p in probs):
+                    ex.append({"statement": r["text"][:300], "source": win[:300], "problems": [str(p) for p in probs]})
+        out["reading"][lg] = {"statements": n, "source_found": found, "with_problem": flagged,
+                              "problems": dict(c.most_common()), "examples": ex}
+    return out
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     store = Store(database_url())
@@ -90,6 +145,7 @@ def main() -> None:
                             "latin": (s["hindi"] or {}).get("with_latin"), "alike": s["openings"]["alike"]}
                            for s in rows]
     report["when"] = when_report(store)
+    report["fidelity"] = fidelity_report(store)
     print(json.dumps({k: v for k, v in report.items() if k != "per_story"}, ensure_ascii=False, indent=1))
     with store.readers.engine.begin() as c:      # diagnostics live in Supabase (db.READER_TABLES), not the newsroom copy
         c.execute(sql("insert into diagnostics (kind, report) values ('audit', :r)"),

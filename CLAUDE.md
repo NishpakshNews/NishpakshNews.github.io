@@ -1284,6 +1284,20 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   outlet's statement spells names as the English outlets do before matching. No quality quota, a refusal or any
   error: reading goes on exactly as before (`prepare` never raises); consolidate.py's spelling step stays the
   backstop. Logged as "namepair: {confirmed, asked, agreed, pairs, hinted}". Tests: `tests/test_namepair.py`.
+- **Fidelity checks (Oct 16 2026, session 5 of the translation/learning plan; `fidelity.py`, `config/glossary.yaml`, no
+  model).** The small words that change what a sentence claims are listed by hand in both languages (glossary
+  `qualifiers`: negation, never, directly, only, at least, up to, more than, alleged, specific; and, counted only until
+  the numbers show they are not noisy, `strict: false`: approximately, hedges, reportedly; `number: true` ones count
+  only next to a number, "about 40" not "about the case"). A reading or a translation must keep each one its source
+  has and add none it lacks (the Rahul Gandhi case: "directly" lost, "specific" added). The source sentence a
+  statement came from is found by ANCHORS ONLY: numbers by value in any script, dates (when.py), names exactly (Hindi
+  through the name registry) and the glossary `entities` (BJP / भाजपा, used only for this, never to choose a word). The
+  old consonant-skeleton tie-break is not used (it made सीधे match "side"); no sentence or a tie = nothing checked.
+  `latin_left` finds Latin words left in a Hindi string (not URLs, units, or a bracketed name the English also brackets);
+  `missing_terms` finds our binding Hindi renderings (glossary `terms`) not used. Nothing acts on a problem yet: the
+  English->Hindi path (session 6) and the reading path (session 7) do. The audit reports it on stored data
+  (`tools/audit.fidelity_report`: live pages' Hindi strings, statements of the newest 600 read articles). Tests:
+  `tests/test_fidelity.py`.
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:
   missed merges (statement pairs with 60%+ shared root words left apart, by the language mix of the story's sources:
   en / hi / mixed, and what code and the twice-asked question said of them), English left in Hindi pages (by field, top
