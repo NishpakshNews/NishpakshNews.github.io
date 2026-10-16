@@ -28,13 +28,15 @@ log = logging.getLogger(__name__)
 ESTABLISHED = {"corroborated", "confirmed"}
 
 TRANSLATE_PROMPT = """Translate each value of this JSON object into Hindi (Devanagari script).
-Translate literally and neutrally: do not add, soften or strengthen anything. Keep names of people,
-places and organisations, and all numbers, as they are. Anything in brackets (...) or [...] is a name: copy it
-letter for letter, in the same brackets. A court, bench, tribunal, commission, committee, council, cabinet, board or the
+Translate literally and neutrally: do not add, soften or strengthen anything, and keep the small words that change
+a claim (not, never, only, at least, up to, more than, directly, alleged). Keep all numbers as they are. Write names
+of people and places in Devanagari, the way Hindi newspapers write them (use the NAMES list exactly when given), and
+abbreviations the way Hindi newspapers do (BJP = भाजपा). Write the plain formal Hindi of Hindi newspapers, in natural
+Hindi word order. Anything in brackets (...) or [...] is a name: copy it letter for letter, in the same brackets. A court, bench, tribunal, commission, committee, council, cabinet, board or the
 police is several people: where the English says "they" / "their", write the plural (वे, उन्होंने, उनके) with plural verbs.
 Never begin a sentence with a pronoun (यह, वह, वे, उन्होंने ...) unless the English sentence begins with one: keep the
 name the English uses. Return a JSON object with exactly the same keys.
-
+{names}{terms}
 {payload}"""
 
 
@@ -345,7 +347,9 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
 
 
 def _key(text: str) -> str:
-    return hashlib.sha256(("hi|" + text).encode("utf-8")).hexdigest()
+    # versioned by our binding terms (hindi.cache_version, Oct 16 2026): a changed term translates again
+    from .hindi import cache_version
+    return hashlib.sha256((f"hi|{cache_version()}|" + text).encode("utf-8")).hexdigest()
 
 
 def _collect_strings(payload: dict) -> list[str]:
@@ -374,15 +378,33 @@ def _collect_strings(payload: dict) -> list[str]:
     return [s for s in dict.fromkeys(out) if s]
 
 
+def _mended(store: Store, cache: dict, strings: list[str]) -> dict:
+    """Names left in Latin letters in cached Hindi, replaced by what the registry knows now (hindi.py): a name learned
+    after a string was translated mends it on the next render, at no cost."""
+    from . import hindi, names
+    try:
+        reg = names.load(store)
+    except Exception:  # noqa: BLE001
+        return cache
+    out = dict(cache)
+    for s in strings:
+        k = _key(s)
+        if k in out and out[k]:
+            known = hindi.known_names(reg, [s])
+            if known:
+                out[k] = hindi.devanagari_names(out[k], known)
+    return out
+
+
 def translate_strings(store: Store, router: Router | None, strings: list[str]) -> dict[str, str]:
     """{English: Hindi} for the strings translated (cached or now); the rest are missing."""
-    cache = _translate(store, router, strings)
+    cache = _mended(store, _translate(store, router, strings), strings)
     return {s: cache[_key(s)] for s in strings if _key(s) in cache}
 
 
 def translate_payload(store: Store, router: Router | None, payload: dict) -> dict:
     strings = _collect_strings(payload)
-    cache = _translate(store, router, strings)
+    cache = _mended(store, _translate(store, router, strings), strings)
 
     def tr(s):
         return cache.get(_key(s), s) if s else s
@@ -390,14 +412,17 @@ def translate_payload(store: Store, router: Router | None, payload: dict) -> dic
 
 
 def _translate(store: Store, router: Router | None, strings: list[str]) -> dict:
+    from . import hindi
     cache = store.translation_get([_key(s) for s in strings])
     missing = [s for s in strings if _key(s) not in cache]
     if missing and router is not None:
+        names = hindi.name_map(store, router, missing)        # registry, then one transliteration (quality tier)
         for start in range(0, len(missing), 40):
             chunk = missing[start:start + 40]
             body = json.dumps({str(i): s for i, s in enumerate(chunk)}, ensure_ascii=False)
             try:
-                res = router.call("page", TRANSLATE_PROMPT.format(payload=body), json_out=True,
+                res = router.call("page", TRANSLATE_PROMPT.format(payload=body, names=hindi.names_block(names, chunk),
+                                                                  terms=hindi.terms_block(chunk)), json_out=True,
                                   max_output_tokens=4000)
             except QuotaExhausted:
                 log.info("translation: light tier exhausted; Hindi version partial")
@@ -405,18 +430,18 @@ def _translate(store: Store, router: Router | None, strings: list[str]) -> dict:
             except Exception as e:  # noqa: BLE001
                 log.warning("translation failed: %s", e)
                 continue
-            got, bad = {}, []
+            drafts = {}
             for k, v in (res.data or {}).items() if isinstance(res.data, dict) else []:
                 if k.isdigit() and int(k) < len(chunk) and isinstance(v, str) and v.strip():
-                    why = translation_problem(chunk[int(k)], v)
-                    if why:
-                        bad.append((chunk[int(k)], why))
-                    else:
-                        got[_key(chunk[int(k)])] = v.strip()
-            for src, why in bad:                      # never cached: the article stays "partly translated" and a later pass retries
-                log.info("translation rejected (%s): %s", why, src[:80])
+                    drafts[int(k)] = v.strip()
+            # names by code, the checks, and the edit pass on the quality tier (hindi.py)
+            keep, why = hindi.finish(router, chunk, drafts, names)
+            got = {_key(chunk[i]): h for i, h in keep.items()}
+            for i, w in why.items():                  # never cached: the article stays "partly translated" and a later pass retries
+                log.info("translation rejected (%s): %s", w, chunk[i][:80])
             store.translation_put(got)
             cache.update(got)
+        log.info("hindi: %s", dict(hindi.STATS))
     return cache
 
 

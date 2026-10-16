@@ -1310,6 +1310,26 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   without "only", "the only authorized protest sites" where the report said designated. Known misses: negation
   by morphology ("unaffected" / "प्रभावित नहीं"); a statement matched to the wrong sentence of a long report.
   Tests: `tests/test_fidelity.py`.
+- **The Hindi page, Translator's way (Oct 16 2026, session 6 of the translation/learning plan; `hindi.py`).** In
+  `compose._translate`, per batch of 40 English strings: (1) the people and places in them (namepair.english_names, no
+  titles, bodies or acronyms) are looked up EXACTLY in the name registry; parts no pair covers get one transliteration
+  call on the `quality` tier and are stored; the batch prompt lists the names used ("Vats = वत्स") and our binding terms
+  (glossary `terms`) the batch uses, nothing more. (2) The draft on the `page` tier, as before; the prompt now asks for
+  names of people and places in Devanagari and abbreviations the way Hindi newspapers write them (BJP = भाजपा, ITF =
+  आईटीएफ; the owner's call on organisations was pending: this follows Hindi newspapers), the formal news register,
+  natural Hindi word order, and keeps the small words (fidelity.py). (3) Code replaces a known name left in Latin
+  letters by its registry form (whole words, longest first, never inside brackets: refs.py keeps those on purpose).
+  (4) The checks: `translation_problem` (hard: empty, echo, numbers, brackets, pronoun) and
+  `fidelity.check_translation` (small: qualifiers, Latin left, terms). (5) The EDIT pass, Translator's second pass:
+  every batch, on the `quality` tier (Translator key), English and draft side by side with each string's problems
+  named; an edited string replaces the draft only if it has no hard problem and no more small ones. No quality quota:
+  the draft stands. Strings with a hard problem are never cached (English shows, the page stays "partly translated",
+  `finish_translations` retries); a small remaining problem keeps the better version, cached. **Cache key** carries
+  `hindi.cache_version()` (a hash of our binding terms): changing a term translates again; the deploy itself started
+  a fresh cache (old rows stay, unused). **Names mend old pages:** every render (`translate_payload`,
+  `translate_strings`) replaces Latin names in cached Hindi with what the registry knows now, at no cost. Logged per
+  page as "hindi: {strings, drafts_with_problem, edit_calls, edit_accepted, names_known, names_translated, ...}".
+  Tests: `tests/test_hindi.py`.
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:
   missed merges (statement pairs with 60%+ shared root words left apart, by the language mix of the story's sources:
   en / hi / mixed, and what code and the twice-asked question said of them), English left in Hindi pages (by field, top
