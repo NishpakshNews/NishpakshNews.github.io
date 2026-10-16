@@ -708,7 +708,10 @@
   .tour-demo .hl { padding: 1px 4px; border-radius: 5px; color: var(--st); background: color-mix(in srgb, var(--sc) 12%, transparent); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
   .tour-demo .tag { display: block; font-size: 11.5px; font-weight: 600; color: var(--st); margin-top: 3px; line-height: 1.3; }
   .tour-demo .tbar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; gap: 2px; margin-top: 6px; }
-  .tour-demo .tbar span { flex-basis: 0; min-width: 0; }
+  .tour-demo .tbar span { flex-basis: 0; min-width: 0; transition: flex-grow 700ms var(--ease); }
+  .tour-demo .tl-line { transition: color 600ms ease, background-color 600ms ease; }
+  .tour-demo .tlive { display: flex; flex-direction: column; gap: 8px; }
+  .tour-demo .ttick { transition: opacity 300ms ease; }
   .tour-demo .tex { font-size: 13px; font-weight: 600; line-height: 1.3; }
   .tour-demo hr { border: 0; border-top: 1px solid #e5e5e1; width: 100%; margin: 0; }
   .tour-foot { position: relative; display: flex; align-items: center; justify-content: space-between; min-height: 48px; margin-top: 12px; }
@@ -1409,8 +1412,10 @@ Object.assign(T.en, {
     e1: "Three or more independent outlets report this.", t1: "Confirmed: backed by 3+ independent outlets",
     e2: "Some outlets report this and others deny it.", t2: "Sources disagree: both versions are shown",
     e3: "Primary evidence, such as a court record, shows this is false.", t3: "Shown false: the evidence is named",
-    h2: "One bar, one glance.", p2: "Every story carries a colour bar. The more green, the more of it is proven.",
+    h2: "Colours that stay live.", p2: "The words of an article never change. Its colours do: as more outlets report, a line can turn confirmed, or show that sources disagree, and the story's bar moves with them.",
     x1: "Example: a well-backed story", x2: "Example: a story still being checked",
+    live: ["A fact first reported by one outlet.", "A detail other outlets pick up.", "A figure more outlets confirm over the hours.", "A claim another outlet contests."],
+    ticks: ["Just published", "1 hour later", "3 hours later", "6 hours later"],
     h3: "Tap a colour to see why.", p3: "The key sits under every headline and stays pinned as you read. Tap a colour to light up just those sentences."}
 });
 Object.assign(T.hi, {
@@ -1430,8 +1435,10 @@ Object.assign(T.hi, {
     e1: "तीन या अधिक स्वतंत्र माध्यम यह बताते हैं।", t1: "पुष्ट: 3+ स्वतंत्र माध्यमों का समर्थन",
     e2: "कुछ माध्यम यह बताते हैं और कुछ इसका खंडन करते हैं।", t2: "स्रोतों में मतभेद: दोनों पक्ष दिखाए जाते हैं",
     e3: "अदालती रिकॉर्ड जैसे प्राथमिक सबूत दिखाते हैं कि यह असत्य है।", t3: "असत्य सिद्ध: सबूत का नाम साथ में दिया जाता है",
-    h2: "एक पट्टी, एक नज़र।", p2: "हर ख़बर के साथ एक रंगीन पट्टी होती है। जितना ज़्यादा हरा, उतना ज़्यादा प्रमाणित।",
+    h2: "रंग जो बदलते रहते हैं।", p2: "लेख के शब्द कभी नहीं बदलते, पर उसके रंग बदलते हैं: जैसे-जैसे और माध्यम ख़बर देते हैं, कोई पंक्ति पुष्ट हो सकती है या स्रोतों में मतभेद दिखा सकती है, और ख़बर की पट्टी भी साथ बदलती है।",
     x1: "उदाहरण: अच्छी तरह स्थापित ख़बर", x2: "उदाहरण: जाँच जारी है",
+    live: ["एक तथ्य, जिसे पहले एक ही माध्यम ने बताया।", "एक ब्योरा, जिसे दूसरे माध्यम भी उठाते हैं।", "एक आँकड़ा, जिसकी पुष्टि घंटों में और माध्यम करते हैं।", "एक दावा, जिसका कोई दूसरा माध्यम खंडन करता है।"],
+    ticks: ["अभी छपा", "1 घंटे बाद", "3 घंटे बाद", "6 घंटे बाद"],
     h3: "रंग छुएँ, कारण जानें।", p3: "रंगों की कुंजी हर शीर्षक के नीचे रहती है और पढ़ते समय ऊपर टिकी रहती है। किसी रंग को छुएँ तो सिर्फ़ वही वाक्य उभरेंगे।"}
 });
 
@@ -3070,10 +3077,12 @@ function tourHtml(t) {
   const seg = arr => arr.map(([k, n]) => `<span style="flex-grow:${n};background:var(--bar-${BARKEY[k]})"></span>`).join("");
   const demo1 = [["established", "e1", "t1"], ["disputed", "e2", "t2"], ["false", "e3", "t3"]].map(([k, a, b]) =>
     `<div><span class="hl" style="${v(k)}">${esc(tr[a])}</span><span class="tag" style="${v(k)}">${esc(tr[b])}</span></div>`).join("");
-  const demo2 = `<div><div class="tex" style="color:var(--est)">${esc(tr.x1)}</div><div class="tbar">${seg([["established", 7], ["developing", 1], ["disputed", 1], ["unverified", 1]])}</div>
-      <div class="tex" style="color:var(--muted);font-weight:500;margin-top:4px">${esc(t.gsum(7, 10))}</div></div><hr>
-    <div><div class="tex" style="color:var(--dis)">${esc(tr.x2)}</div><div class="tbar">${seg([["established", 1], ["single", 3], ["unverified", 4], ["disputed", 1], ["false", 1]])}</div>
-      <div class="tex" style="color:var(--muted);font-weight:500;margin-top:4px">${esc(t.gsum(1, 10))}</div></div>`;
+  // screen 2 (owner, Oct 16 2026): the colours are live, so the example lives too: four lines change colour hour by
+  // hour (TOUR_LIVE) and the bar under them moves with them (tourLive below)
+  const demo2 = `<div class="tlive"><div class="tex ttick" style="color:var(--muted)">${esc(tr.ticks[0])}</div>
+      ${tr.live.map((x, i) => `<div><span class="hl tl-line" data-l="${i}">${esc(x)}</span></div>`).join("")}
+      <div class="tbar tl-bar">${GRADE_ORDER.map(k => `<span data-k="${k}" style="flex-grow:0;background:var(--bar-${BARKEY[k]})"></span>`).join("")}</div>
+      <div class="tex tl-sum" style="color:var(--muted);font-weight:500;margin-top:4px"></div></div>`;
   const chips = ["established", "developing", "single", "disputed", "unverified", "false"].map(k =>
     `<span class="gchip${k === "disputed" ? " on" : ""}" style="--c:var(--bar-${BARKEY[k]});--t:${KEYCOLOR[k]}"><i class="gg" aria-hidden="true">${GLYPH[k]}</i><span class="gl">${esc(t.kShort[k])}</span></span>`).join("");
   const demo3 = `<div class="gchips">${chips}</div><div class="gdef on"><b style="color:${KEYCOLOR.disputed}">${esc(cap(t.k.disputed))}.</b> ${esc(t.kDef.disputed)}</div>`;
@@ -3082,8 +3091,36 @@ function tourHtml(t) {
     <div class="tour-body">${step(0, tr.h1, tr.p1, demo1)}${step(1, tr.h2, tr.p2, demo2)}${step(2, tr.h3, tr.p3, demo3)}</div>
     <div class="tour-foot"><button type="button" class="tour-back off" data-tour="back">${esc(tr.back)}</button><div class="tour-dots"><i></i><i></i><i></i></div><button type="button" class="tour-next" data-tour="next"><span class="tl"><span class="a">${esc(tr.next)}</span><span class="b">${esc(tr.start)}</span></span></button></div></div>`;
 }
+// the four lines of screen 2, hour by hour: one outlet -> more outlets -> confirmed, and one claim disputed
+const TOUR_LIVE = [["single", "single", "unverified", "single"], ["developing", "single", "developing", "single"],
+                   ["established", "developing", "established", "disputed"], ["established", "established", "established", "disputed"]];
+let tourLiveTimer = null, tourLiveAt = 0;
+function tourLiveFrame(n) {
+  if (!tourEl) return;
+  const t = T[lang], tr = t.tour, cls = TOUR_LIVE[n];
+  tourEl.querySelectorAll(".tl-line").forEach((el, i) => {
+    el.style.color = KEYCOLOR[cls[i]];
+    el.style.backgroundColor = `color-mix(in srgb, var(--bar-${BARKEY[cls[i]]}) 14%, transparent)`;
+  });
+  tourEl.querySelectorAll(".tl-bar span").forEach(el => {
+    const n = cls.filter(c => c === el.dataset.k).length;
+    el.style.flexGrow = n; el.style.marginRight = n ? "0" : "-2px";        // an empty colour leaves no gap
+  });
+  const tick = tourEl.querySelector(".ttick"); if (tick) tick.textContent = tr.ticks[n];
+  const sum = tourEl.querySelector(".tl-sum"); if (sum) sum.textContent = t.gsum(cls.filter(c => c === "established").length, cls.length);
+}
+function tourLive(on) {
+  clearInterval(tourLiveTimer); tourLiveTimer = null;
+  if (!on) return;
+  const still = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  tourLiveAt = still ? TOUR_LIVE.length - 1 : 0;
+  tourLiveFrame(tourLiveAt);
+  if (still) return;                     // reduced motion: the last hour only, no movement
+  tourLiveTimer = setInterval(() => { tourLiveAt = (tourLiveAt + 1) % TOUR_LIVE.length; tourLiveFrame(tourLiveAt); }, 1700);
+}
 function paintTour() {
   const tr = T[lang].tour;
+  tourLive(tourStep === 1);
   tourEl.querySelectorAll(".tour-step").forEach((s, i) => { s.classList.toggle("on", i === tourStep); s.classList.toggle("past", i < tourStep); });
   tourEl.querySelectorAll(".tour-dots i").forEach((d, i) => d.classList.toggle("on", i === tourStep));
   // "Next" and "Start reading" both sit in the button and cross-fade; the button itself grows or shrinks to the label showing
@@ -3109,6 +3146,7 @@ function showTour(force) {
 }
 function closeTour() {
   if (!tourEl) return;
+  tourLive(false);
   safeSet("np-tour", "1");
   const el = tourEl; tourEl = null;
   tourInert.forEach(x => { x.inert = false; }); tourInert = [];
