@@ -1480,7 +1480,10 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   language the negation is LOST when the target uses the base word bare with no negation ("unhurt" read as "hurt")
   — added the other way. Statement matching (`relate.Profile`) reads strong forms as "not <base>"
   (`polarity.as_particles`): "unaffected" = "not affected", and differs from "affected". A word belongs in `strong`
-  only when its usual rendering in the other language is itself negated. Tests: `tests/test_polarity.py`.
+  only when its usual rendering in the other language is itself negated. WITHIN ONE LANGUAGE (an English reading of an
+  English report) no form counts as a "not": every form is compared through its base only (the audit after session 5
+  raised English lost:negation 30 -> 44 with adjectives about something else: "an unidentified projectile",
+  "unchanged from April"). Strong forms count as negation only across languages. Tests: `tests/test_polarity.py`.
 - **"Captain" by context in titles.yaml (Oct 16 2026, owner).** It was only an Army rank (`general`), so a cricket
   captain read as one. Now `team_captain` (requires_any: cricket/football/hockey/match/innings/IPL/ODI/T20/...;
   ref "the captain") and `pilot_captain` (pilot/flight/aircraft/airline/DGCA/...; ref "the pilot") come after it;

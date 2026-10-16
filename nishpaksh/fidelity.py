@@ -164,7 +164,7 @@ def _prepare(text: str, lang: str) -> str:
     return t
 
 
-def occurrences(text: str, lang: str) -> list[tuple[str, int, int, frozenset]]:
+def occurrences(text: str, lang: str, forms: bool = True) -> list[tuple[str, int, int, frozenset]]:
     """(qualifier id, start, end, the numbers it is bound to) for each qualifier in a text (on its folded form).
     A number-bound qualifier with no number next to it is not one ("about the case", "over the years")."""
     t = _prepare(text, lang)
@@ -176,7 +176,7 @@ def occurrences(text: str, lang: str) -> list[tuple[str, int, int, frozenset]]:
                 if any(a < m.end() and m.start() < b for a, b in spans):
                     continue                      # inside a longer phrase of the same qualifier
                 spans.append((m.start(), m.end()))
-        if q.id == "negation":                    # negation written into a word: "unaffected", "अवैध" (polarity.py)
+        if q.id == "negation" and forms:          # negation written into a word: "unaffected", "अवैध" (polarity.py)
             from . import polarity
             for f in polarity.forms(t, lang, folded=True):
                 if f.strong and not any(a < f.end and f.start < b for a, b in spans):
@@ -237,7 +237,10 @@ def compare(source: str, target: str, src_lang: str, tgt_lang: str, strict_only:
     """Qualifiers the source has and the target lost, and the ones the target added. A number-bound qualifier
     ("over", "से अधिक") is compared number by number, only for numbers both texts carry. `scoped` (a statement read
     from a report): a qualifier counts as lost only when the statement says what it is about (`_in_scope`)."""
-    oa, ob = occurrences(source, src_lang), occurrences(target, tgt_lang)
+    # within one language a negated word form is compared through its base word (_weak_negation), not as a "not":
+    # "an unidentified projectile" in a report says nothing about the statement read from the next clause
+    cross = src_lang != tgt_lang
+    oa, ob = occurrences(source, src_lang, cross), occurrences(target, tgt_lang, cross)
     strict = {q.id: q.strict for q in glossary()["qualifiers"]}
     na, nb = numbers(source), numbers(target)
     plain_a = {q for q, _, _, n in oa if not n}
@@ -268,13 +271,16 @@ def _weak_negation(source: str, target: str, src_lang: str, tgt_lang: str, lost:
     and the negation is LOST when a same-language target uses the base word bare with no negation ("unhurt" read as
     "hurt") — and added the other way round."""
     from . import polarity
-    wa = [f for f in polarity.forms(source, src_lang) if not f.strong]
-    wb = [f for f in polarity.forms(target, tgt_lang) if not f.strong]
+    same = src_lang == tgt_lang
+    # across languages only the weak forms are left to answer here (strong ones already count as negation); within one
+    # language every form is compared through its base
+    wa = [f for f in polarity.forms(source, src_lang) if same or not f.strong]
+    wb = [f for f in polarity.forms(target, tgt_lang) if same or not f.strong]
     if wa and "negation" in added:
         added.discard("negation")
     if wb and "negation" in lost:
         lost.discard("negation")
-    if src_lang != tgt_lang:
+    if not same:
         return
     neg_a = "negation" in qualifiers(source, src_lang) or wa
     neg_b = "negation" in qualifiers(target, tgt_lang) or wb
