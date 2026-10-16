@@ -21,6 +21,10 @@ only in the files below; nothing else needs your attention.
 
 - **Wrong pair:** delete its line and add its two words as one line to `rejected:` ("killed murdered").
 - **Keep two words apart everywhere:** add them to `never:` in `synonyms.yaml`.
+- Each learned pair carries a `section` and `context` words: it is used only for statements in that context
+  ("charge" = "allegation" in court stories, not for fees). A line you add yourself without `context` applies
+  everywhere.
+- The job rewrites the file from its memory each hour; your `rejected:` lines and your own lines are kept.
 - A learned pair the devil's advocate later objects to is taken out of the file by the job.
 
 ## Terms: `glossary_learned.yaml`

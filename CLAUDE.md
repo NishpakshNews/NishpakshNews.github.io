@@ -1442,6 +1442,19 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   section and sentence words (`learn_candidates` kind "glossary_temp", expires after 30 days unused) and binds later
   sentences of a matching context (`hindi.terms_for`, after learned senses, which always come first). A temporary
   sense is never evidence for learning. Tests: `tests/test_learn_glossary.py` (the bank example end to end).
+- **Synonyms by context (Oct 16 2026, context plan session 3; `learn_synonyms.py`, `relate.learned_map`).** Each
+  sighting (two merged lines differing in one word) carries the story's section (`context.story_sections`) and the
+  other words of both lines, and is placed in a SENSE of its pair (`learning.place_sighting`, senses in
+  `learn_candidates` kind "synonym_ctx"; shared helpers `merge_into`, `sense_context`). One candidate per pair and
+  sense (kind "synonym2", key "allegat charg @allegat charg#1"; the old kind "synonym" is deleted). Evidence AGAINST
+  a pair (both words in one statement, the swap between contradicting statements) applies to all its senses. The bar,
+  the advocate and the model's look are as before, per sense; only HAND-WRITTEN groups pre-empt a pair (learned pairs
+  may share words across senses). The job REWRITES synonyms_learned.yaml from memory: the owner's `rejected:` and his
+  lines without `context` (they apply everywhere, `relate.load_learned_groups`), then each learned sense with `section`
+  and `context` (12 words). USE: `relate.relate` first decides without learned senses; if not same/covers, a learned
+  pair with one word in each line whose context fits (`learned_map`, context.best over the lines' other roots; the
+  section is unknown in relate, so 3+ context words) maps one word onto the other and relates again (kept unless
+  "different"). Tests: `tests/test_learn_synonyms.py` ("charge" = "allegation" in courts, apart from fees).
 - **Open (Oct 16 2026):** `tests/test_express_db.py::test_nothing_is_embedded_while_the_pacing_curve_has_given_the_slice_out`
   fails at some hours of the day (failed at ~05:30 UTC with and without the session 9 changes, passed at 04:xx).
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:

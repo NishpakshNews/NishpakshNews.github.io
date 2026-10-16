@@ -302,3 +302,63 @@ def loaded_set(tags) -> set[str]:
     from collections import Counter
     c = Counter(tags)
     return {w for w, n in c.items() if n >= LOADED_MIN_TAGS}
+
+
+# -- senses (context.py) shared by the learners ---------------------------------------------------------------------
+
+def merge_into(cands: dict, old: str, new: str, list_facets=()) -> None:
+    """Candidate `old` joins candidate `new` (a sighting showed their senses are one): evidence is pooled, `old` is
+    marked merged so `save` deletes its row."""
+    a = cands.pop(old)
+    b = cands.get(new)
+    if b is None:
+        a.key, a.dirty = new, True
+        cands[new] = a
+        return
+    b.sources = list(dict.fromkeys(b.sources + a.sources))[-KEEP:]
+    b.stories = list(dict.fromkeys(b.stories + a.stories))[-KEEP:]
+    b.articles = list(dict.fromkeys(b.articles + a.articles))[-KEEP:]
+    for d, k in a.days.items():
+        b.days[d] = b.days.get(d, 0) + k
+    for f in list_facets:
+        b.facets[f] = list(dict.fromkeys((b.facets.get(f) or []) + (a.facets.get(f) or [])))
+    b.first_seen = min(filter(None, [a.first_seen, b.first_seen]), default=None)
+    b.last_seen = max(filter(None, [a.last_seen, b.last_seen]), default=None)
+    b.dirty = True
+    a.status, a.dirty = "merged", True
+    cands["__merged__" + old] = a
+
+
+def place_sighting(sense_store: dict, holder_kind: str, base: str, section: str, ws, cands: dict,
+                   key_of, list_facets=()) -> str:
+    """The sense of `base` a sighting with this context belongs to (context.assign), creating or merging senses;
+    candidates of senses merged away join the surviving one (`key_of(sense)` -> {old candidate key: new key} is
+    built by the caller's own key format through `key_of(old_sense, new_sense)`). Returns the sense key."""
+    from . import context
+    holder = sense_store.get(base)
+    if holder is None:
+        holder = sense_store[base] = Candidate(holder_kind, base)
+    senses = {k: context.Sense.from_dict(v) for k, v in (holder.facets.get("senses") or {}).items()}
+    before = set(senses)
+    counter = [int(holder.facets.get("next") or 0)]
+
+    def new_key():
+        counter[0] += 1
+        return f"{base}#{counter[0]}"
+    sense = context.assign(senses, section, ws, new_key)
+    for gone in before - set(senses):
+        for old, new in key_of(gone, sense).items():
+            if old in cands:
+                merge_into(cands, old, new, list_facets)
+    holder.facets["next"] = counter[0]
+    holder.facets["senses"] = {k: v.to_dict() for k, v in senses.items()}
+    holder.status, holder.dirty = "learned", True       # the sense store never expires
+    return sense
+
+
+def sense_context(sense_store: dict, base: str, sense: str, n: int = 12) -> tuple[str, list[str]]:
+    """(section, up to n signature words) of a stored sense, for the learned files."""
+    from . import context
+    holder = sense_store.get(base)
+    s = context.Sense.from_dict((holder.facets.get("senses") or {}).get(sense)) if holder else context.Sense()
+    return s.section, sorted(s.signature(), key=lambda w: (-s.counts.get(w, 0), w))[:n]

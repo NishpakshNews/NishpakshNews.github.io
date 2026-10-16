@@ -20,8 +20,12 @@ THE DEVIL'S ADVOCATE (only holds or blocks; the owner's worry: protesters / riot
   - FRAMING SPLIT (hold): no outlet has used both words; each sticking to its own word may be two judgments;
   - the model's look (quality tier, once a day for all pairs, asked twice with the choices swapped): does swapping
     keep the meaning or change stance, degree, certainty or judgment? "changes" blocks; no agreed answer holds.
-A pair that passes is LEARNED automatically (owner, Oct 14 2026), appended to config/synonyms_learned.yaml (words and
-counts only: no article text, the repository is public), read by relate.py after the hand-written file. A learned
+CONTEXT (owner, Oct 16 2026; context.py): every sighting carries the story's section and the other words of the two
+lines, and is placed in a SENSE of its pair; evidence adds up per sense ("charge" = "allegation" in court stories says
+nothing about fee stories). Evidence against a pair holds in every context.
+A pair that passes is LEARNED automatically (owner, Oct 14 2026), written to config/synonyms_learned.yaml with its
+section and context words (counts only: no article text, the repository is public), read by relate.py after the
+hand-written file and applied only to statements whose words fit that context. A learned
 pair the advocate later blocks is taken out of the file again. A WRONG ENTRY: delete its line and add its two words
 as one line to `rejected:` at the top of the file: it is never learned again.
 
@@ -44,7 +48,7 @@ from .frames import STOP, _stem
 log = logging.getLogger(__name__)
 
 FILE = "synonyms_learned.yaml"
-KIND = "synonym"
+KIND = "synonym2"       # one candidate per pair and SENSE ("charge allegat @charg allegat#1")
 BAR = L.Bar(sources=2, stories=2, days=2, max_day_share=0.7)
 MIN_STATEMENTS = 3      # different merged statements that showed the pair
 MIN_CONTEXT = 3         # words the two lines share around the swapped word
@@ -52,8 +56,10 @@ WAITING = "waiting for the model's look (once a day)"
 MAX_CLAIMS = 12         # claims of one statement compared with each other (a bug cannot make this explode)
 MAX_NEW = 5             # most pairs one run adds
 
-HEADER = """# Synonyms learned from the news by nishpaksh/learn_synonyms.py (owner, Oct 11 2026). The job appends here and
-# commits it; nishpaksh/relate.py reads it after the hand-written synonyms.yaml, which always wins.
+HEADER = """# Synonyms learned from the news by nishpaksh/learn_synonyms.py (owner, Oct 11 2026). The job rewrites this file
+# from its memory and commits it; nishpaksh/relate.py reads it after the hand-written synonyms.yaml, which always wins.
+# Each learned pair holds IN A CONTEXT (owner, Oct 16 2026): its `section` and `context` words; relate.py uses it only
+# for statements whose words fit that context. A line without `context` is the owner's own and applies everywhere.
 # A pair enters this file when outlets said one fact (merged by the model, asked twice) in the same words but for
 # ONE word, in 3+ statements of 2+ stories, from 2+ independent sources on 2+ days, and the devil's advocate found
 # nothing against it (learning.py). Counts only, no article text (the repository is public). A pair the advocate
@@ -156,15 +162,46 @@ def scan(by_canon: dict[int, list[dict]], conflicts: dict[int, list[int]], group
     return {"seen": seen, "against": against}
 
 
-def record(cands: dict, found: dict, info: dict[int, dict], words_by_article: dict[int, set[str]] | None = None) -> int:
-    """Add what the merged statements showed to the pairs' memory. `info`: article id -> {source, story, when};
+SENSE_KIND = "synonym_ctx"      # per pair: its senses (section + signature), in the newsroom
+
+
+def cand_key(pair: str, sense: str) -> str:
+    return f"{pair} @{sense}"
+
+
+def pair_of(key: str) -> str:
+    return key.partition(" @")[0]
+
+
+def sense_of(key: str) -> str:
+    return key.partition(" @")[2]
+
+
+def record(cands: dict, found: dict, info: dict[int, dict], words_by_article: dict[int, set[str]] | None = None,
+           sense_store: dict | None = None, sections: dict | None = None) -> int:
+    """Add what the merged statements showed to memory, each sighting under the SENSE its context belongs to
+    (context.py: the story's section and the two lines' other words). `info`: article id -> {source, story, when};
     `words_by_article`: article id -> the stems its statements use (one source using both words in one article)."""
+    from . import context
     words_by_article = words_by_article or {}
+    sense_store = sense_store if sense_store is not None else {}
+    sections = sections or {}
     n = 0
-    for key, x, y, a, b in found["seen"]:
+    for pair, x, y, a, b in found["seen"]:
+        story = (info.get(a["article_id"]) or {}).get("story", a.get("story_id"))
+        section = sections.get(story, "")
+        ws = (context.words(a["text"], "en", {x, y}) | context.words(b["text"], "en", {x, y}))
+
+        def key_of(old, new, pair=pair):
+            return {cand_key(pair, old): cand_key(pair, new)}
+        sense = L.place_sighting(sense_store, SENSE_KIND, pair, section, ws, cands, key_of,
+                                 ("statements", "both_in_one_article"))
+        key = cand_key(pair, sense)
         c = cands.get(key)
         if c is None:
             c = cands[key] = L.Candidate(KIND, key)
+        if section:
+            c.facets["section"] = section
         new = False
         for cl, w in ((a, x), (b, y)):
             i = info.get(cl["article_id"]) or {}
@@ -174,7 +211,7 @@ def record(cands: dict, found: dict, info: dict[int, dict], words_by_article: di
                 by = dict(c.facets.get("by_source") or {})
                 by[i["source"]] = sorted(set(by.get(i["source"], [])) | {_stem(w)})
                 c.facets["by_source"] = by
-                if set(key.split()) <= words_by_article.get(cl["article_id"], set()):
+                if set(pair.split()) <= words_by_article.get(cl["article_id"], set()):
                     c.put("both_in_one_article", i["source"])
         if new:
             n += 1
@@ -185,11 +222,13 @@ def record(cands: dict, found: dict, info: dict[int, dict], words_by_article: di
                 c.facets["words"] = words
             if not c.facets.get("sample"):
                 c.facets["sample"] = [a["text"][:200], b["text"][:200]]
-    for key in found["against"]:
-        c = cands.get(key)
-        if c is not None and not c.facets.get("against"):
-            c.facets["against"] = True                     # remembered for good
-            c.dirty = True
+    # evidence against holds for the pair in every context: two words a statement uses side by side, or that differ
+    # between contradicting statements, are not one word anywhere
+    for pair in found["against"]:
+        for k, c in cands.items():
+            if pair_of(k) == pair and not c.facets.get("against"):
+                c.facets["against"] = True
+                c.dirty = True
     return n
 
 
@@ -211,7 +250,7 @@ def _qualifier_words() -> set[str]:
 def advocate(c: L.Candidate, loaded: set[str] = frozenset(), never=None, struck=None) -> L.Verdict:
     """Code's case against a pair (hold or block, never approve): the protesters / rioters kind of pair carries two
     judgments, and merging them would silently pick one."""
-    stems = frozenset(c.key.split())
+    stems = frozenset(pair_of(c.key).split())
     never = relate.load_never() if never is None else never
     struck = rejected() if struck is None else struck
     if any(stems <= n for n in never) or any(stems <= r for r in struck):
@@ -228,8 +267,8 @@ def advocate(c: L.Candidate, loaded: set[str] = frozenset(), never=None, struck=
 
 
 MODEL_QUESTION = ("Each numbered line gives two words and two sentences from news reports that differ only in those "
-                  "words. Does swapping one word for the other keep the meaning (SAME), or change the stance, "
-                  "degree, certainty or judgment of the sentence (CHANGES)?")
+                  "words. In THESE sentences, does swapping one word for the other keep the meaning (SAME), or change "
+                  "the stance, degree, certainty or judgment (CHANGES)?")
 
 
 def model_look(router, cands: list[L.Candidate]) -> dict[str, L.Verdict]:
@@ -242,16 +281,17 @@ def model_look(router, cands: list[L.Candidate]) -> dict[str, L.Verdict]:
     out = {}
     for c, a in zip(cands, answers):
         out[c.key] = (L.CLEAR if a == "same" else
-                      L.Verdict("block", "the model's look: swapping changes the meaning") if a == "changes" else
+                      L.Verdict("block", "the model's look: swapping changes the meaning here") if a == "changes" else
                       L.Verdict("hold", "the model's look gave no agreed answer"))
     return out
 
 
 def decide(cands: dict, loaded=frozenset(), router=None, model_allowed: bool = True, now=None, never=None,
-           struck=None, learned_stems=None) -> tuple[list, list, bool]:
-    """Statuses: (newly learned, learned pairs the advocate now blocks, whether the model was asked)."""
+           struck=None) -> tuple[list, list, bool]:
+    """Statuses, sense by sense: (newly learned, learned senses the advocate now blocks, whether the model was asked).
+    A word in a HAND-WRITTEN group is left to that group (it applies everywhere); learned pairs may share words
+    across senses (the same word can pair differently in different contexts)."""
     now = now or dt.datetime.utcnow()
-    learned_stems = learned_stems if learned_stems is not None else set()
     fresh, withdrawn, waiting = [], [], []
 
     def mark(c, **kw):
@@ -259,7 +299,7 @@ def decide(cands: dict, loaded=frozenset(), router=None, model_allowed: bool = T
             setattr(c, k, v)
         c.checked_at, c.dirty = now, True
 
-    for c in cands.values():
+    for c in [c for c in cands.values() if c.status != "merged"]:
         v = advocate(c, loaded, never, struck)
         if c.status == "learned":
             if v.state == "block":
@@ -273,9 +313,9 @@ def decide(cands: dict, loaded=frozenset(), router=None, model_allowed: bool = T
             continue
         if BAR.fails(c) or extra_rules(c):
             continue
-        if any(s in relate.SYNONYM for s in c.key.split()) or set(c.key.split()) & learned_stems:
-            if c.reason != "a word already in a group":
-                mark(c, verdict="hold", reason="a word already in a group")
+        if any(s in relate.SYNONYM for s in pair_of(c.key).split()):
+            if c.reason != "a word already in a hand-written group":
+                mark(c, verdict="hold", reason="a word already in a hand-written group")
             continue
         if v.state == "hold":
             if c.reason != v.reason:
@@ -286,13 +326,11 @@ def decide(cands: dict, loaded=frozenset(), router=None, model_allowed: bool = T
     if waiting and model_allowed and router is not None:
         used = True
         looks = model_look(router, waiting)
-        taken: set[str] = set()
         for c in waiting:
             v = looks.get(c.key, L.Verdict("hold", "not looked at"))
-            if v.state == "clear" and not set(c.key.split()) & taken and len(fresh) < MAX_NEW:
+            if v.state == "clear" and len(fresh) < MAX_NEW:
                 mark(c, status="learned", verdict="clear", reason="the model's look: same meaning")
                 fresh.append(c)
-                taken |= set(c.key.split())
             elif v.state == "block":
                 mark(c, status="blocked", verdict="block", reason=v.reason)
             elif v.state == "hold":
@@ -319,77 +357,53 @@ def rejected() -> list[frozenset[str]]:
         return []
 
 
-def entry(c: L.Candidate, today: dt.date) -> dict:
+def entry(c: L.Candidate, today: dt.date, sense_store: dict | None = None) -> dict:
     words = sorted((c.facets.get("words") or {}), key=lambda w: -(c.facets["words"][w]))[:2]
-    return {"words": " ".join(sorted(words)), "learned": today.isoformat(), "statements": len(c.facets.get("statements") or []),
-            "stories": len(c.stories), "sources": len(c.sources), "days": len(c.days)}
+    section, ctx = L.sense_context(sense_store or {}, pair_of(c.key), sense_of(c.key))
+    return {"words": " ".join(sorted(words)), "section": section or c.facets.get("section", ""), "context": ctx,
+            "learned": (c.checked_at or dt.datetime.utcnow()).date().isoformat() if c.checked_at else today.isoformat(),
+            "statements": len(c.facets.get("statements") or []), "stories": len(c.stories),
+            "sources": len(c.sources), "days": len(c.days)}
 
 
 def line(entry: dict) -> str:
-    """One entry as one flow-style YAML line (JSON strings are valid YAML strings), appended to the file."""
+    """One entry as one flow-style YAML line (JSON strings are valid YAML strings)."""
     return "  - {" + ", ".join(f"{k}: {json.dumps(v, ensure_ascii=False)}" for k, v in entry.items()) + "}\n"
 
 
-def learned_stems(path: Path) -> set[str]:
+def write(path: Path, cands: dict, today: dt.date, sense_store: dict | None = None) -> None:
+    """The file from the memory: the owner's `rejected:` and his own lines (no `context`: they apply everywhere) as he
+    left them, then every learned sense with its section and context words. A sense the advocate later blocks is
+    simply no longer written."""
     import yaml
-    try:
-        doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except Exception:  # noqa: BLE001
-        return set()
-    have = set()
-    for g in doc.get("groups") or []:
-        if isinstance(g, dict) and isinstance(g.get("words"), str):
-            have.update(_stem(w) for w in g["words"].lower().split())
-    return have
-
-
-def append(entries: list[dict], path: Path) -> int:
-    """Add the entries whose words are not in the file yet (a word is in one group only), at its end. The file is
-    created with its header when missing; a file that does not parse is left alone. Returns how many lines were
-    added."""
-    import yaml
-    if not path.exists():
-        path.write_text(HEADER, encoding="utf-8")
-    text = path.read_text(encoding="utf-8")
-    try:
-        yaml.safe_load(text)
-    except Exception:  # noqa: BLE001
-        log.warning("%s does not parse; nothing appended", path)
-        return 0
-    have = learned_stems(path)
-    new = []
-    for e in entries:
-        stems = {_stem(w) for w in e["words"].split()}
-        if not stems & have:
-            new.append(e)
-            have |= stems
-    if new:
-        path.write_text(text + ("" if text.endswith("\n") else "\n") + "".join(line(e) for e in new), encoding="utf-8")
-    return len(new)
-
-
-def withdraw(keys: list[str], path: Path) -> int:
-    """Take learned pairs the devil's advocate now blocks out of the file (their lines only)."""
-    if not keys or not path.exists():
-        return 0
-    want = [frozenset(k.split()) for k in keys]
-    out, n = [], 0
-    for ln in path.read_text(encoding="utf-8").splitlines(keepends=True):
-        m = re.search(r'words: "([^"]+)"', ln)
-        if m and frozenset(_stem(w) for w in m.group(1).lower().split()) in want:
-            n += 1
-            continue
-        out.append(ln)
-    if n:
-        path.write_text("".join(out), encoding="utf-8")
-    return n
+    doc = {}
+    if path.exists():
+        try:
+            doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception:  # noqa: BLE001
+            log.warning("%s does not parse; left alone", path)
+            return
+    struck = [str(x) for x in doc.get("rejected") or []]
+    own = [g for g in doc.get("groups") or [] if isinstance(g, dict) and isinstance(g.get("words"), str)
+           and not g.get("context")]
+    body = HEADER.replace("rejected: []", "rejected: " + json.dumps(struck, ensure_ascii=False))
+    lines = [line(g) for g in own]
+    lines += [line(entry(c, today, sense_store)) for c in sorted(cands.values(), key=lambda c: c.key)
+              if c.status == "learned"]
+    body = body.rstrip("\n") + "\n" + ("".join(lines) if lines else "")
+    if not lines:
+        body = body.replace("groups:\n", "groups: []\n")
+    path.write_text(body, encoding="utf-8")
 
 
 # -- the run -------------------------------------------------------------------------------------------------------
 
+LEGACY_KINDS = ("synonym",)     # pairs with no sense (Oct 16 2026): their memory is rebuilt under senses
+
+
 def run(store, router=None, days: float = 3, dry_run: bool = False, path: Path | None = None) -> dict:
     """Read the newsroom's recent merged statements and the wordings under them, add to the memory, decide."""
-    from . import names as N, wire
+    from . import context, names as N, wire
     from .config import CONFIG_DIR
     from .db import articles, canonical, claims, select
     path = path or (CONFIG_DIR / FILE)
@@ -418,22 +432,36 @@ def run(store, router=None, days: float = 3, dry_run: bool = False, path: Path |
             conflicts[r["id"]] = list(r.get("conflicts") or [])
     found = scan(by_canon, conflicts, wire.independence_groups(arts))
     info = {a["id"]: {"source": N.source_key(a), "story": a.get("story_id"), "when": a.get("published_at")} for a in arts}
+    sections = context.story_sections(store, [a.get("story_id") for a in arts])
+    if not dry_run:
+        _drop_legacy(store)
     cands = L.load(store, KIND)
-    new = record(cands, found, info, words_by_article)
+    sense_store = L.load(store, SENSE_KIND)
+    new = record(cands, found, info, words_by_article, sense_store, sections)
     loaded = L.loaded_set(loaded_tags)
-    fresh, withdrawn, used = decide(cands, loaded, router, L.model_due(store, KIND, now), now,
-                                    learned_stems=learned_stems(path) if path.exists() else set())
-    out = {"articles": len(arts), "statements": len(by_canon), "new_evidence": new, "candidates": len(cands),
-           "funnel": L.funnel(cands.values(), BAR, extra_rules), "near": L.near(cands.values(), BAR, extra_rules), "learned_now": [c.key for c in fresh],
-           "withdrawn": [c.key for c in withdrawn], "model_asked": used}
+    fresh, withdrawn, used = decide(cands, loaded, router, L.model_due(store, KIND, now), now)
+    live = [c for c in cands.values() if c.status != "merged"]
+    out = {"articles": len(arts), "statements": len(by_canon), "new_evidence": new, "candidates": len(live),
+           "senses": sum(len(h.facets.get("senses") or {}) for h in sense_store.values()),
+           "funnel": L.funnel(live, BAR, extra_rules), "near": L.near(live, BAR, extra_rules),
+           "learned_now": [c.key for c in fresh], "withdrawn": [c.key for c in withdrawn], "model_asked": used}
     if dry_run:
         return out
     if used:
         L.model_used(store, KIND, now)
-    out["added"] = append([entry(c, now.date()) for c in fresh], path)
-    out["removed"] = withdraw([c.key for c in withdrawn], path)
     out.update(L.save(store, cands, now))
+    L.save(store, sense_store, now)
+    write(path, cands, now.date(), sense_store)
     return out
+
+
+def _drop_legacy(store) -> None:
+    from sqlalchemy import delete
+    from .db import learn_candidates as t
+    try:
+        store.exec(delete(t).where(t.c.kind.in_(LEGACY_KINDS)))
+    except Exception as e:  # noqa: BLE001
+        log.info("synonyms: legacy rows not removed (%s)", str(e)[:80])
 
 
 def main() -> None:

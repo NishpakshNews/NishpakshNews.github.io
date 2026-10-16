@@ -65,10 +65,9 @@ def load_never() -> list[frozenset[str]]:
         return []
 
 
-def load_learned_groups() -> list[str]:
-    """The groups the job learned from the outlets (nishpaksh/learn_synonyms.py, config/synonyms_learned.yaml), read
-    AFTER the hand-written file so its groups win. An entry that is not a dict with a string `words` of 2+ words is
-    skipped, and so is one that puts two words of a `never:` line together. A missing or broken file adds nothing."""
+def _learned_raw() -> list[dict]:
+    """The well-formed entries of config/synonyms_learned.yaml (a dict with a string `words` of 2+ words, not two
+    words of a `never:` line). A missing or broken file gives nothing."""
     try:
         from .config import load_yaml
         raw = (load_yaml("synonyms_learned.yaml") or {}).get("groups") or []
@@ -78,10 +77,31 @@ def load_learned_groups() -> list[str]:
             words = " ".join(str(g.get("words")).lower().split()) if isinstance(g, dict) and isinstance(g.get("words"), str) else ""
             stems = {_stem(w) for w in words.split()}
             if len(words.split()) >= 2 and not any(len(stems & n) >= 2 for n in never):
-                out.append(words)
+                out.append(dict(g, words=words))
         return out
     except Exception:  # noqa: BLE001
         return []
+
+
+def load_learned_groups() -> list[str]:
+    """Learned groups that apply EVERYWHERE: lines in the learned file with no `context` (written there by hand),
+    read after the hand-written file so its groups win. Pairs the job learned carry their context and apply only
+    where it matches (`LEARNED_SENSES`, owner Oct 16 2026: "charge" is an allegation in court and a fee in a shop)."""
+    return [g["words"] for g in _learned_raw() if not g.get("context")]
+
+
+def load_learned_senses() -> list[dict]:
+    """The learned pairs with their context: [{"stems": (a, b), "section": str, "context": set of stems}]."""
+    out = []
+    for g in _learned_raw():
+        ctx = g.get("context")
+        if not ctx:
+            continue
+        ws = [_stem(w) for w in g["words"].split()][:2]
+        if len(ws) == 2 and ws[0] != ws[1]:
+            out.append({"stems": tuple(ws), "section": str(g.get("section") or ""),
+                        "context": {str(w) for w in ctx}})
+    return out
 
 
 def load_synonym_groups() -> list[str]:
@@ -109,6 +129,32 @@ def build_synonyms(groups: list[str]) -> dict[str, str]:
 
 SYNONYM_GROUPS = load_synonym_groups()
 SYNONYM = build_synonyms(SYNONYM_GROUPS)
+LEARNED_SENSES = load_learned_senses()
+
+
+def learned_map(pa: "Profile", pb: "Profile", section: str = "", senses: list[dict] | None = None) -> dict[str, str]:
+    """{stem: the pair's first stem} for the learned pairs that join these two lines HERE: one word in each line, and
+    the two lines' other words matching one of the pair's senses (context.best: the section if known, and 2+ of the
+    sense's context words, 3+ when the section is unknown, as while statements are matched before publication)."""
+    from . import context
+    senses = LEARNED_SENSES if senses is None else senses
+    if not senses:
+        return {}
+    out: dict[str, str] = {}
+    by_pair: dict[tuple, list[dict]] = {}
+    for s in senses:
+        by_pair.setdefault(tuple(sorted(s["stems"])), []).append(s)
+    ra, rb = pa.roots | pa.names, pb.roots | pb.names
+    for pair, ss in by_pair.items():
+        x, y = pair
+        if not ((x in ra and y in rb) or (y in ra and x in rb)) or (x in ra and y in ra) or (x in rb and y in rb):
+            continue
+        ctx = (pa.roots | pb.roots) - {x, y}
+        cand = {i: context.Sense(s["section"], context.YOUNG + 1, {w: context.SIGNATURE_MIN for w in s["context"]})
+                for i, s in enumerate(ss)}
+        if context.best(cand, section, ctx) is not None:
+            out[y] = x
+    return out
 
 SAME_WORDS = 0.8        # share of root words for "same" (with the same numbers and names)
 COVER_WORDS = 0.85      # share of the short line's root words the detailed line must contain
@@ -169,6 +215,14 @@ class Profile:
 _CURRENCY = {"rs", "inr", "rupe", "rupee", "rupees"}
 
 
+def _with_roots(p: "Profile", m: dict[str, str]) -> "Profile":
+    q = Profile.__new__(Profile)
+    for k in Profile.__slots__:
+        setattr(q, k, getattr(p, k))
+    q.roots = frozenset(m.get(r, r) for r in p.roots)
+    return q
+
+
 def _with_names(p: "Profile", names: frozenset) -> "Profile":
     if names == p.names:
         return p
@@ -213,6 +267,12 @@ def relate(a: str, b: str, time_a: dict | None = None, time_b: dict | None = Non
     if pa.clocks and pb.clocks and not pa.clocks & pb.clocks:
         return "different"
     r = _relate(a, b, time_a, time_b, pa, pb)
+    if r not in ("same", "a_covers_b", "b_covers_a"):
+        m = learned_map(pa, pb)
+        if m:                                 # a learned pair whose context fits these two lines: one word here
+            r2 = _relate(a, b, time_a, time_b, _with_roots(pa, m), _with_roots(pb, m))
+            if r2 != "different":
+                r = r2
     if bool(pa.clocks) != bool(pb.clocks) and r in ("same", "ask", "a_covers_b", "b_covers_a"):
         timed_a = bool(pa.clocks)
         if r == "same" or r == "ask" or (r == "a_covers_b") != timed_a:
