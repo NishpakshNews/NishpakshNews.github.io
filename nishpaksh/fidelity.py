@@ -111,13 +111,17 @@ def _numbers_near(text: str, start: int, end: int, lang: str) -> set[str]:
     q = text[start:end]
     # the qualifier follows its number in Hindi "40 से अधिक" and English "50 percent maximum"; else it comes first
     follows = (lang == "hi" and q.startswith("से")) or (lang == "en" and q in ("maximum", "minimum"))
+    follows = follows or q.endswith("तक_ऊपरी")
+    before = " ".join(words_before[-(NEAR_NUMBER + 1):])  # with its scale word ("3 लाख टन से अधिक")
+    near = " ".join(words_after[:NEAR_NUMBER])            # the number starts within two words ("about Rs 40")
     if follows:
-        side = " ".join(words_before[-NEAR_NUMBER:])
+        side = before
+    elif re.search(r"[0-9\u0966-\u096F]", near) or word.search(near):
+        side = " ".join(words_after[:NEAR_NUMBER + 1])    # with its scale word ("Rs 3,350 crore")
+    elif lang == "hi" or q in ("maximum", "minimum"):
+        side = before                                     # "50 प्रतिशत की अधिकतम सीमा"
     else:
-        near = " ".join(words_after[:NEAR_NUMBER])          # the number starts within two words ("about Rs 40")
-        if not (re.search(r"[0-9\u0966-\u096F]", near) or word.search(near)):
-            return set()
-        side = " ".join(words_after[:NEAR_NUMBER + 1])      # with its scale word ("Rs 3,350 crore")
+        return set()
     for side in (side,):
         vals = numbers(side)
         if vals:
@@ -145,6 +149,12 @@ def numbers(text: str | None) -> set[str]:
 
 def _prepare(text: str, lang: str) -> str:
     t = fold(text)
+    if lang == "hi":
+        t = re.sub(r"(?<![\u0900-\u097F\w-])या नहीं(?![\u0900-\u097F\w-])", " ", t)   # "whether or not"
+        t = re.sub(r"सीधे सेट", "स्ट्रेट सेट", t)                                          # tennis: "straight sets"
+        # "100% तक", "5 लाख रुपये तक": up to. Not "15 अक्टूबर तक" or "2026 तक" (until, by): a unit must stand between
+        t = re.sub(r"(\d[\d,.]*\s*(?:%|प्रतिशत|करोड़|करोड|लाख|रुपये|रुपए|हजार|हज़ार|किलोमीटर|मीटर|टन))\s+तक"
+                   r"(?![\u0900-\u097F])", r"\1 तक_ऊपरी", t)
     if lang == "en":
         t = re.sub(r"(?<![\w-])no\.\s*\d", " ", t)          # "No. 5" is a number, not a negation
         t = re.sub(r"(?<![\w-])not out(?![\w-])", "unbeaten", t)   # cricket: नाबाद

@@ -135,3 +135,15 @@ def test_second_audit_cases():
                                "याचिका कुमार और कथित वोट चोरी के खिलाफ है।") == []
     src = "The remarks came ahead of a planned march over alleged electoral irregularities in Delhi."
     assert F.check_reading("Opposition leaders alleged electoral irregularities in Delhi.", src, "en")[1] == []
+
+
+def test_third_audit_cases():
+    assert F.check_translation("tariffs of up to 100% on countries", "देशों पर 100% तक शुल्क") == []
+    assert F.qualifiers("15 अक्टूबर तक", "hi") == set()                         # until, not "up to"
+    assert F.check_translation("a crowd beyond 1,000", "1,000 से अधिक की भीड़") == []
+    assert F.check_reading("Russia will supply over 300,000 tons of diesel.",
+                           "ट्रंप ने कहा था कि रूस 3 लाख टन से अधिक डीजल की सप्लाई करेगा.", "hi")[1] == []
+    assert F.check_translation("the 50 percent maximum limit for reservations",
+                               "आरक्षण के लिए 50 प्रतिशत की अधिकतम सीमा") == []
+    assert F.qualifiers("सीधे सेटों में हराया", "hi") == set()
+    assert F.qualifiers("चुना जाना चाहिए या नहीं.", "hi") == set()
