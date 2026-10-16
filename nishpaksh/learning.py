@@ -322,6 +322,27 @@ def merge_into(cands: dict, old: str, new: str, list_facets=()) -> None:
         b.days[d] = b.days.get(d, 0) + k
     for f in list_facets:
         b.facets[f] = list(dict.fromkeys((b.facets.get(f) or []) + (a.facets.get(f) or [])))
+    for f, v in a.facets.items():                # counters add up, count tables add up key by key, flags stay set
+        if f in list_facets:
+            continue
+        w = b.facets.get(f)
+        if w is None:
+            b.facets[f] = v
+        elif isinstance(v, bool) or isinstance(w, bool):
+            b.facets[f] = bool(v) or bool(w)
+        elif isinstance(v, int) and isinstance(w, int):
+            b.facets[f] = v + w
+        elif isinstance(v, dict) and isinstance(w, dict):
+            m = dict(w)
+            for k, x in v.items():
+                y = m.get(k)
+                if isinstance(x, int) and isinstance(y, int) and not isinstance(x, bool):
+                    m[k] = x + y
+                elif isinstance(x, list) and isinstance(y, list):
+                    m[k] = sorted(set(x) | set(y))
+                elif y is None:
+                    m[k] = x
+            b.facets[f] = m
     b.first_seen = min(filter(None, [a.first_seen, b.first_seen]), default=None)
     b.last_seen = max(filter(None, [a.last_seen, b.last_seen]), default=None)
     b.dirty = True

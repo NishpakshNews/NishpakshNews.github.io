@@ -1455,6 +1455,21 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   pair with one word in each line whose context fits (`learned_map`, context.best over the lines' other roots; the
   section is unknown in relate, so 3+ context words) maps one word onto the other and relates again (kept unless
   "different"). Tests: `tests/test_learn_synonyms.py` ("charge" = "allegation" in courts, apart from fees).
+- **Titles by context (Oct 16 2026, context plan session 4; `learn.py`, `titles.role_of`).** Each sighting (a word
+  mid-sentence before a quoted person's full name) carries the story's section and the words of its sentence (the
+  title and the name's words left out; `learn._sentence_at`) and joins a SENSE of its word (`learning.place_sighting`,
+  senses in kind "title_ctx"). One candidate per word and sense (kind "title2", key "Skipper @Skipper#1"; old kind
+  "title" deleted). Bar, people, anchors, shares and the model's look are per sense; lower-case use is the word's (kept
+  on the sense store, copied to each sense). The owner's refusal, `never_titles` and loaded tags hold for every sense.
+  Approval is per (word, section) (`approved()`; a line without `context` approves the word everywhere). Proposals
+  carry `section` and `context`; ids `learned_<word>_<section>`. `titles._learned` lets several learned lines WITH
+  context share a form; `role_of(phrase, context)` uses such a line only when the context text fits it
+  (`_sense_for`: context.best with unknown section, 3+ of its words, strictly best), else the hand-written or plain
+  entry, else None. The word sets (title_words, person_title_words, role_nouns) stay context-free: a learned title
+  word before a name is evidence of a person in any sense; what depends on context is WHICH role and its ref.
+  `learning.merge_into` now also adds up counters and count tables of merged senses. NOTE for the owner: the
+  hand-written titles.yaml maps "Captain" only to the Army role `general` (a cricket captain too).
+  Tests: `tests/test_learn_titles.py` (Skipper in sports and at sea).
 - **Open (Oct 16 2026):** `tests/test_express_db.py::test_nothing_is_embedded_while_the_pacing_curve_has_given_the_slice_out`
   fails at some hours of the day (failed at ~05:30 UTC with and without the session 9 changes, passed at 04:xx).
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:

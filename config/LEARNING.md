@@ -8,12 +8,15 @@ only in the files below; nothing else needs your attention.
 |---|---|---|
 | Titles ("Skipper", "Commissioner") | `titles_proposed.yaml` | Nothing. Titles are never learned on their own. |
 | Synonyms ("unprecedented" = "historic") | `synonyms_learned.yaml` | Pairs that pass are learned and used for matching. |
-| Terms (flood = बाढ़) | `glossary_learned.yaml` | For now nothing: every pair waits in `proposed:`. |
+| Terms (flood = बाढ़) | `glossary_learned.yaml` | Clean pairs are learned, each in its context; doubtful ones wait in `proposed:`. |
 
 ## Titles: `titles_proposed.yaml`
 
+- Each line is ONE sense of a word: its `section` and `context` words (a cricket "Skipper" and a trawler's
+  "Skipper" are proposed separately). Approved, it is used only for text in that context.
 - **Approve:** move the line from `proposed:` into `titles_learned.yaml`, under `roles:`.
-- **Refuse:** add the word to `rejected:` at the top of `titles_learned.yaml`. It is never proposed again.
+- **Refuse:** add the word to `rejected:` at the top of `titles_learned.yaml`. It is never proposed again, in any
+  context.
 - **Never, whatever the counts:** add the word to `never_titles:` in `devils_advocate.yaml` (Pappu is there).
 - `review:` lists approved titles the devil's advocate now objects to. Nothing changes by itself; look again.
 

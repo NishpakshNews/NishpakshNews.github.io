@@ -1,4 +1,5 @@
-"""The learners' base (learning.py) and the titles learner with its devil's advocate (learn.py, session 9)."""
+"""The learners' base (learning.py) and the titles learner with its devil's advocate (learn.py, session 9), learning
+each title in a context (context plan, session 4)."""
 import datetime as dt
 import types
 
@@ -85,6 +86,15 @@ def test_ask_twice_keeps_only_agreed_answers():
 
 # -- titles -------------------------------------------------------------------------------------------------------
 
+class Senses(dict):
+    """cands[word] -> the word's one live sense (these tests have one sense per word)."""
+    def __getitem__(self, k):
+        if dict.__contains__(self, k):
+            return dict.__getitem__(self, k)
+        ks = [x for x, c in self.items() if learn.word_of(x) == k and c.status != "merged"]
+        assert len(ks) == 1, (k, list(self))
+        return dict.__getitem__(self, ks[0])
+
 def corpus(word="Skipper", people=("Rohit Sharma", "Harmanpreet Kaur", "Shubman Gill")):
     arts, names = [], {}
     for i, p in enumerate(people * 2):
@@ -103,13 +113,13 @@ def test_a_shared_title_passes_the_bar_and_the_model_and_is_proposed(tmp_path):
     arts, names = corpus()
     seen = learn.sightings(arts, names)
     assert {s.word for s in seen} == {"Skipper"} and not any(s.label or s.dispute or s.quoted for s in seen)
-    cands = {}
+    cands = Senses()
     learn.record(cands, seen, info_for(arts), " ".join(a["text"] for a in arts))
     c = cands["Skipper"]
     assert L.Bar.fails(learn.BAR, c) == [] and learn.extra_rules(c) == []
     r = Router(["title"])
     fresh, review, used = learn.decide(cands, router=r, no=set(), yes=set(), now=day(11))
-    assert [x.key for x in fresh] == ["Skipper"] and c.status == "proposed" and used
+    assert [x.key for x in fresh] == [c.key] and learn.word_of(c.key) == "Skipper" and c.status == "proposed" and used
     path = tmp_path / "titles_proposed.yaml"
     learn.write_proposals(path, [learn.entry(c)], [])
     doc = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -122,12 +132,13 @@ def test_pappu_is_a_label_not_a_title():
     arts = [{"id": i, "text": f"The minister took a jibe and dubbed him Pappu Rahul Gandhi, and the pappu remark "
                               f"spread; critics called it a pappu jibe."} for i in range(6)]
     names = {i: {"Rahul Gandhi"} for i in range(6)}
-    cands = {}
+    cands = Senses()
     learn.record(cands, learn.sightings(arts, names), info_for(arts), " ".join(a["text"] for a in arts))
     v = learn.advocate(cands["Pappu"])
     assert v.state == "block" and "never list" in v.reason
-    cands["Pappu"].key = "Babua"                                               # not on the list: still blocked
-    v = learn.advocate(cands["Pappu"])
+    c = cands["Pappu"]
+    c.key = "Babua @Babua#1"                                                   # not on the list: still blocked
+    v = learn.advocate(c)
     assert v.state == "block" and "Rahul Gandhi" in v.reason
 
 
@@ -135,7 +146,7 @@ def test_label_and_dispute_cues_block_even_when_the_word_is_shared():
     arts, names = corpus("Chotu")
     for a in arts:
         a["text"] = a["text"].replace("after Chotu", "after critics dubbed Chotu")
-    cands = {}
+    cands = Senses()
     learn.record(cands, learn.sightings(arts, names), info_for(arts), " ".join(a["text"] for a in arts))
     v = learn.advocate(cands["Chotu"])
     assert v.state == "block" and "called" in v.reason
@@ -143,13 +154,13 @@ def test_label_and_dispute_cues_block_even_when_the_word_is_shared():
 
 def test_a_loaded_word_or_the_models_label_blocks_and_no_quota_holds():
     arts, names = corpus("Comrade")
-    cands = {}
+    cands = Senses()
     learn.record(cands, learn.sightings(arts, names), info_for(arts), " ".join(a["text"] for a in arts))
     assert learn.advocate(cands["Comrade"], loaded={"comrade"}).state == "block"
     learn.decide(cands, router=Router(["label"]), no=set(), yes=set(), now=day(11))
     assert cands["Comrade"].status == "blocked" and "model" in cands["Comrade"].reason
     arts, names = corpus("Skipper")
-    cands = {}
+    cands = Senses()
     learn.record(cands, learn.sightings(arts, names), info_for(arts), " ".join(a["text"] for a in arts))
     learn.decide(cands, router=None, no=set(), yes=set(), now=day(11))
     assert cands["Skipper"].status == "candidate" and cands["Skipper"].reason == learn.WAITING
@@ -157,7 +168,7 @@ def test_a_loaded_word_or_the_models_label_blocks_and_no_quota_holds():
 
 def test_the_bar_wants_an_anchor_people_and_probation():
     arts, names = corpus(people=("Rohit Sharma",))
-    cands = {}
+    cands = Senses()
     learn.record(cands, learn.sightings(arts, names), info_for(arts, anchor_every=99), "")
     c = cands["Skipper"]
     assert "people" in learn.extra_rules(c) and "lower_case" in learn.extra_rules(c)
@@ -166,11 +177,57 @@ def test_the_bar_wants_an_anchor_people_and_probation():
 
 def test_the_owner_decides_refusal_approval_and_review():
     arts, names = corpus()
-    cands = {}
+    cands = Senses()
     learn.record(cands, learn.sightings(arts, names), info_for(arts), " ".join(a["text"] for a in arts))
     learn.decide(cands, router=None, no={"skipper"}, yes=set(), now=day(11))
     assert cands["Skipper"].status == "blocked" and cands["Skipper"].reason == "refused by the owner"
     cands["Skipper"].status = "proposed"
     cands["Skipper"].facets["per_person"] = {"Rohit Sharma": 9, "Shubman Gill": 1}
-    _, review, _ = learn.decide(cands, router=None, no=set(), yes={"skipper"}, now=day(12))
+    _, review, _ = learn.decide(cands, router=None, no=set(), yes={("skipper", "*")}, now=day(12))
     assert cands["Skipper"].status == "learned" and review and "Rohit Sharma" in review[0]["reason"]
+
+
+# the owner's example ("Captain" is a cricket role and an Army rank), with a word titles.yaml does not hold: a cricket
+# skipper and the skipper of a fishing trawler are two senses
+CRICKET = "In the final at the stadium, the side won after Skipper {p} hit the winning runs and the skipper lifted the trophy."
+BOAT = "Off the coast, the trawler returned after Skipper {p} steered through the storm and the skipper briefed the crew."
+
+
+def test_skipper_in_sports_and_at_sea_are_two_senses():
+    arts, names, info = [], {}, {}
+    people = ["Rohit Sharma", "Shubman Gill", "Ramesh Kumar", "Joseph Mathew"]
+    for i, p in enumerate(people * 2):
+        text = (CRICKET if i % 4 < 2 else BOAT).format(p=p)
+        arts.append({"id": i, "text": text})
+        names[i] = {p}
+        info[i] = {"source": f"owner:o{i}", "story": i, "when": day(i), "anchor": True}
+    sections = {i: ("sports" if i % 4 < 2 else "coast") for i in range(len(arts))}
+    cands, senses = {}, {}
+    learn.record(cands, learn.sightings(arts, names), info, " ".join(a["text"] for a in arts), senses, sections)
+    live = [c for c in cands.values() if c.status != "merged"]
+    assert sorted(c.facets["section"] for c in live) == ["coast", "sports"]
+    by = {c.facets["section"]: c for c in live}
+    assert set(by["sports"].facets["people"]) == {"Rohit Sharma", "Shubman Gill"}
+    e = learn.entry(by["coast"], senses)
+    assert e["section"] == "coast" and {"trawler", "storm"} <= set(e["context"]) and "kumar" not in e["context"]
+
+
+def test_an_approved_title_sense_is_used_only_where_its_context_fits(monkeypatch):
+    from nishpaksh import titles
+    roles = [{"id": "learned_skipper_sports", "forms": ["Skipper"], "ref": "the skipper", "section": "sports",
+              "context": ["final", "run", "trophy", "wicket", "match"]},
+             {"id": "learned_skipper_coast", "forms": ["Skipper"], "ref": "the skipper", "section": "coast",
+              "context": ["trawler", "crew", "storm", "coast", "boat"]}]
+    real = titles.load_yaml
+    monkeypatch.setattr(titles, "load_yaml", lambda name: {"roles": roles} if name == "titles_learned.yaml" else real(name))
+    caches = (titles._data, titles.title_words, titles.person_title_words, titles.role_nouns, titles.role_acronyms)
+    for f in caches:
+        f.cache_clear()
+    try:
+        assert titles.role_of("Skipper", "The skipper hit the winning runs in the final match") == "learned_skipper_sports"
+        assert titles.role_of("Skipper", "The skipper steered the trawler and the crew through the storm") == "learned_skipper_coast"
+        assert titles.role_of("Skipper", "The skipper of the debate team spoke at the college") is None   # a new context
+        assert "Skipper" in titles.person_title_words()
+    finally:
+        for f in caches:
+            f.cache_clear()

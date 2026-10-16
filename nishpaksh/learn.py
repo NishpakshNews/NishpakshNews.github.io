@@ -20,6 +20,12 @@ label cue before it in over 20% ("dubbed", "called", "so-called", "कहकर"
 the quality tier (at most once a day for all titles together, asked twice with the choices swapped): "a formal title
 or office the person holds, or a nickname, label or insult?". "label" blocks; no agreed answer or no quota holds.
 
+CONTEXT (owner, Oct 16 2026; context.py): "Captain" is a cricket role, an Army rank and a pilot. Each sighting
+carries the story's section and the words of the sentence it stood in (names and the title itself left out) and joins a
+SENSE of its word; the bar, the advocate and the model's look work per sense (2+ people IN THAT SENSE, and so on).
+The owner's refusal, the never list and a loaded tag hold for the word in every sense. A proposal carries its
+`section` and `context` words; once approved, titles.role_of uses it only where the text fits that context.
+
 NOTHING IS LEARNED AUTOMATICALLY: a word that passes is written to config/titles_proposed.yaml (words, people and
 counts only: no article text, the repository is public). To APPROVE, move its line into titles_learned.yaml under
 `roles:`; to REFUSE, add the word to `rejected:` in titles_learned.yaml. The proposals file is rewritten every run
@@ -45,7 +51,9 @@ log = logging.getLogger(__name__)
 
 FILE = "titles_learned.yaml"
 PROPOSED = "titles_proposed.yaml"
-KIND = "title"
+KIND = "title2"          # one candidate per word and SENSE ("Captain @Captain#2")
+SENSE_KIND = "title_ctx"  # per word: its senses (section + signature)
+LEGACY_KINDS = ("title",)  # words with no sense (Oct 16 2026): rebuilt under senses
 BAR = L.Bar(sources=3, stories=1, days=3, max_day_share=0.5, probation_days=7)
 MIN_NAMES = 2
 MIN_LOWER = 2
@@ -77,6 +85,8 @@ PROPOSED_HEADER = """# Titles the outlets use, PROPOSED by nishpaksh/learn.py (r
 # and the devil's advocate (not one person's nickname, no label or insult cues, the model's look).
 #   APPROVE: move the line into titles_learned.yaml under `roles:`.   REFUSE: add the word to `rejected:` there.
 # `review:` lists approved titles the devil's advocate now objects to (look again; nothing changes by itself).
+# Each line carries the `section` and `context` words of ONE sense of the word: approved, it is used only for text in
+# that context (a cricket "Captain" says nothing about an Army one; each sense is proposed on its own).
 """
 
 _NOT = {"the", "a", "an", "and", "but", "or", "for", "from", "with", "that", "this", "also", "after", "before",
@@ -101,13 +111,28 @@ def rejected() -> set[str]:
     return {str(x).lower() for x in (_learned_doc().get("rejected") or [])}
 
 
-def approved() -> set[str]:
-    """The words the owner moved into the learned file, lower case."""
+def approved() -> set[tuple[str, str]]:
+    """(word lower case, section) of each sense the owner moved into the learned file; a line he wrote without a
+    section approves the word in every section ("*")."""
     out = set()
     for r in _learned_doc().get("roles") or []:
         if isinstance(r, dict):
-            out.update(str(f).lower() for f in r.get("forms") or [])
+            sec = str(r.get("section") or "") if r.get("context") else "*"
+            out.update((str(f).lower(), sec) for f in r.get("forms") or [])
     return out
+
+
+def word_of(key: str) -> str:
+    return key.partition(" @")[0]
+
+
+def sense_of(key: str) -> str:
+    return key.partition(" @")[2]
+
+
+def _is_approved(c: L.Candidate, yes) -> bool:
+    w = word_of(c.key).lower()
+    return (w, "*") in yes or (w, c.facets.get("section", "")) in yes
 
 
 def _known(word: str) -> bool:
@@ -144,12 +169,21 @@ class Sighting:
     label: bool
     dispute: bool
     quoted: bool
+    words: frozenset = frozenset()      # the sentence's context words (context.words), names and the title out
 
 
 def _quoted(text: str, i: int) -> bool:
     """Inside quotation marks: an odd number of straight quotes before it, or a curly quote opened and not closed."""
     before = text[max(0, i - 400):i]
     return before.count('"') % 2 == 1 or before.rfind("“") > before.rfind("”")
+
+
+def _sentence_at(text: str, s: int, e: int) -> str:
+    """The sentence of `text` around [s, e)."""
+    starts = [text.rfind(p, 0, s) for p in (". ", "? ", "! ", "\n")]
+    a = max(starts) + 1 if max(starts) >= 0 else 0
+    ends = [x for x in (text.find(p, e) for p in (". ", "? ", "! ", "\n")) if x >= 0]
+    return text[a:min(ends) + 1 if ends else len(text)]
 
 
 def sightings(articles: list[dict], names_of: dict[int, set[str]], outlets_known=frozenset()) -> list[Sighting]:
@@ -168,9 +202,11 @@ def sightings(articles: list[dict], names_of: dict[int, set[str]], outlets_known
                     continue
                 s, e = m.start(1), m.end()
                 around = text[max(0, s - 80):min(len(text), e + 80)]
+                from . import context
+                ws = context.words(_sentence_at(text, s, e), "en", {word} | set(name.split()))
                 out.append(Sighting(word, a["id"], name, " ".join(around.split()),
                                     bool(label.search(text[max(0, s - 40):s])), bool(dispute.search(around)),
-                                    _quoted(text, s)))
+                                    _quoted(text, s), ws))
     return out
 
 
@@ -178,15 +214,30 @@ def lower_uses(word: str, corpus: str) -> int:
     return len(re.findall(rf"(?<![\w-]){re.escape(word.lower())}(?![\w-])", corpus))
 
 
-def record(cands: dict[str, L.Candidate], seen: list[Sighting], info: dict[int, dict], corpus: str) -> int:
-    """Add the sightings to the words' memory. `info`: article id -> {source, story, when, anchor}. Returns how many
-    sightings were new evidence."""
+LIST_FACETS = ("people", "anchors", "contexts")
+
+
+def record(cands: dict[str, L.Candidate], seen: list[Sighting], info: dict[int, dict], corpus: str,
+           sense_store: dict | None = None, sections: dict | None = None) -> int:
+    """Add the sightings to the words' memory, each under the SENSE its context belongs to (the story's section from
+    `sections`, story id -> section; the sentence's words). `info`: article id -> {source, story, when, anchor}.
+    Returns how many sightings were new evidence."""
+    sense_store = sense_store if sense_store is not None else {}
+    sections = sections or {}
     n = 0
     for s in seen:
         a = info.get(s.article_id) or {}
-        c = cands.get(s.word)
+        section = sections.get(a.get("story"), "")
+
+        def key_of(old, new, w=s.word):
+            return {f"{w} @{old}": f"{w} @{new}"}
+        sense = L.place_sighting(sense_store, SENSE_KIND, s.word, section, s.words, cands, key_of, LIST_FACETS)
+        key = f"{s.word} @{sense}"
+        c = cands.get(key)
         if c is None:
-            c = cands[s.word] = L.Candidate(KIND, s.word)
+            c = cands[key] = L.Candidate(KIND, key)
+        if section:
+            c.facets["section"] = section
         if not c.add(s.article_id, a.get("source"), a.get("story"), L.day_of(a.get("when")), a.get("when")):
             continue
         n += 1
@@ -203,9 +254,15 @@ def record(cands: dict[str, L.Candidate], seen: list[Sighting], info: dict[int, 
         ctx = list(c.facets.get("contexts") or [])
         if len(ctx) < CONTEXTS:
             c.facets["contexts"] = ctx + [s.context[:240]]
-    for w, c in cands.items():
-        if c.dirty:
-            c.facets["lower"] = max(int(c.facets.get("lower") or 0), lower_uses(w, corpus))
+    # lower-case use is the word's, in every sense (kept on the word's sense store, copied to each sense)
+    for w in {word_of(k) for k, c in cands.items() if c.dirty and c.status != "merged"}:
+        holder = sense_store.get(w)
+        low = max(int((holder.facets.get("lower") if holder else 0) or 0), lower_uses(w, corpus))
+        if holder is not None:
+            holder.facets["lower"] = low
+        for k, c in cands.items():
+            if word_of(k) == w and c.status != "merged":
+                c.facets["lower"] = low
     return n
 
 
@@ -223,8 +280,8 @@ def extra_rules(c: L.Candidate) -> list[str]:
 
 
 def advocate(c: L.Candidate, loaded=frozenset()) -> L.Verdict:
-    """Code's case against a word (hold or block, never approve)."""
-    w = c.key.lower()
+    """Code's case against a sense of a word (hold or block, never approve)."""
+    w = word_of(c.key).lower()
     n = int(c.facets.get("sightings") or 0) or 1
     if w in {x.lower() for x in L.cues().get("never_titles", [])}:
         return L.Verdict("block", NEVER)
@@ -251,7 +308,7 @@ MODEL_QUESTION = ("Each numbered line is a word that news outlets wrote right be
 
 
 def model_look(router, cands: list[L.Candidate]) -> dict[str, L.Verdict]:
-    items = [f'"{c.key}": ' + " | ".join(c.facets.get("contexts") or []) for c in cands]
+    items = [f'"{word_of(c.key)}": ' + " | ".join((c.facets.get("contexts") or [])[:CONTEXTS]) for c in cands]
     answers = L.ask_twice(router, MODEL_QUESTION, items, ("title", "label", "unsure"), max_tokens=60 + 20 * len(items))
     out = {}
     for c, a in zip(cands, answers):
@@ -279,17 +336,19 @@ def decide(cands: dict[str, L.Candidate], loaded=frozenset(), router=None, model
         c.checked_at, c.dirty = now, True
 
     for c in cands.values():
-        w = c.key.lower()
+        if c.status == "merged":
+            continue
+        w = word_of(c.key).lower()
         if w in no:
             if c.status != "blocked":
                 mark(c, status="blocked", verdict="block", reason="refused by the owner")
             continue
-        if w in yes:
+        if _is_approved(c, yes):
             if c.status != "learned":
                 mark(c, status="learned")
             v = advocate(c, loaded)
             if v.state == "block":
-                review.append({"word": c.key, "reason": v.reason})
+                review.append({"word": word_of(c.key), "section": c.facets.get("section", ""), "reason": v.reason})
             continue
         if c.status == "blocked":
             continue
@@ -333,9 +392,13 @@ def decide(cands: dict[str, L.Candidate], loaded=frozenset(), router=None, model
 
 # -- the proposals file --------------------------------------------------------------------------------------------
 
-def entry(c: L.Candidate) -> dict:
-    return {"id": f"learned_{re.sub(r'[^a-z0-9]+', '_', c.key.lower()).strip('_')}", "forms": [c.key],
-            "ref": f"the {c.key.lower()}", "learned": (c.checked_at or dt.datetime.utcnow()).date().isoformat(),
+def entry(c: L.Candidate, sense_store: dict | None = None) -> dict:
+    w = word_of(c.key)
+    section, ctx = L.sense_context(sense_store or {}, w, sense_of(c.key))
+    section = section or c.facets.get("section", "")
+    slug = re.sub(r"[^a-z0-9]+", "_", f"{w} {section or sense_of(c.key).rpartition('#')[2]}".lower()).strip("_")
+    return {"id": f"learned_{slug}", "forms": [w], "ref": f"the {w.lower()}", "section": section, "context": ctx,
+            "learned": (c.checked_at or dt.datetime.utcnow()).date().isoformat(),
             "seen": sorted(c.facets.get("people") or [])[:3], "sources": len(c.sources), "days": len(c.days)}
 
 
@@ -366,6 +429,8 @@ def run(store, router=None, days: float = 3, dry_run: bool = False, config_dir: 
                              articles.c.wire_group, articles.c.story_id, articles.c.published_at,
                              *heavy.columns(store, "text")).where(articles.c.published_at >= since))
     rows = [r for r in heavy.fill(store, rows, "text") if r.get("text") and (r.get("lang") or "en") == "en"]
+    from . import context
+    sections = context.story_sections(store, [r.get("story_id") for r in rows])
     ids = [r["id"] for r in rows]
     attributed: dict[int, list[str]] = defaultdict(list)
     loaded_tags: list[str] = []
@@ -381,23 +446,38 @@ def run(store, router=None, days: float = 3, dry_run: bool = False, config_dir: 
                       "anchor": bool(r.get("agency")) or region_of(r.get("outlet"), r.get("url"), r.get("lang")) == "world"}
             for r in rows}
     seen = sightings(rows, names_of, {r["outlet"] for r in rows if r.get("outlet")})
+    if not dry_run:
+        _drop_legacy(store)
     cands = L.load(store, KIND)
-    new = record(cands, seen, info, "\n".join(r["text"] for r in rows))
+    sense_store = L.load(store, SENSE_KIND)
+    new = record(cands, seen, info, "\n".join(r["text"] for r in rows), sense_store, sections)
     loaded = L.loaded_set(loaded_tags)
     fresh, review, used = decide(cands, loaded, router, L.model_due(store, KIND, now), now)
-    out = {"articles": len(rows), "sightings": len(seen), "new_evidence": new, "candidates": len(cands),
-           "funnel": L.funnel(cands.values(), BAR, extra_rules), "near": L.near(cands.values(), BAR, extra_rules), "proposed_now": [c.key for c in fresh],
-           "review": review, "model_asked": used}
+    live = [c for c in cands.values() if c.status != "merged"]
+    out = {"articles": len(rows), "sightings": len(seen), "new_evidence": new, "candidates": len(live),
+           "senses": sum(len(h.facets.get("senses") or {}) for h in sense_store.values()),
+           "funnel": L.funnel(live, BAR, extra_rules), "near": L.near(live, BAR, extra_rules),
+           "proposed_now": [c.key for c in fresh], "review": review, "model_asked": used}
     if dry_run:
         return out
     if used:
         L.model_used(store, KIND, now)
     out.update(L.save(store, cands, now))
+    L.save(store, sense_store, now)
     if not (cfg / FILE).exists():
         (cfg / FILE).write_text(HEADER, encoding="utf-8")
-    write_proposals(cfg / PROPOSED, [entry(c) for c in sorted(cands.values(), key=lambda c: c.key)
+    write_proposals(cfg / PROPOSED, [entry(c, sense_store) for c in sorted(live, key=lambda c: c.key)
                                      if c.status == "proposed"], review)
     return out
+
+
+def _drop_legacy(store) -> None:
+    from sqlalchemy import delete
+    from .db import learn_candidates as t
+    try:
+        store.exec(delete(t).where(t.c.kind.in_(LEGACY_KINDS)))
+    except Exception as e:  # noqa: BLE001
+        log.info("titles: legacy rows not removed (%s)", str(e)[:80])
 
 
 def main() -> None:
