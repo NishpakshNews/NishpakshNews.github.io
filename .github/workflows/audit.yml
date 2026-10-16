@@ -3,7 +3,13 @@ name: audit
 # of a story's sources, English left in Hindi pages, repeated sentence openings, mixed date / money / per-cent forms.
 # No model call, nothing changed; the summary goes to the diagnostics table (kind 'audit').
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      tool:
+        description: "Which read-only report"
+        type: choice
+        options: [audit, express_review]
+        default: audit
 jobs:
   audit:
     runs-on: ubuntu-latest
@@ -31,4 +37,4 @@ jobs:
       - env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/newsroom
           READERS_DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python -m nishpaksh.tools.audit
+        run: python -m nishpaksh.tools.${{ github.event.inputs.tool || 'audit' }}
