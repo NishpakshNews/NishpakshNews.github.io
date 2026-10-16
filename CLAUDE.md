@@ -1371,6 +1371,18 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   and REFUSES via `rejected:`; `review:` lists approved titles the advocate now objects to. One job script `learn.sh
   <name> <module> <files>` (learn_titles.sh removed). Logged "title candidates: {funnel}". Tests:
   `tests/test_learn_titles.py`.
+- **The synonyms learner on the base (Oct 16 2026, session 10 of the translation/learning plan; `learn_synonyms.py`).**
+  Same evidence as before (two claims under one model-merged statement, from different independent sources, the same
+  words but for one, not already "same" to code), now ADDED UP across runs in `learn_candidates` (kind "synonym").
+  Bar, the lightest: 2+ independent sources, 2+ stories, 2+ days with no day over 70%, 3+ merged statements. Devil's
+  advocate: evidence against REMEMBERED FOR GOOD (both words in one statement; the swap between contradicting
+  statements); `never:` / `rejected:`; a word that limits a claim (fidelity glossary qualifiers); a word a reading
+  tagged loaded; FRAMING SPLIT (hold) while no source has used both words (per-source word use and both words in one
+  article are recorded); the model's look once a day ("same meaning or changes stance/degree/certainty?", asked twice).
+  Learned AUTOMATICALLY (owner, Oct 14 2026), at most 5 a run, appended to `synonyms_learned.yaml` (counts only, no
+  sentences: the example field is gone); a learned pair the advocate later blocks is taken out of the file
+  (`withdraw`). The job runs through `learn.sh` (learn_synonyms.sh removed). Logged "synonym candidates: {funnel}".
+  Tests: `tests/test_learn_synonyms.py`.
 - **Open (Oct 16 2026):** `tests/test_express_db.py::test_nothing_is_embedded_while_the_pacing_curve_has_given_the_slice_out`
   fails at some hours of the day (failed at ~05:30 UTC with and without the session 9 changes, passed at 04:xx).
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:
