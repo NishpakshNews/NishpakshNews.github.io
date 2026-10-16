@@ -202,9 +202,12 @@ class Profile:
         # days and months are dates, compared as dates (times), not names: "on Thursday" kept two
         # tellings of one call apart (Oct 8 2026, story 14231)
         self.names = frozenset(names - _DATE_WORDS - _CURRENCY)
-        self.roots = frozenset(SYNONYM.get(r, r) for r in _roots(t)
+        # negation written into a word reads as the word negated: "unaffected" = "not affected" (polarity.py)
+        from .polarity import as_particles
+        tp = as_particles(t)
+        self.roots = frozenset(SYNONYM.get(r, r) for r in _roots(tp)
                                if r not in FILLER and r not in _NUMBER_STEMS and r not in _CURRENCY and not r.isdigit())
-        self.neg = bool(NEGATION.search(t))
+        self.neg = bool(NEGATION.search(tp))
         from .frames import date_of
         self.date = date_of(t)
         self.years = frozenset(re.findall(r"\b(?:19|20)\d\d\b", t))

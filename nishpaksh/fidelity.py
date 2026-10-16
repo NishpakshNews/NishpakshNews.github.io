@@ -175,6 +175,11 @@ def occurrences(text: str, lang: str) -> list[tuple[str, int, int, frozenset]]:
                 if any(a < m.end() and m.start() < b for a, b in spans):
                     continue                      # inside a longer phrase of the same qualifier
                 spans.append((m.start(), m.end()))
+        if q.id == "negation":                    # negation written into a word: "unaffected", "अवैध" (polarity.py)
+            from . import polarity
+            for f in polarity.forms(t, lang, folded=True):
+                if f.strong and not any(a < f.end and f.start < b for a, b in spans):
+                    spans.append((f.start, f.end))
         for a, b in sorted(spans):
             nums = frozenset()
             if q.number:
@@ -248,8 +253,31 @@ def compare(source: str, target: str, src_lang: str, tgt_lang: str, strict_only:
         lost.discard("alleged")
     lost |= {q for q, x in bound_a - bound_b if x != "#" and x in nb}
     added |= {q for q, x in bound_b - bound_a if x != "#" and x in na}
+    _weak_negation(source, target, src_lang, tgt_lang, lost, added)
     out = [Problem("lost", q, strict[q]) for q in sorted(lost)] + [Problem("added", q, strict[q]) for q in sorted(added)]
     return [p for p in out if p.strict or not strict_only]
+
+
+def _weak_negation(source: str, target: str, src_lang: str, tgt_lang: str, lost: set, added: set) -> None:
+    """Weak negated forms (polarity.py: an un- word not on the list, "unhurt", "unprecedented"): they never count as a
+    negation alone, but one ANSWERS a negation on the other side ("unhurt" against "घायल नहीं": nothing lost or added),
+    and the negation is LOST when a same-language target uses the base word bare with no negation ("unhurt" read as
+    "hurt") — and added the other way round."""
+    from . import polarity
+    wa = [f for f in polarity.forms(source, src_lang) if not f.strong]
+    wb = [f for f in polarity.forms(target, tgt_lang) if not f.strong]
+    if wa and "negation" in added:
+        added.discard("negation")
+    if wb and "negation" in lost:
+        lost.discard("negation")
+    if src_lang != tgt_lang:
+        return
+    neg_a = "negation" in qualifiers(source, src_lang) or wa
+    neg_b = "negation" in qualifiers(target, tgt_lang) or wb
+    if not neg_b and any(polarity.has_base(target, f.base, tgt_lang) for f in wa):
+        lost.add("negation")
+    if not neg_a and any(polarity.has_base(source, f.base, src_lang) for f in wb):
+        added.add("negation")
 
 
 # -- which sentence of the report ----------------------------------------------------------------------------------

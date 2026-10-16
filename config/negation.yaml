@@ -1,0 +1,109 @@
+# Negation written INTO a word (nishpaksh/polarity.py; owner, Oct 16 2026: "unaffected" and "प्रभावित नहीं" say the
+# same thing, and "affected" read from "unaffected" turns the fact around). Written by hand.
+#
+# strong: word -> its base. A word here is a negation exactly like "not" / "नहीं": the fidelity checks count it as
+#   one, and statement matching reads "unaffected" as "not affected". Put a word here only when its usual rendering
+#   in the other language is itself a negation (unable = नहीं कर सके / असमर्थ). A word whose usual rendering carries
+#   no negation (unharmed = सुरक्षित, unprecedented = अभूतपूर्व) does NOT belong here.
+#   An empty base ("") means the word negates what follows it (without, बिना).
+# English words with un- that are not here are read as WEAK forms by a rule (polarity.py): they never count as a
+#   negation on their own, they only stop a false alarm ("unhurt" against "घायल नहीं") and catch a reading that
+#   dropped the prefix ("unhurt" read as "hurt").
+# not_negation: words the un- rule must leave alone (they start with un- but negate nothing); `non` and `hi`: bases
+#   after non- / गैर that name a kind of thing, not a negation (NGO = गैर सरकारी संगठन: no negation in "NGO").
+
+strong:
+  en:
+    unaffected: affected
+    unable: able
+    unaware: aware
+    unpaid: paid
+    unemployed: employed
+    unemployment: employment
+    unidentified: identified
+    unknown: known
+    unclear: clear
+    unconfirmed: confirmed
+    unverified: verified
+    unauthorised: authorised
+    unauthorized: authorized
+    unregistered: registered
+    unlicensed: licensed
+    unarmed: armed
+    unopposed: opposed
+    unresolved: resolved
+    unsuccessful: successful
+    unsuccessfully: successfully
+    unconstitutional: constitutional
+    unsafe: safe
+    unanswered: answered
+    unavailable: available
+    unchanged: changed
+    uncertain: certain
+    uncertainty: certainty
+    illegal: legal
+    illegally: legally
+    invalid: valid
+    impossible: possible
+    incomplete: complete
+    inadequate: adequate
+    insufficient: sufficient
+    ineligible: eligible
+    inaccessible: accessible
+    disagree: agree
+    disagreed: agreed
+    disagrees: agrees
+    baseless: base
+    groundless: ground
+    homeless: home
+    jobless: job
+    without: ""
+  hi:
+    अप्रभावित: प्रभावित
+    असफल: सफल
+    असमर्थ: समर्थ
+    अवैध: वैध
+    असुरक्षित: सुरक्षित
+    अनुपस्थित: उपस्थित
+    अनिश्चित: निश्चित
+    अनिश्चितता: निश्चितता
+    अज्ञात: ज्ञात
+    अपुष्ट: पुष्ट
+    अस्पष्ट: स्पष्ट
+    असंवैधानिक: संवैधानिक
+    अयोग्य: योग्य
+    अपात्र: पात्र
+    अपर्याप्त: पर्याप्त
+    अधूरा: पूरा
+    अधूरी: पूरी
+    अधूरे: पूरे
+    अनधिकृत: अधिकृत
+    अपंजीकृत: पंजीकृत
+    निहत्था: हथियारबंद
+    निहत्थे: हथियारबंद
+    बेरोजगार: रोजगार
+    बेरोजगारी: रोजगार
+    बेघर: घर
+    नाकाम: कामयाब
+    नाकामी: कामयाबी
+    निर्विरोध: विरोध
+    असहमत: सहमत
+    असहमति: सहमति
+    अनसुलझा: सुलझा
+    अनसुलझी: सुलझी
+    अनसुलझे: सुलझे
+    अघोषित: घोषित
+    अमान्य: मान्य
+    असंभव: संभव
+    अपरिवर्तित: परिवर्तित
+    अनुत्तरित: उत्तरित
+    निराधार: आधार
+    बेबुनियाद: बुनियाद
+    बिना: ""
+
+not_negation:
+  en: [under, unit, union, unique, univers, uniform, unif, unilateral, unison, unicorn, unicameral, unicode, until,
+       unless, unanimous, unto, unbeaten, unveil, unleash, unearth, unfold, unload, unlock, uncover, unseat, unpack,
+       unwind, unroll, untie, unzip, unplug, unravel, unrest, unite, unity, unmask, uncle]
+  non: [governmental, government, profit, stop]
+  hi: [सरकारी]

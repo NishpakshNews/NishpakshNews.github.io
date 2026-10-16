@@ -1470,6 +1470,17 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   `learning.merge_into` now also adds up counters and count tables of merged senses. NOTE for the owner: the
   hand-written titles.yaml maps "Captain" only to the Army role `general` (a cricket captain too).
   Tests: `tests/test_learn_titles.py` (Skipper in sports and at sea).
+- **Negation written into a word (Oct 16 2026, context plan session 5; `polarity.py`, `config/negation.yaml`).**
+  "Roads were unaffected" = "सड़कें प्रभावित नहीं हुईं": the checks used to call that a lost/added negation, and
+  "affected" read from "unaffected" passed. STRONG forms (the file's `strong` lists, word -> base; plus non-X and
+  गैर-X by rule, minus kinds such as NGO = गैर सरकारी in `not_negation`) count as the `negation` qualifier in
+  `fidelity.occurrences`, exactly like "not"/"नहीं". WEAK forms (any other English un- word by rule, minus
+  `not_negation.en`: unhurt, unprecedented) never count alone, because their usual Hindi carries no negation
+  (अभूतपूर्व); in `fidelity._weak_negation` a weak form ANSWERS a negation on the other side, and within one
+  language the negation is LOST when the target uses the base word bare with no negation ("unhurt" read as "hurt")
+  — added the other way. Statement matching (`relate.Profile`) reads strong forms as "not <base>"
+  (`polarity.as_particles`): "unaffected" = "not affected", and differs from "affected". A word belongs in `strong`
+  only when its usual rendering in the other language is itself negated. Tests: `tests/test_polarity.py`.
 - **Open (Oct 16 2026):** `tests/test_express_db.py::test_nothing_is_embedded_while_the_pacing_curve_has_given_the_slice_out`
   fails at some hours of the day (failed at ~05:30 UTC with and without the session 9 changes, passed at 04:xx).
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:
