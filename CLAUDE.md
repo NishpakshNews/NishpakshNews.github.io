@@ -1288,8 +1288,12 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   model).** The small words that change what a sentence claims are listed by hand in both languages (glossary
   `qualifiers`: negation, never, directly, only, at least, up to, more than, alleged, specific; and, counted only until
   the numbers show they are not noisy, `strict: false`: approximately, hedges, reportedly; `number: true` ones count
-  only next to a number, "about 40" not "about the case"). A reading or a translation must keep each one its source
-  has and add none it lacks (the Rahul Gandhi case: "directly" lost, "specific" added). The source sentence a
+  only next to a number, "about 40" not "about the case", and are compared NUMBER BY NUMBER: "over 75,000" is
+  lost only from a statement that carries 75,000; Hindi scale words read as numbers, 3,350 करोड़ = Rs 3,350 crore).
+  A reading or a translation must keep each one its source has and add none it lacks; for a READING, a qualifier
+  counts as lost only when the statement says what it is about (English source: the words after it are in the
+  statement; Hindi source: its clause holds one of the statement's anchors), so a statement taken from part of a
+  sentence keeps only its own part's qualifiers (the Rahul Gandhi case: "directly" lost, "specific" added). The source sentence a
   statement came from is found by ANCHORS ONLY: numbers by value in any script, dates (when.py), names exactly (Hindi
   through the name registry) and the glossary `entities` (BJP / भाजपा, used only for this, never to choose a word). The
   old consonant-skeleton tie-break is not used (it made सीधे match "side"); no sentence or a tie = nothing checked.

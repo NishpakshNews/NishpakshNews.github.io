@@ -71,3 +71,47 @@ def test_binding_terms():
     assert F.missing_terms(en, "उन्हें आपराधिक मानहानि मामले में जमानत मिली।") == ["anticipatory bail"]
     assert F.missing_terms(en, "उन्हें आपराधिक मानहानि मामले में अग्रिम जमानत मिली।") == []
     assert F.terms_in("An FIR was filed") == [("FIR", "एफआईआर")]
+
+
+# cases from the first audit on stored data (Oct 16 2026): real catches stay, the noise goes
+def test_real_catches_from_stored_statements():
+    src = "He claimed that the Congress won only 14 of the 4,600 seats."
+    assert [str(p) for p in F.check_reading("The Congress won 14 of the 4,600 seats.", src, "en")[1]] == ["lost:only"]
+    hi = "एसजी तुषार मेहता ने कहा कि 10 अक्टूबर को 303 में से केवल 45 स्टेशनों पर रोक लगाई गई थी।"
+    st = "Solicitor General Tushar Mehta stated that 45 out of 303 metro stations were closed on October 10."
+    assert [str(p) for p in F.check_reading(st, hi, "hi")[1]] == ["lost:only"]
+
+
+def test_a_statement_from_part_of_a_sentence_keeps_only_its_own_qualifiers():
+    src = ("In Rejinagar, the BJP won by over 75,000 votes, snatching the seat from the Trinamool, while in "
+           "Puducherry, the NDA candidate from ally AINRC won by 8,482 votes.")
+    assert F.check_reading("In Puducherry, the NDA candidate from ally AINRC won by 8,482 votes.", src, "en")[1] == []
+    src = "Rahul Gandhi and INDIA bloc leaders submitted a petition against the Election Commission over alleged 'vote chori'."
+    assert F.check_reading("Rahul Gandhi and INDIA bloc leaders submitted a petition against the Election Commission.",
+                           src, "en")[1] == []
+
+
+def test_noise_words_are_not_qualifiers():
+    assert F.qualifiers("Zelensky alleged that Russia struck a plant.", "en") == set()        # a verb: आरोप लगाया
+    assert F.qualifiers("the alleged bribe", "en") == {"alleged"}
+    assert F.qualifiers("विशेष गहन पुनरीक्षण के दौरान", "hi") == set()                       # "Special", not "specific"
+    assert F.qualifiers("Shafali struck 100 not out", "en") == set()                         # cricket: नाबाद
+    assert F.qualifiers("he had no prior information", "en") == {"negation"}                 # YAML once read no as false
+    en = "UPI transactions exceeding 2,000 rupees"
+    assert F.compare(en, "2,000 रुपये से अधिक के UPI लेनदेन", "en", "hi") == []
+    assert F.check_translation(en, "2,000 रुपये से अधिक के UPI लेनदेन", strict_only=True) == [F.Problem("latin", "UPI")]
+
+
+def test_number_bound_qualifiers_compare_number_by_number():
+    src = "देश में 100 से अधिक भाषाएं हैं, करीब 80,000 पंजीकृत समाचार पत्र हैं।"
+    assert F.check_reading("India has approximately 80,000 registered newspapers.", src, "hi", strict_only=False)[1] == []
+    assert [str(p) for p in F.compare("India has more than 100 languages.", "भारत में 100 भाषाएं हैं।", "en", "hi")] == \
+        ["lost:more_than"]
+
+
+def test_glossary_refuses_yaml_booleans(tmp_path):
+    import pytest
+    f = tmp_path / "g.yaml"
+    f.write_text("qualifiers:\n  - {id: negation, en: [no], hi: [नहीं]}\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        F.glossary(str(f))

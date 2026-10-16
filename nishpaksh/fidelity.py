@@ -57,6 +57,10 @@ class Problem:
 @functools.lru_cache(maxsize=4)
 def glossary(path: str | None = None) -> dict:
     data = yaml.safe_load(pathlib.Path(path or FILE).read_text(encoding="utf-8")) or {}
+    for q in data.get("qualifiers") or []:
+        bad = [x for x in (q.get("en") or []) + (q.get("hi") or []) if not isinstance(x, str)]
+        if bad:      # YAML reads a bare no / yes / on as true or false: quote them
+            raise ValueError(f"glossary qualifier {q.get('id')}: not text: {bad}")
     quals = tuple(Qualifier(q["id"], bool(q.get("strict")), bool(q.get("number")),
                             tuple(str(x) for x in q.get("en") or ()), tuple(str(x) for x in q.get("hi") or ()))
                   for q in data.get("qualifiers") or [])
@@ -87,46 +91,126 @@ def _pat(phrase: str, lang: str) -> re.Pattern:
     return _pattern(phrase, lang)
 
 
-_NUM = re.compile(r"[0-9०-९]")
 _EN_NUMWORD = re.compile(r"(?<![\w-])(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|"
                          r"thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|lakh|crore|million|billion|"
                          r"dozen|half)(?![\w-])")
 _HI_NUMWORD = re.compile(rf"(?<![{_DEV}])(?:एक|दो|तीन|चार|पांच|पाँच|छह|सात|आठ|नौ|दस|बीस|सौ|हजार|हज़ार|लाख|करोड़|दर्जन|आधा|आधे)(?![{_DEV}])")
 
 
-def _number_near(text: str, start: int, end: int, lang: str) -> bool:
-    words_after = re.split(r"\s+", text[end:].strip())[:NEAR_NUMBER + 1]
-    words_before = re.split(r"\s+", text[:start].strip())[-NEAR_NUMBER:] if lang == "hi" else []
-    around = " ".join(words_after + words_before)
-    word = _HI_NUMWORD if lang == "hi" else _EN_NUMWORD
-    return bool(_NUM.search(around) or word.search(around))
+def _numbers_near(text: str, start: int, end: int, lang: str) -> set[str]:
+    """The number a number-bound qualifier is about: the one right after it ("about 40", "करीब 40"), or right before
+    it when the qualifier follows its number ("40 से अधिक", "50 percent maximum"). A number word ("dozens",
+    "करोड़") with no value counts as "#"."""
+    after = " ".join(re.split(r"\s+", text[end:].strip())[:NEAR_NUMBER + 1])
+    before = " ".join(re.split(r"\s+", text[:start].strip())[-NEAR_NUMBER:])
+    follows = lang == "hi" and text[start:end].startswith("से")
+    for side in ((before,) if follows else (after, before)):
+        vals = numbers(side)
+        if vals:
+            return vals
+        if (_HI_NUMWORD if lang == "hi" else _EN_NUMWORD).search(side):
+            return {"#"}
+    return set()
+
+
+_DIGITS = str.maketrans("\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f", "0123456789")
+
+
+_HI_SCALE = [("करोड़", "crore"), ("करोड", "crore"), ("लाख", "lakh"), ("हज़ार", "thousand"), ("हजार", "thousand")]
+
+
+def numbers(text: str | None) -> set[str]:
+    """The numbers of a text by value, in either language: figures.py reads English and digits; Hindi scale words
+    (करोड़, लाख, हज़ार) are read as their English ones first, so "3,350 करोड़" = "Rs 3,350 crore"."""
+    from .figures import canon_set
+    t = (text or "").translate(_DIGITS)
+    for hi, en in _HI_SCALE:
+        t = t.replace(hi, " " + en + " ")
+    return canon_set(t)
+
+
+def _prepare(text: str, lang: str) -> str:
+    t = fold(text)
+    if lang == "en":
+        t = re.sub(r"(?<![\w-])no\.\s*\d", " ", t)          # "No. 5" is a number, not a negation
+        t = re.sub(r"(?<![\w-])not out(?![\w-])", "unbeaten", t)   # cricket: नाबाद
+    return t
+
+
+def occurrences(text: str, lang: str) -> list[tuple[str, int, int, frozenset]]:
+    """(qualifier id, start, end, the numbers it is bound to) for each qualifier in a text (on its folded form).
+    A number-bound qualifier with no number next to it is not one ("about the case", "over the years")."""
+    t = _prepare(text, lang)
+    out = []
+    for q in glossary()["qualifiers"]:
+        spans: list[tuple[int, int]] = []
+        for phrase in sorted(q.hi if lang == "hi" else q.en, key=len, reverse=True):
+            for m in _pat(phrase, lang).finditer(t):
+                if any(a < m.end() and m.start() < b for a, b in spans):
+                    continue                      # inside a longer phrase of the same qualifier
+                spans.append((m.start(), m.end()))
+        for a, b in sorted(spans):
+            nums = frozenset()
+            if q.number:
+                nums = frozenset(_numbers_near(t, a, b, lang))
+                if not nums:
+                    continue
+            out.append((q.id, a, b, nums))
+    return out
 
 
 def qualifiers(text: str, lang: str) -> set[str]:
     """The glossary qualifiers a text uses."""
-    t = fold(text)
-    if lang == "en":
-        t = re.sub(r"(?<![\w-])no\.\s*\d", " ", t)          # "No. 5" is a number, not a negation
-    found = set()
-    for q in glossary()["qualifiers"]:
-        for phrase in (q.hi if lang == "hi" else q.en):
-            for m in _pat(phrase, lang).finditer(t):
-                if q.number and not _number_near(t, m.start(), m.end(), lang):
-                    continue
-                found.add(q.id)
-                break
-            if q.id in found:
-                break
-    if "never" in found:
-        found.add("negation")
-    return found
+    return {q for q, *_ in occurrences(text, lang)}
 
 
-def compare(source: str, target: str, src_lang: str, tgt_lang: str, strict_only: bool = False) -> list[Problem]:
-    """Qualifiers the source has and the target lost, and the ones the target added."""
-    a, b = qualifiers(source, src_lang), qualifiers(target, tgt_lang)
+_STOP = {"that", "this", "with", "from", "have", "were", "been", "they", "their", "said", "will", "would", "about",
+         "which", "there", "into", "than", "also", "over", "after", "before", "under"}
+
+
+def _words(text: str) -> set[str]:
+    return {w[:5] for w in re.findall(r"[a-z]{4,}", text) if w not in _STOP} | set(re.findall(r"\d+", text))
+
+
+_CLAUSE = re.compile(r"[,;:\u2014\u2013]|\s(?:लेकिन|जबकि|बल्कि|मगर|while|whereas|but)\s")
+
+
+def _in_scope(source_t: str, start: int, end: int, statement: str, src_lang: str, registry) -> bool:
+    """Does the statement say the thing this qualifier of the source is about? A statement read from part of a
+    sentence ("In Puducherry, the NDA won by 8,482 votes" from "...the BJP won by over 75,000 votes, while in
+    Puducherry ...") has not lost the qualifiers of the other part. English source: the words right after the
+    qualifier are in the statement. Hindi source: its clause holds one of the statement's anchors."""
+    if src_lang == "en":
+        scope = source_t[end:end + 60]
+        return bool(_words(scope) & _words(fold(statement)))
+    cuts = [0] + [m.end() for m in _CLAUSE.finditer(source_t)] + [len(source_t) + 1]
+    a = max(c for c in cuts if c <= start)
+    b = min(c for c in cuts if c > start)
+    return anchors(statement, source_t[a:b], src_lang, registry) > 0
+
+
+def compare(source: str, target: str, src_lang: str, tgt_lang: str, strict_only: bool = False,
+            scoped: bool = False, registry=None) -> list[Problem]:
+    """Qualifiers the source has and the target lost, and the ones the target added. A number-bound qualifier
+    ("over", "से अधिक") is compared number by number, only for numbers both texts carry. `scoped` (a statement read
+    from a report): a qualifier counts as lost only when the statement says what it is about (`_in_scope`)."""
+    oa, ob = occurrences(source, src_lang), occurrences(target, tgt_lang)
     strict = {q.id: q.strict for q in glossary()["qualifiers"]}
-    out = [Problem("lost", q, strict[q]) for q in sorted(a - b)] + [Problem("added", q, strict[q]) for q in sorted(b - a)]
+    na, nb = numbers(source), numbers(target)
+    plain_a = {q for q, _, _, n in oa if not n}
+    plain_b = {q for q, _, _, n in ob if not n}
+    bound_a = {(q, x) for q, _, _, n in oa for x in n}
+    bound_b = {(q, x) for q, _, _, n in ob for x in n}
+    lost, added = set(), set(plain_b - plain_a)
+    st = _prepare(source, src_lang)
+    for q, a, b, n in oa:
+        if n or q in plain_b or q in lost:
+            continue
+        if not scoped or _in_scope(st, a, b, target, src_lang, registry):
+            lost.add(q)
+    lost |= {q for q, x in bound_a - bound_b if x != "#" and x in nb}
+    added |= {q for q, x in bound_b - bound_a if x != "#" and x in na}
+    out = [Problem("lost", q, strict[q]) for q in sorted(lost)] + [Problem("added", q, strict[q]) for q in sorted(added)]
     return [p for p in out if p.strict or not strict_only]
 
 
@@ -172,7 +256,7 @@ def anchors(statement: str, sentence: str, src_lang: str, registry=None) -> int:
     """How many of a statement's anchors a source sentence holds: its numbers (by value, any script), its dates,
     its names (exact; Hindi through the registry) and its glossary entities."""
     from . import figures, when
-    n = len(figures.canon_set(statement) & figures.canon_set(sentence))
+    n = len(numbers(statement) & numbers(sentence))
     dv = set(when.date_values(statement))
     n += len(dv & set(when.date_values(sentence)))
     n += _name_hits(statement, sentence, src_lang, registry)
@@ -200,7 +284,7 @@ def check_reading(statement: str, source: str, src_lang: str, registry=None,
     win = source_window(statement, source, src_lang, registry)
     if win is None:
         return None, []
-    return win, compare(win, statement, src_lang, "en", strict_only)
+    return win, compare(win, statement, src_lang, "en", strict_only, scoped=True, registry=registry)
 
 
 # -- translations into Hindi ---------------------------------------------------------------------------------------
