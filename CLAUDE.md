@@ -1185,7 +1185,7 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   correctly; with nothing found (a helmet, a side-on stance: the case such photos hit) the picture was centred, which on
   a tall photo is the chest, so the head was cut off on the card and in the article. `tallGuess`: a photo more than 5%
   taller than wide with no focus is framed as if its eye line were `TALL_EYES` (12%) down, i.e. from the top (card: once
-  its image has loaded and its shape is known; article: in `fitPic`). `sw.js` np-main-55. Harness (not in the repo): Playwright, `Emulation.setCPUThrottlingRate` 4, rAF gaps,
+  its image has loaded and its shape is known; article: in `fitPic`). `sw.js` np-main-56. Harness (not in the repo): Playwright, `Emulation.setCPUThrottlingRate` 4, rAF gaps,
   long tasks, a CPU profile and the screencast frames of open / close / refresh.
 
 ## Pipeline (nishpaksh/run.py)
