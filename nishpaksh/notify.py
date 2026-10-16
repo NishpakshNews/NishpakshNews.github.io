@@ -245,13 +245,13 @@ def queue_articles(store: Store, now: dt.datetime | None = None) -> int:
 # A published article's words never change but its colours do, as later reports come in. A reader may ask (follows of
 # kind "colour", key = the colour) to be told when lines of a live article turn established, developing, disputed
 # or false: one notification per article per clock hour, counting what changed ("3 lines now established").
-COLOURS = ("established", "developing", "disputed", "false")
+COLOURS = ("established", "developing", "disputed", "false", "struck")   # "struck": replaced by later news (owner, Oct 16 2026)
 COLOUR_WORDS = {
     "en": {"established": "established", "developing": "developing", "disputed": "sources now disagree",
-           "false": "shown false", "line": lambda n: "line" if n == 1 else "lines", "now": "now",
+           "false": "shown false", "struck": "struck through: replaced by later news", "line": lambda n: "line" if n == 1 else "lines", "now": "now",
            "title": "Colours changed"},
     "hi": {"established": "स्थापित", "developing": "विकसित हो रही", "disputed": "स्रोतों में मतभेद",
-           "false": "असत्य सिद्ध", "line": lambda n: "पंक्ति" if n == 1 else "पंक्तियाँ", "now": "अब",
+           "false": "असत्य सिद्ध", "struck": "काटी गईं: नई ख़बर ने बदलीं", "line": lambda n: "पंक्ति" if n == 1 else "पंक्तियाँ", "now": "अब",
            "title": "रंग बदले"},
 }
 
@@ -261,13 +261,13 @@ def line_classes(payload: dict | None) -> dict[str, str]:
     out = {}
     for p, para in enumerate(((payload or {}).get("narrative") or {}).get("paragraphs") or []):
         for s, x in enumerate(para):
-            if x.get("struck"):
-                continue
             parts = x.get("parts") or []
             if len(parts) > 1:
                 for k, part in enumerate(parts):
-                    if not part.get("struck"):
-                        out[f"{p}.{s}.{k}"] = str(part.get("class") or "")
+                    out[f"{p}.{s}.{k}"] = ("struck" if part.get("struck") or x.get("struck")
+                                           else str(part.get("class") or ""))
+            elif x.get("struck"):
+                out[f"{p}.{s}"] = "struck"
             else:
                 out[f"{p}.{s}"] = str(x.get("class") or "")
     return out

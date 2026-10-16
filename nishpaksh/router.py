@@ -22,6 +22,9 @@ log = logging.getLogger(__name__)
 EMBED_DIMS = 256
 PACIFIC = ZoneInfo("America/Los_Angeles")  # Gemini daily quotas reset at midnight Pacific
 PACE_SLACK_HOURS = 2   # how far ahead of an even spread a slot may run
+REST_TIERS = ("writer", "quality")   # tiers whose overloaded models rest instead of being dropped
+REST_STEP = 120        # seconds a model rests after its first overload wave; each later wave adds this
+REST_MAX = 600
 OVERLOAD_STREAK = 3    # consecutive overload errors of a model (on any key) before it is dropped for the run
 
 
@@ -259,6 +262,8 @@ class Router:
         # on to its next model (the writer's last one is Flash-Lite) instead of retrying it per key
         self.model_streak: dict[str, int] = {}
         self.dropped: set[str] = set()          # models dropped for refusing (the desk remembers them)
+        self.rested: set[str] = set()           # writer models rested for overload this run (never dropped)
+        self.rest_count: dict[str, int] = {}
         self.tier_log: dict[str, _C] = {}       # outcomes per tier ("writer" -> {"ok": 0, "overloaded 5xx": 40})
         # One slot per (key, model), shared by every tier that lists the model, so a model used by
         # two tiers is never counted against two separate quotas. `keep` lets a tier stop using a
@@ -307,6 +312,10 @@ class Router:
         for s in self.all_slots():
             if s.id in ids:
                 s.disabled = True
+
+    def _rests(self, slot: ModelSlot) -> bool:
+        """Overloaded writer and quality models rest and come back; other tiers drop them for the run."""
+        return any(slot is s for t in REST_TIERS for s in self.tiers.get(t, []))
 
     def all_slots(self):
         seen = set()
@@ -446,7 +455,21 @@ class Router:
             slot.cooldown_until = time.time() + 45  # overloaded: let the other models in the tier work
             slot.fail_streak += 1
             self.model_streak[slot.id] = self.model_streak.get(slot.id, 0) + 1
-            if self.model_streak[slot.id] >= OVERLOAD_STREAK:
+            if self.model_streak[slot.id] >= OVERLOAD_STREAK and self._rests(slot):
+                # writer models rest instead of being dropped (owner, Oct 16 2026): Flash overload comes
+                # in waves, and dropping Flash for the run left ~160 of 240 daily Flash writer calls
+                # unused while Flash-Lite wrote short drafts. Each wave rests the model on every key
+                # longer (2, 4, 6 ... up to 10 min), so a refusing model costs a few calls, not the day.
+                self.rest_count[slot.id] = self.rest_count.get(slot.id, 0) + 1
+                until = time.time() + min(REST_MAX, REST_STEP * self.rest_count[slot.id])
+                for s in self.all_slots():
+                    if s.id == slot.id:
+                        s.cooldown_until = max(s.cooldown_until, until)
+                self.model_streak[slot.id] = 0
+                self.rested.add(slot.id)
+                log.warning("model %s overloaded %d times in a row; resting on every key for %ds",
+                            slot.id, OVERLOAD_STREAK, int(until - time.time()))
+            elif self.model_streak[slot.id] >= OVERLOAD_STREAK:
                 # Gemma on the free tier fails most calls ("high demand"): Oct 4 2026, ~840 booked
                 # Gemma requests gave 16 articles read; Oct 5 every Flash model refused on all keys for
                 # hours. Each failure can hang until the timeout, and refused calls appear to count

@@ -174,6 +174,7 @@ def ready(store: Store, now: dt.datetime | None = None) -> list[int]:
     closed = editions.frozen_ids(store)
     rows = store.rows(select(stories.c.id, stories.c.analysis).where(stories.c.qualifies.is_(True)))
     out = []
+    refused: set[int] = set()
     for r in rows:
         sid = r["id"]
         if sid in closed or not editions.settled(store, sid, now):
@@ -194,8 +195,12 @@ def ready(store: Store, now: dt.datetime | None = None) -> list[int]:
         if p and p.get("filler"):
             continue
         out.append((priority.value(p, groups, len({a["lang"] for a in arts})), groups, sid))
+        if fu.get("ok") is False:
+            refused.add(sid)
     fresh = fresh_topics(store, [sid for _, _, sid in out], now)
-    out.sort(key=lambda t: (t[2] in fresh, t[0], t[1], t[2]), reverse=True)
+    # a follow-up refused before goes after every other story (owner, Oct 16 2026: 6-11 a run were looked at
+    # first and turned away again, before stories that could be written)
+    out.sort(key=lambda t: (t[2] not in refused, t[2] in fresh, t[0], t[1], t[2]), reverse=True)
     return [sid for _, _, sid in out]
 
 
@@ -310,7 +315,7 @@ def main() -> None:
             stats[name] = f"failed: {str(e)[:200]}"
     stats.update(seconds=round(time.time() - t0), trigger=os.environ.get("RUN_TRIGGER", "manual"),
                  tier_calls={k: dict(v) for k, v in sorted(router.tier_log.items())},
-                 dropped=sorted(router.dropped), skipping=sorted(skipping))
+                 dropped=sorted(router.dropped), rested=sorted(router.rested), skipping=sorted(skipping))
     log.info("desk: %s", stats)
     # the desk's record goes to diagnostics, not runs: runs is what spaces the pipeline's own runs
     store.exec(insert(diagnostics).values(created_at=utcnow(), kind="desk", report=stats))

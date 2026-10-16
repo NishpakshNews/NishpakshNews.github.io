@@ -1796,12 +1796,13 @@ function essayHtml(nar, t) { return essayBody(nar, t) + alsoHtml(nar, t); }
 // "Updates since published" (owner, Oct 16 2026): later reports that replace a line of this page, each in its own
 // colour; the line they replace is struck through above. A link goes to the follow-up once it is published.
 function updatesHtml(p, t) {
-  const ups = p.updates || [];
+  const ups = (p.updates || []).filter(u => u.struck !== false);   // only struck lines (owner, Oct 16 2026)
   if (!ups.length) return "";
   const kids = new Set((p.children || []).map(c => String(c.story_id)));
   const rows = ups.map(u => {
     const more = kids.has(String(u.story_id)) ? ` <a href="#/story/${encodeURIComponent(u.story_id)}" data-story="${esc(u.story_id)}">→</a>` : "";
-    return `<p class="uline"><span class="s ${esc(cls(u.class))}">${esc(u.text)}</span>${more}</p>`;
+    const was = u.was ? `<span class="s struck">${esc(u.was)}</span> ` : "";
+    return `<p class="uline">${was}<span class="s ${esc(cls(u.class))}">${esc(u.text)}</span>${more}</p>`;
   }).join("");
   return `<div class="sechead" data-sec="updates"><span>+</span><h3>${esc(t.updates || "Updates since published")}</h3></div>` +
          `<div class="paper essay updates">${rows}</div>`;
@@ -3545,7 +3546,7 @@ Object.assign(T.en, {notes: "Notifications", myAudio: "My audio", noNotes: "Noth
   recapAt: "Today's summary is written at", recapTime: "11:00 pm", recapIn: x => `in ${x}`, recapAbout: "A short summary of the day's news, section by section: Politics, Justice, Business, World and Life. One line for each story, in the colours of its article. Tap a line to read the full article.",
   recapMaking: "Today's summary is being written. It will be here in a few minutes.", notifyMe: "Notify me when it is ready", listenRecap: "Listen",
   articles: n => `${n} stories today`, hm: (h, m) => `${h} h ${m} min`, recapReadyHint: "Ready", recapTimeHint: "11 pm", stop: "Stop following",
-  coloursL: "When lines change colour", coloursIntro: "An article's words never change, but its colours do as more reports come in. We tell you when lines of any article turn the colours you pick, at most once an hour per article."});
+  coloursL: "When lines change colour", coloursIntro: "An article's words never change, but its colours do as more reports come in. We tell you when lines of any article turn the colours you pick, at most once an hour per article.", struckF: "struck through (replaced by later news)"});
 Object.assign(T.hi, {notes: "सूचनाएं", myAudio: "मेरे ऑडियो", noNotes: "अभी कुछ नहीं। कोई खंड, राज्य या शब्द फ़ॉलो करें, नया लेख आने पर हम बताएंगे।",
   noAudio: "आपने अभी कोई ऑडियो नहीं मांगा।", ready: l => `${l} · तैयार`, making: l => `${l} · बन रहा है, आमतौर पर एक घंटे में`, failed: l => `${l} · नहीं बन सका`,
   followIntro: "आप जो फ़ॉलो करते हैं, उसमें हर नया लेख आने पर हम बताते हैं। पूरा चुनने के लिए गोले पर, भीतर चुनने के लिए तीर पर टैप करें।",
@@ -3554,7 +3555,7 @@ Object.assign(T.hi, {notes: "सूचनाएं", myAudio: "मेरे ऑ�
   recapAt: "आज का सार लिखा जाएगा", recapTime: "रात 11:00 बजे", recapIn: x => `${x} में`, recapAbout: "दिन की ख़बरों का छोटा सार, खंड के अनुसार: राजनीति, न्याय, बिज़नेस, दुनिया और जीवन। हर ख़बर की एक पंक्ति, उसके लेख के रंगों में। पूरा लेख पढ़ने के लिए किसी पंक्ति पर टैप करें।",
   recapMaking: "आज का सार लिखा जा रहा है। कुछ ही मिनटों में यहां होगा।", notifyMe: "तैयार होने पर मुझे बताएं", listenRecap: "सुनें",
   articles: n => `आज की ${n} ख़बरें`, hm: (h, m) => `${h} घंटे ${m} मिनट`, recapReadyHint: "तैयार", recapTimeHint: "रात 11", stop: "फ़ॉलो बंद करें",
-  coloursL: "जब पंक्तियों का रंग बदले", coloursIntro: "लेख के शब्द नहीं बदलते, पर नई रिपोर्टें आने पर उनके रंग बदलते हैं। आप जो रंग चुनें, किसी भी लेख की पंक्तियाँ उस रंग की होने पर हम बताएंगे, हर लेख के लिए घंटे में अधिकतम एक बार।"});
+  coloursL: "जब पंक्तियों का रंग बदले", coloursIntro: "लेख के शब्द नहीं बदलते, पर नई रिपोर्टें आने पर उनके रंग बदलते हैं। आप जो रंग चुनें, किसी भी लेख की पंक्तियाँ उस रंग की होने पर हम बताएंगे, हर लेख के लिए घंटे में अधिकतम एक बार।", struckF: "काटी गई (नई ख़बर ने बदली)"});
 const STATES = [["andhra-pradesh", "Andhra Pradesh", "आंध्र प्रदेश"], ["arunachal-pradesh", "Arunachal Pradesh", "अरुणाचल प्रदेश"], ["assam", "Assam", "असम"], ["bihar", "Bihar", "बिहार"], ["chhattisgarh", "Chhattisgarh", "छत्तीसगढ़"], ["goa", "Goa", "गोवा"], ["gujarat", "Gujarat", "गुजरात"], ["haryana", "Haryana", "हरियाणा"], ["himachal-pradesh", "Himachal Pradesh", "हिमाचल प्रदेश"], ["jharkhand", "Jharkhand", "झारखंड"], ["karnataka", "Karnataka", "कर्नाटक"], ["kerala", "Kerala", "केरल"], ["madhya-pradesh", "Madhya Pradesh", "मध्य प्रदेश"], ["maharashtra", "Maharashtra", "महाराष्ट्र"], ["manipur", "Manipur", "मणिपुर"], ["meghalaya", "Meghalaya", "मेघालय"], ["mizoram", "Mizoram", "मिज़ोरम"], ["nagaland", "Nagaland", "नगालैंड"], ["odisha", "Odisha", "ओडिशा"], ["punjab", "Punjab", "पंजाब"], ["rajasthan", "Rajasthan", "राजस्थान"], ["sikkim", "Sikkim", "सिक्किम"], ["tamil-nadu", "Tamil Nadu", "तमिलनाडु"], ["telangana", "Telangana", "तेलंगाना"], ["tripura", "Tripura", "त्रिपुरा"], ["uttar-pradesh", "Uttar Pradesh", "उत्तर प्रदेश"], ["uttarakhand", "Uttarakhand", "उत्तराखंड"], ["west-bengal", "West Bengal", "पश्चिम बंगाल"], ["andaman-nicobar", "Andaman and Nicobar Islands", "अंडमान और निकोबार"], ["chandigarh", "Chandigarh", "चंडीगढ़"], ["dadra-daman-diu", "Dadra and Nagar Haveli and Daman and Diu", "दादरा और नगर हवेली और दमन और दीव"], ["delhi", "Delhi", "दिल्ली"], ["jammu-kashmir", "Jammu and Kashmir", "जम्मू-कश्मीर"], ["ladakh", "Ladakh", "लद्दाख"], ["lakshadweep", "Lakshadweep", "लक्षद्वीप"], ["puducherry", "Puducherry", "पुडुचेरी"]];
 const stateLabel = k => { const s = STATES.find(x => x[0] === k); return s ? s[lang === "hi" ? 2 : 1] : k; };
 
@@ -3617,7 +3618,7 @@ function followHtml() {
     ${row(`data-fsub="words"`, t.words, `dash${words.length ? " on" : ""}`, words.length ? String(words.length) : "", `data-fsub="words"`)}
     <div class="flabel">${esc(t.coloursL || "When lines change colour")}</div>
     <p class="bnote" style="margin:0 4px 6px;font-size:14px;line-height:1.45">${esc(t.coloursIntro || "")}</p>
-    ${["established", "developing", "disputed", "false"].map(c => row(`data-fone="colour|${c}|${c}"`, (t.k || {})[c] || c,
+    ${["established", "developing", "disputed", "false", "struck"].map(c => row(`data-fone="colour|${c}|${c}"`, c === "struck" ? (t.struckF || c) : (t.k || {})[c] || c,
         isF("colour", c) ? "full" : "", "", "")).join("")}`;
   let sub = "";
   if (followSub === "states") {

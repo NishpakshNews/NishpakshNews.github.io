@@ -48,7 +48,7 @@ def test_twins_count_their_origins_and_outlets_once():
     assert got["outlets"] == 4                                         # no keys on an older row: the largest count
 
 
-def test_an_update_lists_the_new_line_and_strikes_the_old_one_once_as_well_reported(store):
+def test_an_update_is_listed_only_once_the_old_line_is_struck(store):
     old = canon(store, 1, "Five people died", outlets=2)
     keep = canon(store, 1, "The bridge collapsed")
     new = canon(store, 2, "Twelve people died", outlets=1)
@@ -57,13 +57,15 @@ def test_an_update_lists_the_new_line_and_strikes_the_old_one_once_as_well_repor
                            {"text": "The bridge fell and five died.", "ids": [keep, old], "class": "single"}]]}
     store.exec(insert(published).values(story_id=1, version=1, updated_at=dt.datetime(2026, 10, 16), headline_en="h",
                                         headline_hi="h", payload_en={"narrative": nar}, payload_hi={"narrative": nar}))
-    assert editions.attach_updates(store, None, 1)
+    assert not editions.attach_updates(store, None, 1)       # one outlet against two: not struck, so not listed yet
     p = store.one(select(published.c.payload_en).where(published.c.story_id == 1))["payload_en"]
-    assert p["updates"][0]["text"] == "Twelve people died" and p["updates"][0]["struck"] is False
-    assert not any(s.get("struck") for s in p["narrative"]["paragraphs"][0])     # one outlet against two: not yet
+    assert not p.get("updates")
+    assert not any(s.get("struck") for s in p["narrative"]["paragraphs"][0])
     store.exec(canonical.update().where(canonical.c.id == new).values(
         origins={"origins": ["own:b"], "n_origins": 1, "outlets": 3}))
-    editions.attach_updates(store, None, 1)
+    assert editions.attach_updates(store, None, 1)
     p = store.one(select(published.c.payload_en).where(published.c.story_id == 1))["payload_en"]
+    u = p["updates"][0]                                         # only struck lines are listed, with what replaced them
+    assert u["struck"] is True and u["text"] == "Twelve people died" and u["was"] == "Five people died"
     first, second = p["narrative"]["paragraphs"][0]
     assert first.get("struck") is True and not second.get("struck")             # a sentence with another fact stays

@@ -357,7 +357,8 @@ def _outlets(origins: dict | None) -> int:
 
 
 def attach_updates(store: Store, router: Router | None, sid: int) -> bool:
-    """"Updates since published" on a published page (owner, Oct 16 2026): a later statement that REPLACES one of the
+    """"Updates since published" on a published page (owner, Oct 16 2026): only lines of the page that are STRUCK are
+    listed there, each struck through with the later statement that replaced it after it. A later statement that REPLACES one of the
     page's (threads.py `superseded_by`: a higher toll, an accused now arrested) is listed at the bottom of the page
     with its own colour; the page's line it replaces is struck through and loses its colour once the later one is at
     least as well reported (as many independent outlets as the old line had, three at most). A sentence is struck
@@ -365,7 +366,8 @@ def attach_updates(store: Store, router: Router | None, sid: int) -> bool:
     change. Returns True if the page changed."""
     from . import compose
     from .db import canonical
-    own = store.rows(select(canonical.c.id, canonical.c.rel, canonical.c.origins).where(canonical.c.story_id == sid))
+    own = store.rows(select(canonical.c.id, canonical.c.rel, canonical.c.origins, canonical.c.text)
+                     .where(canonical.c.story_id == sid))
     later_of = {c["id"]: list((c["rel"] or {}).get("superseded_by") or []) for c in own
                 if (c["rel"] or {}).get("superseded_by")}
     row = store.one(select(published.c.payload_en, published.c.payload_hi).where(published.c.story_id == sid))
@@ -378,6 +380,7 @@ def attach_updates(store: Store, router: Router | None, sid: int) -> bool:
                                                    canonical.c.verdict, canonical.c.origins)
                                             .where(canonical.c.id.in_(ids or [-1])))}
     origins = {c["id"]: c["origins"] for c in own}
+    was_text = {c["id"]: c["text"] or "" for c in own}
     updates, struck = [], set()
     for old, news in sorted(later_of.items()):
         for n in news:
@@ -385,15 +388,16 @@ def attach_updates(store: Store, router: Router | None, sid: int) -> bool:
             if not r or not r["text"]:
                 continue
             hit = _outlets(r["origins"]) >= max(1, min(3, _outlets(origins.get(old))))
-            if hit:
-                struck.add(old)
+            if not hit:
+                continue        # only struck lines are listed (owner, Oct 16 2026): what the page said that no longer holds
+            struck.add(old)
             v = r["verdict"]
             cls = ("established" if v in ("corroborated", "confirmed") else v if v in ("developing", "disputed", "false")
                    else "single" if _outlets(r["origins"]) <= 1 else "unverified")
             updates.append({"id": r["id"], "text": r["text"], "verdict": v, "class": cls, "story_id": r["story_id"],
-                            "replaces": old, "struck": hit})
+                            "replaces": old, "was": was_text.get(old, ""), "struck": True})
     hi_of: dict[str, str] = {}
-    texts = [u["text"] for u in updates]
+    texts = [u["text"] for u in updates] + [u["was"] for u in updates if u["was"]]
     if texts:
         try:
             cache = compose._translate(store, router, texts)
@@ -406,7 +410,8 @@ def attach_updates(store: Store, router: Router | None, sid: int) -> bool:
         p = json.loads(json.dumps(row[col])) if row[col] else None
         if not p:
             continue
-        ups = [dict(u, text=(hi_of.get(u["text"]) or "") if col == "payload_hi" else u["text"]) for u in updates]
+        ups = [dict(u, text=(hi_of.get(u["text"]) or "") if col == "payload_hi" else u["text"],
+                    was=(hi_of.get(u["was"]) or "") if col == "payload_hi" else u["was"]) for u in updates]
         ups = [u for u in ups if u["text"]]
         if ups != (p.get("updates") or []):
             p["updates"] = ups

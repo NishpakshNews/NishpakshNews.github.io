@@ -9,11 +9,13 @@ def page(*classes, struck=()):
                                           for k, c in enumerate(classes)]]}}
 
 
-def test_lines_turning_a_colour_are_counted_once_and_struck_lines_are_skipped():
+def test_lines_turning_a_colour_are_counted_once_and_struck_lines_count_as_struck():
     before = N.line_classes(page("single", "developing", "single", "single"))
     now = N.line_classes(page("established", "established", "disputed", "single", "single"))
     assert N.colour_changes(before, now) == {"established": 2, "disputed": 1}       # a new line is not a change
-    assert "0.1" not in N.line_classes(page("single", "single", struck=(1,)))
+    struck = N.line_classes(page("single", "single", struck=(1,)))
+    assert struck["0.1"] == "struck"
+    assert N.colour_changes(N.line_classes(page("single", "single")), struck) == {"struck": 1}
     parts = {"narrative": {"paragraphs": [[{"text": "a", "class": "single",
                                             "parts": [{"text": "x", "class": "established"}, {"text": "y", "class": "single"}]}]]}}
     assert N.line_classes(parts) == {"0.0.0": "established", "0.0.1": "single"}

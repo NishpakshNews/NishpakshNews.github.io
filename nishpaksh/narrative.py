@@ -1281,7 +1281,14 @@ def _finish(payload: dict, paragraphs: list, also: list, by_id: dict, meta: dict
                 covers=sorted({x for para in paragraphs for s in para for x in s["ids"]}))
 
 
-def essay_ok(nar: dict, payload: dict) -> bool:
+def publish_bar(tries: int) -> float:
+    """The share of statements an article must carry, falling with each failed try (owner, Oct 16 2026): 80%, 75%,
+    70%, 65% ... down to PUBLISH_FLOOR, so a story is never given up; a kept draft that meets the lower bar is
+    published as it is."""
+    return max(PUBLISH_FLOOR, PUBLISH_MIN - BAR_STEP * max(0, tries))
+
+
+def essay_ok(nar: dict, payload: dict, bar: float | None = None) -> bool:
     """Good enough to publish: written by the writer, not badly off task (no more than half its
     sentences left the essay), and carrying at least PUBLISH_MIN (80%) of EVERY statement known about the story
     (the writer still AIMS for COMPLETE, 85%; owner, Oct 12 2026: stories were refused for missing one or two):
@@ -1295,10 +1302,10 @@ def essay_ok(nar: dict, payload: dict) -> bool:
     every = [i["id"] for i in ordered_items(payload)]
     if not every:
         return True
-    return len(set(every) & set(nar.get("covers") or [])) >= PUBLISH_MIN * len(every)
+    return len(set(every) & set(nar.get("covers") or [])) >= (PUBLISH_MIN if bar is None else bar) * len(every)
 
 
-def essay_shortfall(nar: dict, payload: dict) -> dict:
+def essay_shortfall(nar: dict, payload: dict, bar: float | None = None) -> dict:
     """The numbers behind `essay_ok` and why it said no (owner, Oct 11 2026, story 16981: \"carries 36 statements,
     short of the bar\" did not say which of the checks failed, nor how many statements the story had). Returns
     {why, model, covered, total, need, sentences, rejected}; `why` is None when the essay passes: \"no essay\"
@@ -1307,8 +1314,9 @@ def essay_shortfall(nar: dict, payload: dict) -> dict:
     every = {i["id"] for i in ordered_items(payload)}
     covered = len(every & set(nar.get("covers") or []))
     sents = sum(len(p) for p in nar.get("paragraphs") or [])
-    need = next(k for k in range(len(every) + 1) if k >= PUBLISH_MIN * len(every))     # the same comparison as essay_ok
-    out = {"why": None, "model": nar.get("model"), "covered": covered, "total": len(every), "need": need,
+    bar = PUBLISH_MIN if bar is None else bar
+    need = next(k for k in range(len(every) + 1) if k >= bar * len(every))     # the same comparison as essay_ok
+    out = {"why": None, "model": nar.get("model"), "covered": covered, "total": len(every), "need": need, "bar": bar,
            "sentences": sents, "rejected": nar.get("rejected", 0)}
     if not nar.get("model") or not nar.get("paragraphs"):
         out["why"] = "no essay"
@@ -1530,6 +1538,62 @@ def _call_writer(router: Router, prompt: str) -> tuple[list[tuple[str, list]], s
     return drafted, res.model, None if drafted else "no paragraphs in reply"
 
 
+PARTS_OVER = 14   # a story with more statements than this is drafted in parts from the start
+PART_SIZE = 10    # statements per part (owner, Oct 16 2026: Flash-Lite given 8-10 statements uses them all;
+                  # given 40 in one call it wrote 10 sentences and the article fell short)
+PART_NOTE = """This is one part of a longer article. {so_far}Write ONLY the sections and paragraphs listed below,
+nothing else; do not repeat what the article already says and do not introduce again a person it already introduced.
+
+"""
+
+
+def parts_of(plan: list) -> list[list]:
+    """The plan's paragraphs packed in order into parts of about PART_SIZE statements; a paragraph is never split."""
+    out: list[list] = []
+    n = 0
+    for p_ in plan:
+        if out and n + len(p_.ids) <= PART_SIZE:
+            out[-1].append(p_)
+            n += len(p_.ids)
+        else:
+            out.append([p_])
+            n = len(p_.ids)
+    return out
+
+
+def _draft_in_parts(router: Router, pl: list, by_id: dict, banned: set[str], bg: str, layout,
+                    items: list[dict]) -> tuple[list[tuple[str, list]], str | None, str | None]:
+    """The first draft written part by part, each call a small job that even Flash-Lite finishes (owner, Oct 16
+    2026). Each part sees the article so far. A part that fails is left to the fill passes. Returns like
+    _call_writer; the model is the first part's."""
+    from . import expressdesk as _desk
+    drafted: list[tuple[str, list]] = []
+    model, failure = None, None
+    for part in parts_of(pl):
+        ids = [i for p_ in part for i in p_.ids if i in by_id]
+        if not ids:
+            continue
+        so_far = (f"The article so far:\n{_article_with_sections(drafted)}\n\n" if drafted
+                  else "Nothing is written yet: this part opens the article.\n")
+        prompt = WRITER_PROMPT.format(banned=", ".join(sorted(banned)) or "(none)", background=bg, now=clock.now_line(),
+                                      structure=_desk.structure(layout) if layout else NORMAL_STRUCTURE,
+                                      order=", ".join(k for k in _keys() if any(p_.section == k for p_ in part)),
+                                      statements=PART_NOTE.format(so_far=so_far)
+                                      + planning.block(part, by_id, _statement_line, sentences.link_line),
+                                      length=str(max(2, len(ids))), people=_people(items))
+        got, m, f = _call_writer(router, prompt)
+        if f == "quota":
+            failure = failure or f
+            break
+        if not got:
+            failure = failure or f
+            continue
+        model = model or m
+        mine = {p_.section for p_ in part}
+        drafted += [(k, p) for k, p in got if k in mine] or got
+    return drafted, model, None if drafted else (failure or "no paragraphs in reply")
+
+
 def _sections_of(data) -> list[tuple[str, list]]:
     """[(section key, paragraph)] from a reply: {"sections": [...]}, or plain {"paragraphs": [...]}."""
     if not isinstance(data, dict):
@@ -1613,6 +1677,8 @@ def _check_sections(drafted, by_id, banned, outlets):
 COMPLETE = 0.85     # what the writer AIMS for (owner, Oct 7 2026): the fill passes and the prompts work towards 85%
 PUBLISH_MIN = 0.80  # what the final check REQUIRES (owner, Oct 12 2026): an article short by one or two statements
                     # of the 85% aim is still published; below 80% it is kept as a draft and rewritten, as before
+BAR_STEP = 0.05     # each failed try lowers the bar this much (publish_bar)
+PUBLISH_FLOOR = 0.50   # it never falls below half of what is known
 
 
 COPY_RUN = 10           # words in a row the page may share with the one report it is written from (outside quotes)
@@ -1672,7 +1738,7 @@ def _rephrase_copies(router, paragraphs: list, by_id: dict, banned, outlets, rep
 
 
 def write_narrative(router: Router | None, payload: dict, banned: set[str], draft: dict | None = None,
-                    report_text: str | None = None) -> dict:
+                    report_text: str | None = None, bar: float | None = None) -> dict:
     """The article, in sections (owner, Oct 7 2026): one sectioned draft, then a fill pass for each
     group of sections that left statements out or has failed sentences, a few sections per call, so even
     Flash-Lite carries everything. Each sentence is checked; a section rewrite is kept only if the
@@ -1736,7 +1802,10 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
                                       order=", ".join(_keys()),
                                       statements=planning.block(pl, by_id, _statement_line, sentences.link_line),
                                       length=_target_length(items, express=bool(layout)), people=_people(items))
-        drafted, model, failure = _call_writer(router, prompt)
+        if len(items) > PARTS_OVER and pl:
+            drafted, model, failure = _draft_in_parts(router, pl, by_id, banned, bg, layout, items)
+        else:
+            drafted, model, failure = _call_writer(router, prompt)
 
     drafted = _in_order(drafted)
     paragraphs, keys, failed, rejected = _check_sections(drafted, by_id, banned, outlets)
@@ -1745,6 +1814,11 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
     # up to two rounds over the section groups: a group still short after its first fill gets one more
     # (three for a resumed draft: statements may have joined the story since it was written)
     rounds = [g for _ in range(3 if resumed else 2) for g in _fill_groups()]
+    every = {i["id"] for i in ordered_items(payload)}
+    cov0 = {x for para in paragraphs for s_ in para for x in s_["ids"]}
+    if resumed and bar is not None and every and len(every & cov0) >= bar * len(every) and lead_ok(paragraphs, keys):
+        # a kept draft that already meets this try's (lower) bar is published as it is (owner, Oct 16 2026)
+        rounds = []
     for n_call, group in enumerate(rounds):
         if not model or router is None:
             break

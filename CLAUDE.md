@@ -1948,3 +1948,18 @@ and paragraphs mixed unrelated facts. Rebuilt, keeping the Oct 8 rule (never los
   last press counts (calls are chained). `notify.queue_articles` sends it for the first article published after the follow
   was made (`reasons(..., at=)`), once per reader per run, then deletes the follow. Migration `20261014000100_follow_next.sql`
   must be applied before the site is deployed (the follows table only allowed 5 kinds). `sw.js` np-main-37.
+- **Writer: falling bar, drafting in parts, resting models (owner, Oct 16 2026).** A story is never given up:
+  `narrative.publish_bar(tries)` is 80%, 75%, 70% ... down to `PUBLISH_FLOOR` 50% of every statement, `tries` being
+  `writer_failures.n` (it now adds up across statement sets). `essay_ok`/`essay_shortfall` take the bar. A kept draft that
+  already meets this try's bar skips the fill passes (`write_narrative(bar=)`), so it publishes with no new writing. At the
+  floor, the same statements are tried again only every `compose.FLOOR_WAIT_HOURS` (3); new statements at once. Outcome
+  "writer tries used up" is gone ("resting at the lowest bar"). A story with more than `PARTS_OVER` (14) statements is drafted
+  part by part (`_draft_in_parts`, `parts_of`: whole plan paragraphs packed to ~`PART_SIZE` 10 statements, each call sees the
+  article so far), then the fill passes as before. Router: an overloaded model in `REST_TIERS` (writer, quality) RESTS on
+  every key for 2, 4, 6 ... 10 min (`REST_STEP`, `REST_MAX`) instead of being dropped for the run (`router.rested`, in the
+  desk report); other tiers still drop. So the desk's `refused_last_run` no longer skips Flash writer models.
+- **Updates since published = struck lines only (owner, Oct 16 2026).** `editions.attach_updates` lists an update only once
+  the page's line it replaces is struck; each entry has `was` (the old line, struck through on the page) and the new line
+  in its colour. Follow option "struck through" (follow kind 'colour', key "struck"): `notify.line_classes` marks struck
+  lines "struck" and `queue_colours` counts lines newly struck. No migration. `sw.js` np-main-58.
+- **Desk order:** a story refused as a follow-up before (`edition.followup.ok` False) goes after every other ready story.

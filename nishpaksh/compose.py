@@ -793,7 +793,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     it again (its colours mature by code, editions.mature). A development of an earlier article is
     published only if it earns a follow-up (editions.follow_up_ok). Returns True when written."""
     from .editions import follow_up_ok
-    from .narrative import essay_ok, essay_shortfall, input_hash, ordered_items, sections_from_payload, write_narrative
+    from .narrative import (essay_ok, essay_shortfall, input_hash, ordered_items, publish_bar, sections_from_payload,
+                            write_narrative)
     if store.one(select(published.c.story_id).where(published.c.story_id == story_id)):
         return _outcome(story_id, "already published")
     payload = build_payload(store, router, story_id)
@@ -822,8 +823,11 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         return _outcome(story_id, "not a follow-up yet")
     h = input_hash(sections_from_payload(payload), payload.get("background"))
     banned = set(payload["loaded_words"])
-    if router is None or not _writer_attempt_allowed(store, story_id, h):
-        return _outcome(story_id, "writer tries used up")
+    if router is None:
+        return _outcome(story_id, "no writer")
+    if not _writer_attempt_allowed(store, story_id, h):
+        return _outcome(story_id, "resting at the lowest bar")
+    bar = publish_bar(_writer_tries(store, story_id))
     from .belong import assign_topics
     assign_topics(store, router, story_id, payload)     # one subject per paragraph (plan.py); no topics: shared words, as before
     # an earlier try that fell short of the bar is continued, not started again (owner, Oct 7 2026)
@@ -832,9 +836,9 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     report_text = _express_report(store, story_id) if payload.get("qualified_by") == "express" else None
     nar = write_narrative(router, payload, banned, draft=draft if _keepable({"model": (draft or {}).get("model"),
                                                                              "paragraphs": [1]}) else None,
-                          report_text=report_text)
+                          report_text=report_text, bar=bar)
     drafted = nar.pop("drafted", None)
-    essay_good = essay_ok(nar, payload) and _keepable(nar)
+    essay_good = essay_ok(nar, payload, bar) and _keepable(nar)
     if essay_good:
         from .news import write_headline
         lead = " ".join(x["text"] for x in (nar.get("paragraphs") or [[]])[0])
@@ -848,7 +852,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     headline_missing = essay_good and not payload.get("headline")
     if not essay_good or headline_missing:
         # which check failed, with the numbers (owner, Oct 11 2026, story 16981): kept with the failure and in the log
-        short = essay_shortfall(nar, payload)
+        short = essay_shortfall(nar, payload, bar)
         if not short["why"] and not _keepable(nar):
             short["why"] = "writer model not allowed"
         if not essay_good:
@@ -894,13 +898,28 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     return _outcome(story_id, "published")
 
 
-WRITER_TRIES = 3   # failed writes of the same statements before waiting for new ones
+FLOOR_WAIT_HOURS = 3   # at the lowest bar a story is tried again only this often (it is never given up)
+
+
+def _writer_tries(store: Store, story_id: int) -> int:
+    """Failed writer tries of this story, whatever statements it had then: each one lowers the bar (publish_bar)."""
+    a = ((store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {})
+    return int((a.get("writer_failures") or {}).get("n", 0) or 0)
 
 
 def _writer_attempt_allowed(store: Store, story_id: int, h: str) -> bool:
+    """A story is never given up (owner, Oct 16 2026): the bar falls with each try instead. Once it is at the floor,
+    the same statements are tried again only every FLOOR_WAIT_HOURS; new statements are tried at once."""
+    from .narrative import PUBLISH_FLOOR, publish_bar
     a = ((store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {})
     w = a.get("writer_failures") or {}
-    return w.get("hash") != h or w.get("n", 0) < WRITER_TRIES
+    if publish_bar(int(w.get("n", 0) or 0)) > PUBLISH_FLOOR or w.get("hash") != h or not w.get("at"):
+        return True
+    try:
+        at = dt.datetime.fromisoformat(w["at"])
+    except ValueError:
+        return True
+    return utcnow() - at >= dt.timedelta(hours=FLOOR_WAIT_HOURS)
 
 
 def _note_writer_failure(store: Store, story_id: int, h: str, nar: dict) -> None:
@@ -911,7 +930,7 @@ def _note_writer_failure(store: Store, story_id: int, h: str, nar: dict) -> None
     row = store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}
     a = dict(row.get("analysis") or {})
     w = a.get("writer_failures") or {}
-    prev_n = w.get("n", 0) if w.get("hash") == h else 0
+    prev_n = int(w.get("n", 0) or 0)      # tries add up across statement sets: each lowers the bar
     # an overloaded or rate-limited model is not the story's fault: recorded, but no try is used up
     n = prev_n if str(nar.get("failure") or "").startswith("error") else prev_n + 1
     a["writer_failures"] = {"hash": h, "n": n, "model": nar.get("model"), "failure": nar.get("failure"),
