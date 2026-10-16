@@ -82,7 +82,8 @@ PATTERNS = [
                          r"EST|EDT|ET|PST|PDT|PT|JST|SGT|GST|local time)\)?)?")),
     ("part", re.compile(r"(?i)(?<![\wऀ-ॿ])(early hours|morning|afternoon|evening|night|सुबह|दोपहर|शाम|रात)"
                         r"(?![\wऀ-ॿ])")),
-    ("year", re.compile(rf"(?i)(?:\bin\s+|\bof\s+|{_W}साल\s+|{_W}वर्ष\s+){_YEAR}{_E}")),
+    ("year", re.compile(rf"(?i)(?:\bin\s+|\bof\s+|{_W}साल\s+|{_W}वर्ष\s+)?{_YEAR}{_E}")),
+    ("mon", re.compile(rf"(?i){_W}{_MON}{_E}")),
 ]
 
 
@@ -106,7 +107,7 @@ def find(text: str | None) -> list[Mention]:
                 continue
             if kind == "clock" and m.group(4).lower() in ("hrs", "hours") and not m.group(3) and len(m.group(2)) < 3:
                 continue          # "24 hours" is a span, not a time; "17:30 hrs" is a time
-            mon = {"dm": 2, "md": 1, "range_dm": 3, "range_md": 1, "my": 1}.get(kind)
+            mon = {"dm": 2, "md": 1, "range_dm": 3, "range_md": 1, "my": 1, "mon": 1}.get(kind)
             if mon and m.group(mon)[:1].isascii() and m.group(mon)[:1].islower():
                 continue          # an English month is written with a capital: "may 20", "march 5 km" are words
             if kind == "weekday" and len(m.group(1)) <= 4 and m.group(1)[:1].islower():
@@ -119,6 +120,17 @@ def find(text: str | None) -> list[Mention]:
 FUTURE = re.compile(r"(?i)\b(?:will|shall|would be|is (?:scheduled|set|slated|due|expected|likely) to|are (?:scheduled|"
                     r"set|slated|due|expected|likely) to|to be (?:held|announced|launched)|upcoming|next)\b|"
                     r"(?:ेंगे|ेगा|ेगी|ेंगी|ूंगा|ूँगा|ोगे|ाएगा|ाएगी|ाएंगे|ायेगा|होगा|होगी|होंगे)(?![ऀ-ॿ])")
+
+
+PAST = re.compile(r"(?i)\b(?:was|were|had|did|said|told|went|came|took|gave|made|met|held|left|died|fell|won|lost|"
+                  r"\w{3,}ed)\b|(?:ा था|ी थी|े थे|ा थी|ाया|ाई|ीं|किया|गया|गई|गए|हुआ|हुई|हुए)(?![\u0900-\u097f])")
+
+
+def tense(*texts: str | None) -> bool | None:
+    """True = future, False = past, None = not clear (both, or neither: "the meeting is on Thursday")."""
+    t = " ".join(x or "" for x in texts)
+    fut, past = bool(FUTURE.search(t)), bool(PAST.search(t))
+    return True if fut and not past else False if past and not fut else None
 
 
 def is_future(text: str | None) -> bool:
@@ -144,14 +156,21 @@ def _date(y: int, m: int, d: int) -> dt.date | None:
 
 
 def _nearest_year(m: int, d: int, ref: dt.date, future: bool | None) -> dt.date | None:
-    """A day and month with no year: the year that puts it nearest the report (a report in January about
-    "28 December" means last year); a past event is never after the report, a future one never before it."""
+    """A day and month with no year: the year nearest the report ("28 December" in a January report is last year's).
+    A clear tense keeps a past event before the report and a future one after it, but a choice it pushes more than
+    FAR_DAYS away is refused (the audit: "9 October" in a future-tense line of 14 October was sent to 2027)."""
     options = [x for x in (_date(ref.year + k, m, d) for k in (-1, 0, 1)) if x]
     if future is False:
-        options = [x for x in options if x <= ref + dt.timedelta(days=1)] or options
+        options = [x for x in options if x <= ref + dt.timedelta(days=1)]
     elif future is True:
-        options = [x for x in options if x >= ref - dt.timedelta(days=1)] or options
-    return min(options, key=lambda x: abs((x - ref).days)) if options else None
+        options = [x for x in options if x >= ref - dt.timedelta(days=1)]
+    if not options:
+        return None
+    best = min(options, key=lambda x: abs((x - ref).days))
+    return None if future is not None and abs((best - ref).days) > FAR_DAYS else best
+
+
+FAR_DAYS = 300
 
 
 def _month_end(y: int, m: int) -> dt.date:
@@ -185,10 +204,16 @@ def _span(mention: Mention, ref: dt.datetime, future: bool | None) -> tuple[dt.d
     if k == "my":
         m, y = MONTHS[g[0].lower().rstrip(".")], int(g[1])
         return dt.date(y, m, 1), _month_end(y, m), "month"
+    if k == "mon":
+        m = MONTHS[g[0].lower().rstrip(".")]
+        d = _nearest_year(m, 1, today.replace(day=1), future)
+        return (d, _month_end(d.year, m), "month") if d else None
     if k == "year":
         y = int(g[0])
         return dt.date(y, 1, 1), dt.date(y, 12, 31), "year"
     if k == "weekday":
+        if future is None:
+            return None                                       # last Tuesday or next: only a clear tense says
         wd = WEEKDAYS[g[0].lower().rstrip(".")]
         back = (today.weekday() - wd) % 7
         d = today + dt.timedelta(days=(7 - back) % 7) if future else today - dt.timedelta(days=back)
@@ -241,20 +266,48 @@ def _clock(m: Mention) -> tuple[int, int, bool] | None:
     return h, mi, bool(m.groups[2])
 
 
+# words that make the time a bound, a part or a choice: before / after / until / since / by / between / around / or /
+# and / overnight / quarter / ended / early / mid- / end of / weekend ... Code does not model them; the audit found
+# "quarter ended September 30" and "October 2022 and February 6" read as one plain day. The model's date stays.
+BOUNDS = re.compile(r"(?i)\b(?:before|after|until|till|since|by|between|around|about|approximately|or|and|overnight|"
+                    r"quarter|ended|ending|half|early|late|mid|end of|beginning|start of|weekend|first|last \w+ of|"
+                    r"within|past|during|through|throughout|onwards?|so far|ago)\b|(?:से पहले|के बाद|तक|लगभग|करीब|"
+                    r"और|या|दौरान)(?![\u0900-\u097f])")
+
+
 def resolve(words: str | None, ref=None, future: bool | None = None, absolute_only: bool = False) -> dict | None:
     """One statement's time words as {start, end, precision} in IST, or None. `ref` is when the report was
     published (the day "Tuesday", "yesterday" and a date with no year are counted from); `future` is the tense of
     the statement (None = unknown: "कल" is then not read). `absolute_only`: only dates written in full or with a
     month (for a reference that is not the report's own time)."""
     found = find(words)
-    if not found:
+    if not found or BOUNDS.search(words or ""):
         return None
     r = _ref(ref)
     if future is None and is_future(words):
         future = True
     dates = [m for m in found if m.kind not in ("clock", "part")]
+    yearly = [m for m in dates if m.kind in ("year",) or (m.kind == "relative" and ("year" in m.groups[0].lower()
+                                                                                  or "साल" in m.groups[0]))]
+    yearless = [m for m in dates if m.kind in ("dm", "md", "range_dm", "range_md") and not m.groups[-1] or m.kind == "mon"]
+    if len(yearly) == 1 and len(yearless) == 1 and len(dates) == 2:
+        y = (_span(yearly[0], r, future) or (None,))[0]
+        if y is None:
+            return None
+        text = yearless[0].text + " " + str(y.year)
+        return resolve(text, ref, future, absolute_only)
+    if len([m for m in dates if m.kind != "weekday"]) > 1:
+        return None
     if absolute_only:
         dates = [m for m in dates if m.kind not in ("weekday", "relative", "year")]
+    # a weekday next to its own date is that date ("Thursday, 15 October"); next to another date, nothing is read
+    wdays = [m for m in dates if m.kind == "weekday"]
+    if wdays and len(dates) > len(wdays):
+        dated = [_span(m, r, future) for m in dates if m.kind != "weekday"]
+        if len(dated) != 1 or not dated[0] or dated[0][2] != "day" or any(
+                WEEKDAYS[x.groups[0].lower().rstrip(".")] != dated[0][0].weekday() for x in wdays):
+            return None
+        dates = [m for m in dates if m.kind != "weekday"]
     spans = [s for s in (_span(m, r, future) for m in dates) if s]
     if dates and len(spans) < len(dates):
         return None                                           # a date code could not place: not half a reading
@@ -312,8 +365,8 @@ def read_time(time: dict | None, text: str | None, published_at) -> dict | None:
     if not time:
         return time
     out = dict(time)
-    fut = is_future(text) or is_future(out.get("when_text"))
-    code = resolve(out.get("when_text"), published_at, future=fut or (False if (text or out.get("when_text")) else None))
+    fut = tense(text, out.get("when_text"))
+    code = resolve(out.get("when_text"), published_at, future=fut)
     if code:
         same = (out.get("start") or "")[:10] == code["start"][:10]
         _count("code_agrees" if same or not out.get("start") else "code_differs")
@@ -325,7 +378,7 @@ def read_time(time: dict | None, text: str | None, published_at) -> dict | None:
             s = dt.datetime.fromisoformat(out["start"])
         except (TypeError, ValueError):
             s = None
-        if s and not fut and s > pub + dt.timedelta(hours=1):
+        if s and fut is False and s > pub + dt.timedelta(hours=1):
             _count("model_refused")
             out.update(start=None, end=None, precision="unknown", by=None)
             return out

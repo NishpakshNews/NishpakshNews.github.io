@@ -1232,9 +1232,15 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   day first, "15 अक्टूबर", Devanagari digits), ranges ("17-22 October", "from October 17 to 22", "17 से 22 अक्टूबर"),
   weekdays (the last one on or before the report, the next one for a statement in the future tense), relative days and
   weeks / months / years ("yesterday", "last week", "आज", "परसों"), clock times (IST only: "local time" or another zone
-  keeps the day and drops the hour) and parts of the day. A date with no year takes the nearest year the tense allows.
-  NEVER GUESSED: "कल" without a tense, a weekday that contradicts its date, a clock time with no day, a festival name
-  -> None. Code's reading replaces the model's (`time.by = "code"`); the model's date is kept only when code cannot read
+  keeps the day and drops the hour) and parts of the day. A date with no year takes the nearest year; a clear tense
+  (`when.tense`: future words and no past ones, or the reverse) keeps a past event before the report and a future one
+  after it, and a year so chosen more than `FAR_DAYS` (300) away is refused. NEVER GUESSED (-> None, the model's date
+  stays): a weekday or "कल" without a clear tense, a weekday that contradicts its date, a clock time with no day, a
+  festival name, two dates ("October 2022 and February 6"; a day/month with a year given apart is one: "December last
+  year"), and bounds or parts code does not model (`BOUNDS`: before, after, until, since, between, around, and, or,
+  overnight, quarter ended, early, mid, weekend, ago, तक, के बाद ...). First audit of code's first version on 20,000 stored
+  statements (6,830 with time words): agreed 5,159, differed 133 (most of them code's own mistakes, fixed by these
+  refusals; some the model's: "Tuesday night" put on a Wednesday), model alone 310, refused 10. Code's reading replaces the model's (`time.by = "code"`); the model's date is kept only when code cannot read
   the words (`by = "model"`), and refused when it puts a past event more than an hour after publication. Counted in
   `runs.stats.when` (code_agrees, code_differs, model_only, model_refused, none). New precision "year". One date reader:
   `frames.date_of` (so relate, disputes) is `when.date_of`; `compose.drop_past_schedules` reads dates through it (nearest
