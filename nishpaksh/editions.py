@@ -148,24 +148,42 @@ def independent_outlets(store: Store, sid: int) -> int:
     return len(independent(independence_groups(arts))) if arts else 0
 
 
-def settle_decision(now: dt.datetime, last: dt.datetime | None, met: dt.datetime | None, outlets, s=None) -> str | None:
-    """Why a story is ready to be written, or None when it is not (no store: the decision alone).
-    \"cap\"    the publishing rule was met `settle_max_hours` ago,
-    \"quiet\"  no new independent outlet for `settle_quiet_hours`,
-    \"broad\"  OR the rule has been met for `settle_early_min_minutes` and `outlets()` (called only when needed) is
-               at least `settle_early_outlets`: the coverage already maps the news (owner, Oct 11 2026).
-    A story whose newest source is older than `stale_after_hours` is never ready. The reason is the first that
-    holds, so \"broad\" counts only stories the other two would still have kept waiting."""
+def unread_sources(store: Store, sid: int) -> int:
+    """Independent sources with a readable page the story has not read yet, within its reading room
+    (`max_extract_per_story`): what extract.select_for_extraction would still read for it."""
+    from .wire import independence_groups
+    arts = store.rows(select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.agency, articles.c.wire_group,
+                             articles.c.text_source, articles.c.extracted_at, articles.c.extract_failures)
+                      .where(articles.c.story_id == sid, articles.c.text.is_not(None)))
+    if not arts:
+        return 0
+    groups = independence_groups(arts)
+    done = [a for a in arts if a["extracted_at"]]
+    room = max(0, SETTINGS.max_extract_per_story - len(done))
+    seen = {groups[a["id"]] for a in done}
+    left = {groups[a["id"]] for a in arts if not a["extracted_at"] and a["text_source"] != "summary"
+            and (a["extract_failures"] or 0) < 3} - seen
+    return min(room, len(left))
+
+
+def settle_decision(now: dt.datetime, last: dt.datetime | None, met: dt.datetime | None, unread, s=None) -> str | None:
+    """Why a story is ready to be written, or None when it is not (no store: the decision alone). Owner, Oct 16 2026:
+    no settling wait (the quiet hours, the 8-hour cap and the "broad" rule are gone: a page's colours stay live and
+    later reports reach it through its thread). A story is written as soon as the publishing rule is met (3
+    independent sources read) AND what it already has is read:
+    \"read\"   `unread()` (called only when needed) is 0: no readable independent source of the story left unread
+               within its reading room (the Punjab page went out with 3 of its 42 reports read, every line one outlet);
+    \"cap\"    the rule has been met for `read_wait_hours` and reading has not caught up: written with what is read.
+    A story whose newest source is older than `stale_after_hours` is never ready."""
     s = s or SETTINGS
     if last is None or (now - last).total_seconds() >= s.stale_after_hours * 3600:
         return None
-    if met and (now - met).total_seconds() >= s.settle_max_hours * 3600:
+    if not met:
+        return None
+    if unread() == 0:
+        return "read"
+    if (now - met).total_seconds() >= s.read_wait_hours * 3600:
         return "cap"
-    if (now - last).total_seconds() >= s.settle_quiet_hours * 3600:
-        return "quiet"
-    if (s.settle_early_outlets and met and (now - met).total_seconds() >= s.settle_early_min_minutes * 60
-            and outlets() >= s.settle_early_outlets):
-        return "broad"
     return None
 
 
@@ -180,7 +198,7 @@ def settle_reason(store: Store, sid: int, now: dt.datetime | None = None) -> str
         # one or two outlets (express.py): written after its own short wait, not the 8-hour cap or the quiet rule
         from . import express
         return express.settle_decision(now, last, _parse(ed.get("met_at")), SETTINGS.stale_after_hours)
-    return settle_decision(now, last, _parse(ed.get("met_at")), lambda: independent_outlets(store, sid))
+    return settle_decision(now, last, _parse(ed.get("met_at")), lambda: unread_sources(store, sid))
 
 
 def settled(store: Store, sid: int, now: dt.datetime | None = None) -> bool:

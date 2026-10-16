@@ -32,7 +32,7 @@ def no_settle_wait(monkeypatch, request):
     if request.node.get_closest_marker("settle"):
         return
     import nishpaksh.editions as ed
-    monkeypatch.setattr(ed, "SETTINGS", dataclasses.replace(ed.SETTINGS, settle_quiet_hours=0))
+    monkeypatch.setattr(ed, "SETTINGS", dataclasses.replace(ed.SETTINGS, settle_quiet_hours=0, read_wait_hours=0))
 
 
 @pytest.fixture(autouse=True)

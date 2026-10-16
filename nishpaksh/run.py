@@ -224,7 +224,7 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         except Exception as e:  # noqa: BLE001 - an update list never stops the run
             log.warning("updates of story %s not attached: %s", sid, str(e)[:150])
     stats.update(stories_dirty=len(dirty), analysed=len(analysed), qualifying=len(qualifying),
-                 settled=len(settled), settled_broad=sum(1 for why in reasons.values() if why == "broad"),
+                 settled=len(settled), settled_read=sum(1 for why in reasons.values() if why == "read"),
                  claims_checked=checked, colours_matured=matured,
                  live_pages=len(store.rows(select(_published.c.story_id))),
                  left_for_next_run=len(dirty) - len(analysed))

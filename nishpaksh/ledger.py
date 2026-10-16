@@ -34,7 +34,7 @@ DEFAULT_DIR = pathlib.Path(__file__).resolve().parent.parent / "ledger"
 
 # the run stats copied as they are (small numbers), the rest of `runs.stats` is left out on purpose
 PIPELINE_KEYS = ("grouped", "rated", "queue", "extracted", "stories_dirty", "analysed", "qualifying", "settled",
-                 "settled_broad", "left_for_next_run", "claims_checked", "colours_matured", "live_pages",
+                 "settled_read", "left_for_next_run", "claims_checked", "colours_matured", "live_pages",
                  "stories_awaiting_regroup", "wire_assigned", "retracted_headline_only", "tavily_pages_read")
 
 

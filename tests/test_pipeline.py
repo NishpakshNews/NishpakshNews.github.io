@@ -1699,26 +1699,19 @@ def test_published_article_is_closed_and_only_its_colours_mature(store):
 
 
 @pytest.mark.settle
-def test_article_waits_for_coverage_to_settle(store):
-    """Owner, Oct 5 2026: write after most of the coverage is in. Not while new outlets are still
-    turning up (3 quiet hours), but not later than 8 hours after the publishing rule was met."""
+def test_article_is_written_once_its_reports_are_read(store):
+    """Owner, Oct 16 2026: no settling wait. Once the rule is met and the story's readable reports are read, it is
+    written at once; old news never."""
     from nishpaksh import editions
     from nishpaksh.run import run
     _seed(store)
     stats = run(store=store, backend=FakeBackend(), time_budget_min=30, ingest_news=False, verify_budget=VB)
-    assert stats["qualifying"] == 1 and stats["settled"] == 0 and store.rows(select(published)) == []
+    assert stats["qualifying"] == 1 and stats["settled"] == 1 and stats["published"] == 1
     sid = store.rows(select(stories.c.id).where(stories.c.qualifies.is_(True)))[0]["id"]
     met = store.one(select(stories.c.analysis).where(stories.c.id == sid))["analysis"]["edition"]["met_at"]
-    assert met
     now = dt.datetime.fromisoformat(met)
-    assert not editions.settled(store, sid, now + dt.timedelta(hours=2))      # the last outlet came just now
-    assert editions.settled(store, sid, now + dt.timedelta(hours=8, minutes=1))  # the cap
+    assert editions.unread_sources(store, sid) == 0
     assert not editions.settled(store, sid, now + dt.timedelta(hours=37))         # old news is not written
-    # three quiet hours: written
-    store.exec(update(articles).values(fetched_at=NOW - dt.timedelta(hours=4)))
-    store.exec(update(stories).where(stories.c.id == sid).values(dirty=True))
-    stats = run(store=store, backend=FakeBackend(), time_budget_min=30, ingest_news=False, verify_budget=VB)
-    assert stats["settled"] == 1 and stats["published"] == 1
 
 
 def test_later_reports_of_a_published_story_gather_in_a_follow_up_candidate(store):
@@ -3901,54 +3894,29 @@ def test_the_reader_adds_learned_groups_after_the_hand_written_ones_and_ignores_
         assert relate.load_learned_groups() == []
 
 
-# ---------------------------------------------------------------- broad coverage settles a story early (owner, Oct 11 2026)
+# ---------------------------------------------------------------- no settling wait (owner, Oct 16 2026)
 
-def test_a_story_with_many_independent_outlets_is_ready_before_it_goes_quiet():
-    """Ready when ANY of: the 8-hour cap, 3 quiet hours, or 8+ independent outlets with the rule met for an hour."""
+def test_a_story_is_written_once_the_rule_is_met_and_its_reports_are_read():
+    """No quiet hours, no 8-hour cap, no "broad" rule: ready when the rule is met and nothing readable is left unread,
+    or `read_wait_hours` after the rule was met."""
     from nishpaksh import editions
-    S = dataclasses.replace(editions.SETTINGS, settle_quiet_hours=3, settle_max_hours=8, settle_early_outlets=8,
-                            settle_early_min_minutes=60, stale_after_hours=36)
+    S = dataclasses.replace(editions.SETTINGS, read_wait_hours=2, stale_after_hours=36)
     met = dt.datetime(2026, 10, 11, 6, 0)
-    d = lambda now, last, m=met, n=3, s=S: editions.settle_decision(now, last, m, lambda: n, s)
-    at = lambda **kw: met + dt.timedelta(**kw)
-    # the old rule, unchanged: waits while outlets are still arriving, then 3 quiet hours, or the 8-hour cap
-    assert d(at(hours=2), at(hours=1, minutes=50)) is None
-    assert d(at(hours=5), at(hours=1)) == "quiet"
-    assert d(at(hours=8, minutes=1), at(hours=8)) == "cap"
-    # the new rule: 8 independent outlets, the rule met an hour ago, outlets still arriving
-    assert d(at(hours=2), at(hours=1, minutes=50), n=8) == "broad"
-    assert d(at(hours=2), at(hours=1, minutes=50), n=7) is None                       # one short
-    assert d(at(minutes=30), at(minutes=25), n=12) is None                            # the first wave has not landed yet
-    assert d(at(hours=1), at(minutes=50), n=8) == "broad"
-    # \"broad\" is only what the other two would still have kept waiting
-    assert d(at(hours=5), at(hours=1), n=20) == "quiet" and d(at(hours=9), at(hours=8), n=20) == "cap"
-    # old news is never written, however many outlets it had
-    assert d(at(hours=40), at(hours=1), n=30) is None
-    # no `met_at` (the rule is not met): the broad rule does not apply
-    assert d(at(hours=2), at(hours=1, minutes=50), m=None, n=30) is None
-    # switched off
-    assert d(at(hours=2), at(hours=1, minutes=50), n=30, s=dataclasses.replace(S, settle_early_outlets=0)) is None
-    # a story with no source time is never ready
-    assert editions.settle_decision(at(hours=2), None, met, lambda: 30, S) is None
-
-
-def test_the_outlet_count_is_only_asked_when_the_cheap_checks_fail():
-    from nishpaksh import editions
-    # the rule's own hours pinned: conftest sets settle_quiet_hours=0 for every test
-    S = dataclasses.replace(editions.SETTINGS, settle_quiet_hours=3, settle_max_hours=8, settle_early_outlets=8,
-                            settle_early_min_minutes=60)
-    met = dt.datetime(2026, 10, 11, 6, 0)
+    at = lambda **kw: met + dt.timedelta(**kw)  # noqa: E731
+    d = lambda now, last, m=met, n=0, s=S: editions.settle_decision(now, last, m, lambda: n, s)  # noqa: E731
+    assert d(at(minutes=1), at(minutes=0)) == "read"                     # read: written at once, outlets still arriving
+    assert d(at(minutes=30), at(minutes=25), n=5) is None                # five readable reports still unread
+    assert d(at(hours=2, minutes=1), at(hours=2), n=5) == "cap"          # reading did not catch up: written anyway
+    assert d(at(minutes=1), at(minutes=0), m=None) is None               # the rule is not met
+    assert d(at(hours=40), at(hours=1)) is None                          # old news is never written
+    assert editions.settle_decision(at(hours=2), None, met, lambda: 0, S) is None
     calls = []
 
-    def count():
+    def unread():
         calls.append(1)
-        return 9
-    # quiet already: not asked; the rule met only 10 minutes ago: not asked; otherwise asked once
-    assert editions.settle_decision(met + dt.timedelta(hours=5), met + dt.timedelta(hours=1), met, count, S) == "quiet"
-    assert editions.settle_decision(met + dt.timedelta(minutes=10), met + dt.timedelta(minutes=5), met, count, S) is None
-    assert calls == []
-    assert editions.settle_decision(met + dt.timedelta(hours=2), met + dt.timedelta(hours=1, minutes=40), met, count, S) == "broad"
-    assert calls == [1]
+        return 0
+    editions.settle_decision(at(minutes=1), at(minutes=0), None, unread, S)
+    assert calls == []                                                   # not asked while the rule is not met
 
 
 # ---------------------------------------------------------------- why an essay was held (owner, Oct 11 2026, story 16981)

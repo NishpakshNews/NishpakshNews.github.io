@@ -1573,6 +1573,13 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   count as two). `select_for_extraction` reads an express story one article per OUTLET (not per owner group);
   `assess` requires every readable outlet read ("one_outlet", "second_outlet_unread" in the funnel). Writer note and
   layout prompt say "one or two outlets". Tests: `tests/test_express_story_db.py`.
+- **No settling wait (Oct 16 2026, owner; step 4).** `editions.settle_decision(now, last, met, unread)`: a story is
+  written as soon as the publishing rule is met (3 independent sources read) AND `unread_sources` is 0 (no readable
+  independent source of the story left unread within `max_extract_per_story`) -> "read"; or `read_wait_hours` (2)
+  after the rule was met -> "cap" (reading did not catch up); never when stale. The quiet hours, the 8-hour cap and
+  "broad" are gone (settings kept, unused); run stat `settled_read` replaces `settled_broad`. Express:
+  `wait_for_second_hours: 0` (two outlets are read before it qualifies). Tests: test_pipeline
+  `test_a_story_is_written_once_the_rule_is_met_and_its_reports_are_read`, `test_article_is_written_once_its_reports_are_read`.
 - **Open (Oct 16 2026):** `tests/test_express_db.py::test_nothing_is_embedded_while_the_pacing_curve_has_given_the_slice_out`
   fails at some hours of the day (failed at ~05:30 UTC with and without the session 9 changes, passed at 04:xx).
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:

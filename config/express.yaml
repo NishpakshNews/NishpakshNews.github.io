@@ -380,7 +380,7 @@ allow_phrases:
   - may day
 
 # Part 3: reading and qualifying
-wait_for_second_hours: 1    # an express story is written this long after it qualified, so a second outlet can be read and checked first
+wait_for_second_hours: 0    # no settling wait (owner, Oct 16 2026): two outlets are read (min_outlets) before an express story qualifies
 normal_route_outlets: 3     # a story with this many independent outlets is not express: the normal rule decides
 own_voice_lanes: [sport]    # lanes where the outlet's own voice may stand for a named origin (a match result)
 # an attribution containing one of these is another media house, not an origin ("Bloomberg reported", "according to Mint")

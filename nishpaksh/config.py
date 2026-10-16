@@ -118,11 +118,12 @@ class Settings:
     # editions (owner, Oct 5 2026): an article is written once, when its coverage has settled, and is
     # never changed again (only its colours mature by code). Later reporting becomes a follow-up only
     # if it carries a lot of new information or a major development.
-    settle_quiet_hours: float = 3          # no new independent outlet for this long...
-    settle_max_hours: float = 8            # ...or this long after the publishing rule was first met
-    # ...or when coverage is already broad (owner, Oct 11 2026): this many INDEPENDENT outlets (wire copies, one owner
-    # and state media count once) have been collected for the story, and the rule has been met for at least
-    # `settle_early_min_minutes` (the first wave of a burst has landed). 0 switches it off.
+    # Oct 16 2026 (owner): no settling wait. A story is written once the rule is met and what it already has is read
+    # (editions.settle_decision); `read_wait_hours` after the rule was met it is written with what is read. The three
+    # settings below are no longer used (kept so old configs and tools still load).
+    read_wait_hours: float = 2
+    settle_quiet_hours: float = 3
+    settle_max_hours: float = 8
     settle_early_outlets: int = 8
     settle_early_min_minutes: float = 60
     stale_after_hours: float = 36          # a story whose newest source is older than this is not written (old news)
