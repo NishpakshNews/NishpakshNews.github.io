@@ -1300,8 +1300,16 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   `latin_left` finds Latin words left in a Hindi string (not URLs, units, or a bracketed name the English also brackets);
   `missing_terms` finds our binding Hindi renderings (glossary `terms`) not used. Nothing acts on a problem yet: the
   English->Hindi path (session 6) and the reading path (session 7) do. The audit reports it on stored data
-  (`tools/audit.fidelity_report`: live pages' Hindi strings, statements of the newest 600 read articles). Tests:
-  `tests/test_fidelity.py`.
+  (`tools/audit.fidelity_report`: live pages' Hindi strings, statements of the newest 600 read articles). Tuned over
+  four audit runs on stored data (Oct 16 2026; each noise case is now a test): "alleged" only as an adjective and an
+  attributing verb (alleged, claimed, आरोप) keeps its caveat; विशेष and निश्चित are not "specific"; "not out", "या
+  नहीं", "सीधे सेट" are not qualifiers; Hindi "never" is कभी ... नहीं around the verb; "100% तक" is up to, "15
+  अक्टूबर तक" is not. Last run, strict problems: about 30 of 1,737 live Hindi strings; 18 of the 287 Hindi-report
+  statements whose source sentence was found (of 1,171: most share no anchor with one sentence); about 120 of 2,277
+  English-report statements. Real catches among them: "only 45 of 303 stations" and "only 14 of 4,600 seats" read
+  without "only", "the only authorized protest sites" where the report said designated. Known misses: negation
+  by morphology ("unaffected" / "प्रभावित नहीं"); a statement matched to the wrong sentence of a long report.
+  Tests: `tests/test_fidelity.py`.
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:
   missed merges (statement pairs with 60%+ shared root words left apart, by the language mix of the story's sources:
   en / hi / mixed, and what code and the twice-asked question said of them), English left in Hindi pages (by field, top

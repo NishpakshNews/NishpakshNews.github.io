@@ -32,7 +32,7 @@ qualifiers:
      hi: [विशिष्ट, विशेष रूप से, विशेषकर, खास तौर पर, ख़ास तौर पर, खासकर, ख़ासकर]}   # not निश्चित: also "fixed"
   - {id: approximately, strict: false, number: true, en: [about, around, nearly, approximately, roughly, almost],
      hi: [लगभग, करीब, क़रीब, तकरीबन, तक़रीबन, आसपास]}
-  - {id: hedge, strict: false, en: [might, could, can, possibly, probably, likely, perhaps],
+  - {id: hedge, strict: false, en: [might, could, possibly, probably, likely, perhaps],
      hi: [शायद, संभवतः, संभवत, संभावना, आशंका, सकता है, सकती है, सकते हैं]}
   - {id: reportedly, strict: false, en: [reportedly], hi: [बताया जाता है, सूत्रों के अनुसार, सूत्रों के मुताबिक]}
 
