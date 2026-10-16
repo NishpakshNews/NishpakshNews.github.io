@@ -195,7 +195,7 @@ def _describe(p: F.Problem) -> str:
     if p.kind == "latin":
         return f"'{p.what}' is still in English letters"
     if p.kind == "term":
-        return f"'{p.what}' must be {dict(F.glossary()['terms']).get(p.what, '')}"
+        return f"'{p.what}' must be {dict(F.all_terms()).get(p.what, '')}"
     q = {q.id: q for q in F.glossary()["qualifiers"]}.get(p.what)
     words = "/".join(q.en[:3]) if q else p.what
     return (f"the draft drops '{words}'" if p.kind == "lost" else f"the draft adds '{words}', which the English lacks")

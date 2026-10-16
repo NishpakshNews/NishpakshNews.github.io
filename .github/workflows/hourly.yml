@@ -129,6 +129,13 @@ jobs:
         env:
           GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
         run: bash .github/scripts/learn.sh synonyms nishpaksh.learn_synonyms config/synonyms_learned.yaml
+      - name: Learn English-Hindi terms from the outlets
+        # word pairs Hindi and English outlets use in the same stories build up evidence in the newsroom; those past
+        # the bar and the code-only devil's advocate bind our Hindi translations from the next run, the doubtful ones
+        # wait for the owner in config/glossary_learned.yaml (nishpaksh/learn_glossary.py). No model. Never stops the hour.
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
+        continue-on-error: true
+        run: bash .github/scripts/learn.sh glossary nishpaksh.learn_glossary config/glossary_learned.yaml
       - name: Write the ledger
         # one record of this run (embedding use, outlet yield, the express lane's funnel) into ledger/, committed to
         # the branch (nishpaksh/ledger.py). Reads only; before the newsroom is saved so it sees this hour's data.

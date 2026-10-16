@@ -1383,6 +1383,22 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   sentences: the example field is gone); a learned pair the advocate later blocks is taken out of the file
   (`withdraw`). The job runs through `learn.sh` (learn_synonyms.sh removed). Logged "synonym candidates: {funnel}".
   Tests: `tests/test_learn_synonyms.py`.
+- **English-Hindi terms learned from the outlets (Oct 16 2026, session 11 of the translation/learning plan;
+  `learn_glossary.py`, `config/glossary_learned.yaml`).** Evidence only from Hindi and English OUTLETS on the same
+  stories, never our own translations (a repeated mistranslation would look like evidence). Per story with 2+
+  independent English and 2+ independent Hindi sources: English lower-case words 2+ English sources used, Hindi words
+  2+ Hindi sources used that the name registry does not know; stop words out. Across the window's stories: a pair in
+  2+ stories, Dice >= 0.6, each the other's single best partner, no tie, neither in over a quarter of the stories
+  (with 8+ stories). Such pairs add their stories to memory (`learn_candidates`, kind "glossary"). Bar: 2+ English
+  and 2+ Hindi independent sources, 3+ stories, 3+ days, no day over half. Devil's advocate, CODE ONLY (no model):
+  blocks a loaded English word, a fidelity qualifier, a Hindi dispute/insult cue, the owner's `rejected:`; sends to
+  the OWNER (`proposed:`, not binding) a competing rendering (another Hindi word with Dice >= 0.6 for the same English
+  word), unstable evidence (fails without its best day and best source), a Hindi word already bound to another English
+  word. Otherwise LEARNED automatically (at most 5 a run) into `terms:`. `fidelity.terms_in` uses hand-written terms
+  first, then learned ones (`all_terms`; a hand-written English word always wins); learned terms do NOT change
+  `hindi.cache_version` (no re-translation bill). The owner approves a proposal by moving its line to `terms:`, refuses
+  with `rejected:` (also drops a learned term). The file is rewritten each run from memory plus the owner's edits;
+  counts only, no article text. Logged "glossary candidates: {funnel}". Tests: `tests/test_learn_glossary.py`.
 - **Open (Oct 16 2026):** `tests/test_express_db.py::test_nothing_is_embedded_while_the_pacing_curve_has_given_the_slice_out`
   fails at some hours of the day (failed at ~05:30 UTC with and without the session 9 changes, passed at 04:xx).
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:

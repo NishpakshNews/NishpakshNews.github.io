@@ -343,10 +343,25 @@ def latin_left(hindi: str, english: str | None = None) -> list[str]:
     return [w for w in LATIN_WORD.findall(t) if w.lower().strip(".") not in LATIN_OK]
 
 
+@functools.lru_cache(maxsize=1)
+def _learned_terms() -> tuple[tuple[str, str], ...]:
+    """Terms learned from the outlets (learn_glossary.py), after the hand-written ones, which win."""
+    try:
+        from .learn_glossary import learned_terms
+        hand = {en.lower() for en, _ in glossary()["terms"]}
+        return tuple((en, hi) for en, hi in learned_terms() if en.lower() not in hand)
+    except Exception:  # noqa: BLE001 - no file, or one that does not parse: hand-written terms only
+        return ()
+
+
+def all_terms() -> tuple[tuple[str, str], ...]:
+    return tuple(glossary()["terms"]) + _learned_terms()
+
+
 def terms_in(english: str) -> list[tuple[str, str]]:
-    """The binding terms an English text uses: (English, our Hindi)."""
+    """The binding terms an English text uses: (English, our Hindi); hand-written, then learned."""
     t = fold(english)
-    return [(en, hi) for en, hi in glossary()["terms"] if _pat(en, "en").search(t)]
+    return [(en, hi) for en, hi in all_terms() if _pat(en, "en").search(t)]
 
 
 def missing_terms(english: str, hindi: str) -> list[str]:
