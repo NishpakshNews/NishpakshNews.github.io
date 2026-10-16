@@ -549,6 +549,8 @@
   .essay .s.struck, .card .text .s.struck { color: #8a8d91; background: transparent; text-decoration: line-through;
                                             text-decoration-color: #8a8d91; }
   .updates .uline { margin: 0 0 8px; }
+  .essay .s.struck[data-struck] { cursor: pointer; }
+  .updates .uline.flash .s { animation: npflash 1400ms ease; }
   .latestin { display: block; margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; text-decoration: none;
               background: color-mix(in srgb, var(--bar-v, #2a9d8f) 12%, transparent); color: inherit; }
   .latestin span { display: block; font-size: 0.78em; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.75; }
@@ -1801,8 +1803,9 @@ function updatesHtml(p, t) {
   const kids = new Set((p.children || []).map(c => String(c.story_id)));
   const rows = ups.map(u => {
     const more = kids.has(String(u.story_id)) ? ` <a href="#/story/${encodeURIComponent(u.story_id)}" data-story="${esc(u.story_id)}">→</a>` : "";
-    // only the line that was struck, struck through (owner, Oct 16 2026): not the line that replaced it
-    return u.was ? `<p class="uline"><span class="s struck">${esc(u.was)}</span>${more}</p>` : "";
+    // the later line that struck a line of the article, in its own colour (owner, Oct 16 2026); a struck line in the
+    // article jumps here (data-replaces)
+    return `<p class="uline" data-replaces="${esc(u.replaces)}"><span class="s ${esc(cls(u.class))}">${esc(u.text)}</span>${more}</p>`;
   }).join("");
   if (!rows) return "";
   return `<div class="sechead" data-sec="updates"><span>+</span><h3>${esc(t.updates || "Updates since published")}</h3></div>` +
@@ -1897,9 +1900,10 @@ function essayBody(nar, t) {
     const sp = sup(x);   // the number goes inside the last coloured span, so the wash runs under it
     // a line later reports replaced ("Updates since published", owner Oct 16 2026): struck through, no colour
     const c = o => o.struck || x.struck ? "struck" : cls(o.class);
+    const go = o => o.struck || x.struck ? ` data-struck="${esc((o.ids || x.ids || []).join(","))}" role="link" tabindex="0"` : "";
     return tag + (x.parts && x.parts.length > 1
-      ? x.parts.map((p, i) => `<span class="s ${esc(c(p))}">${esc(p.text)}${i === x.parts.length - 1 ? sp : ""}</span>`).join(" ")
-      : `<span class="s ${esc(c(x))}">${esc(x.text)}${sp}</span>`);
+      ? x.parts.map((p, i) => `<span class="s ${esc(c(p))}"${go(p)}>${esc(p.text)}${i === x.parts.length - 1 ? sp : ""}</span>`).join(" ")
+      : `<span class="s ${esc(c(x))}"${go(x)}>${esc(x.text)}${sp}</span>`);
   };
   const paras = nar.paragraphs || [], keys = nar.section_keys || [], who = nar.who || [];
   // every sentence carries its place (paragraph.sentence) so audio lighting finds it whatever order the page shows it in
@@ -2381,6 +2385,16 @@ $("rise").addEventListener("click", e => {
     const wasShut = !!(box && !box.classList.contains("dd-open"));
     if (wasShut) ddSet(box, true);                  // the Sources list is a dropdown: open it before jumping to the line
     if (li) setTimeout(() => { li.scrollIntoView({behavior: "smooth", block: "center"}); li.classList.add("flash"); setTimeout(() => li.classList.remove("flash"), 1400); }, wasShut ? 300 : 0);
+    return;
+  }
+  // a struck line (owner, Oct 16 2026): to the later line that replaced it, under "Updates since published"
+  const k = !e.target.closest("a") && e.target.closest("[data-struck]");
+  if (k) {
+    const ids = k.dataset.struck.split(",").filter(Boolean);
+    const box = $("rise");
+    const rows = [...box.querySelectorAll(".updates .uline")];
+    const hit = rows.find(r => ids.includes(r.dataset.replaces)) || rows[0] || box.querySelector(".updates");
+    if (hit) { hit.scrollIntoView({behavior: "smooth", block: "center"}); hit.classList.add("flash"); setTimeout(() => hit.classList.remove("flash"), 1400); }
     return;
   }
   const a = e.target.closest("a[data-story]");

@@ -1959,7 +1959,7 @@ and paragraphs mixed unrelated facts. Rebuilt, keeping the Oct 8 rule (never los
   every key for 2, 4, 6 ... 10 min (`REST_STEP`, `REST_MAX`) instead of being dropped for the run (`router.rested`, in the
   desk report); other tiers still drop. So the desk's `refused_last_run` no longer skips Flash writer models.
 - **Updates since published = struck lines only (owner, Oct 16 2026).** `editions.attach_updates` lists an update only once
-  the page's line it replaces is struck; the site shows only `was`, the old line, struck through (owner: not the line that
-  replaced it; `text` stays in the data). Follow option "struck through" (follow kind 'colour', key "struck"): `notify.line_classes` marks struck
-  lines "struck" and `queue_colours` counts lines newly struck. No migration. `sw.js` np-main-59.
+  the page's line it replaces is struck; the site lists the LATER line (`text`, in its colour), one row per struck line
+  of the article (`data-replaces`). A struck line in the article (`data-struck`, its statement ids) jumps to its row. Follow option "struck through" (follow kind 'colour', key "struck"): `notify.line_classes` marks struck
+  lines "struck" and `queue_colours` counts lines newly struck. No migration. `sw.js` np-main-60.
 - **Desk order:** a story refused as a follow-up before (`edition.followup.ok` False) goes after every other ready story.
