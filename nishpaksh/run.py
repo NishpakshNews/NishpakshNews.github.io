@@ -193,6 +193,9 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
                 store.exec(update(stories).where(stories.c.id.in_(ids[i:i + 500]), stories.c.qualifies.is_(True))
                            .values(qualifies=False))
         stats["stories_awaiting_regroup"] = len(untrusted)
+    # an express mark from an earlier run that no longer holds (a later outlet unread, a third outlet, a dispute) is
+    # cleared, so no verdict or writing call is spent on it and the desk never writes it (story 23995, Oct 17 2026)
+    stats["express_revoked"] = step("express_revoke", lambda: _express.revoke_stale(store, frozen)) or []
     qualifying = {r["id"] for r in store.rows(select(stories.c.id).where(stories.c.qualifies.is_(True)))} - frozen
     # stories that cannot be published yet spend no verdict or writing calls; they are
     # re-examined when another of their articles is read

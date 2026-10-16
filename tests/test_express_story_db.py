@@ -137,3 +137,55 @@ def test_the_beat_seats_follow_the_strict_order(store):
     got = _beat_order(store, queue, beats)
     assert got[2] == plain
     assert [s for s in got if s != plain] == [tech, dom, sport, esport_india, esport_world, ent]
+
+
+def _late_outlet(store, sid, minutes_ago=0, outlet="Aaj Tak"):
+    """A readable report from a main (non-lane) feed that joins later and is not read."""
+    return store.insert_returning_id(articles, dict(
+        url=f"https://z/{sid}/{outlet}", feed_id=None, outlet=outlet, lang="hi", role="news", title="विद्युत जामवाल",
+        story_id=sid, published_at=NOW - dt.timedelta(minutes=minutes_ago), fetched_at=NOW, text="रिपोर्ट. " * 60,
+        text_source="full", minhash=[1], extract_failures=0, extracted_at=None))
+
+
+def _qualified_long_ago(store, f, hours_ago=80):
+    """Story 23995 (Oct 17 2026): qualified as express days ago, its lane article now stale."""
+    from nishpaksh import perspectives
+    sid, aid = _story(store, f, read=True, minutes_ago=hours_ago * 60)
+    _claim(store, sid, aid, "Tata Motors")
+    assert express.qualify(store, sid)
+    an = store.one(select(stories.c.analysis).where(stories.c.id == sid))["analysis"]
+    an["edition"] = {"met_at": (NOW - dt.timedelta(hours=hours_ago)).isoformat()}
+    from nishpaksh.db import update
+    store.exec(update(stories).where(stories.c.id == sid).values(analysis=an))
+    return sid
+
+
+def test_a_later_unread_outlet_stops_an_old_express_mark_from_being_written(store):
+    from nishpaksh import editions
+    f = _feed(store)
+    sid = _qualified_long_ago(store, f)
+    _late_outlet(store, sid, minutes_ago=30)          # makes the story fresh again, unread
+    assert express.still_holds(store, sid) is False
+    assert editions.settle_reason(store, sid, NOW) is None
+    assert express.revoke_stale(store) == [sid]
+    row = store.one(select(stories.c.qualifies, stories.c.dirty).where(stories.c.id == sid))
+    assert row["qualifies"] is False and row["dirty"] is True
+
+
+def test_a_fresh_report_from_a_main_feed_makes_an_old_express_story_a_candidate(store):
+    f = _feed(store)
+    sid = _qualified_long_ago(store, f)
+    assert sid not in express.candidates(store, NOW)     # stale lane article alone: not current
+    _late_outlet(store, sid, minutes_ago=30)
+    assert sid in express.candidates(store, NOW)         # so the late outlet is read and the story checked again
+
+
+def test_still_holds_does_not_count_in_the_funnel_and_a_valid_mark_stays(store):
+    f = _feed(store)
+    sid, aid = _story(store, f, read=True)
+    _claim(store, sid, aid, "Tata Motors")
+    assert express.qualify(store, sid)
+    before = {k: (dict(v) if isinstance(v, dict) else v) for k, v in express.STATS.items()}
+    assert express.still_holds(store, sid) is True
+    assert express.STATS == before
+    assert express.revoke_stale(store) == []

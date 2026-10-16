@@ -1648,6 +1648,17 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   count as two). `select_for_extraction` reads an express story one article per OUTLET (not per owner group);
   `assess` requires every readable outlet read ("one_outlet", "second_outlet_unread" in the funnel). Writer note and
   layout prompt say "one or two outlets". Tests: `tests/test_express_story_db.py`.
+- **An express mark is checked again before writing (Oct 17 2026, owner: story 23995, "Vidyut Jammwal plays Dhalsim", went
+  out with Aaj Tak "not read").** Cause: the story qualified as express on Oct 13 on one outlet (The Hindu's lane-feed article,
+  before the two-outlet rule) and kept `qualifies` = True; its lane article went stale, so `express.candidates` (fresh = a
+  LANE-FEED article in 36 h) never took it into `focus` again and `assess` never ran; on Oct 16 Aaj Tak's HOME-feed report
+  joined, unread, which made `last_new_source` fresh, and the express settle (met_at + wait, no reading check) sent it to the
+  desk on the old mark. Fixed three ways: (1) `editions.settle_reason` asks `express.still_holds` (= `assess` now, code only,
+  funnel not counted) before an express story is ready: a readable outlet unread, a third outlet or a dispute = not ready;
+  (2) every run `express.revoke_stale` clears an express mark that no longer holds (qualifies False, dirty True; run stat
+  `express_revoked`, funnel `story_revoked`), so no verdict or writing call is spent on it; (3) `express.candidates`: a story
+  with a lane-feed member in the last `LANE_MEMBER_DAYS` (7) is current when ANY member is fresh, so a late second outlet from
+  a main feed gets read. Story 23995 itself is published and closed (left as is). Tests: `tests/test_express_story_db.py`.
 - **No settling wait (Oct 16 2026, owner; step 4).** `editions.settle_decision(now, last, met, unread)`: a story is
   written as soon as the publishing rule is met (3 independent sources read) AND `unread_sources` is 0 (no readable
   independent source of the story left unread within `max_extract_per_story`) -> "read"; or `read_wait_hours` (2)

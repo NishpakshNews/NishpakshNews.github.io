@@ -164,7 +164,12 @@ def reset() -> None:
     STATS.clear()
 
 
+_QUIET = [0]     # >0 while `still_holds` re-checks a story: the funnel counts each story once, in the run's own check
+
+
 def bump(key: str, n: int = 1) -> None:
+    if _QUIET[0]:
+        return
     STATS[key] = STATS.get(key, 0) + n
 
 
@@ -588,6 +593,8 @@ ANON, OWN, NAMED, MEDIA, AGENCY = "anon", "own", "named", "media", "agency"
 
 
 def _count(group: str, key: str) -> None:
+    if _QUIET[0]:
+        return
     g = STATS.setdefault(group, {})
     g[key] = g.get(key, 0) + 1
 
@@ -688,6 +695,9 @@ def outlet_key(a: dict) -> str:
     return f"wire:{a['wire_group']}" if a.get("wire_group") else "outlet:" + (a.get("outlet") or "").strip().lower()
 
 
+LANE_MEMBER_DAYS = 7      # how far back a lane-feed member makes a story an express one (its freshness is the newest report's)
+
+
 def min_outlets() -> int:
     """Outlets with a readable page an express story needs before it is read and written (config `min_outlets`)."""
     return int(setting("min_outlets", 2))
@@ -706,9 +716,21 @@ def candidates(store, now: dt.datetime | None = None) -> dict[int, dict]:
     if not enabled() or not lane_of:
         return {}
     since = now - dt.timedelta(hours=SETTINGS.stale_after_hours)
+    # a story with a lane-feed member (last LANE_MEMBER_DAYS) that has ANY fresh report: a second outlet from a main
+    # feed (story 23995: The Hindu's lane article of Oct 13, Aaj Tak's home-feed report of Oct 16) makes the story
+    # current again, so it is read and assessed again, never carried on an old qualification (owner, Oct 17 2026)
+    lane_since = now - dt.timedelta(days=LANE_MEMBER_DAYS)
     mine = {r["story_id"] for r in store.rows(
         select(articles.c.story_id).where(articles.c.story_id.is_not(None), articles.c.feed_id.in_(sorted(lane_of)),
-                                          articles.c.published_at >= since))}
+                                          articles.c.published_at >= lane_since))}
+    if mine:
+        ids_ = sorted(mine)
+        fresh: set[int] = set()
+        for i in range(0, len(ids_), 500):
+            fresh |= {r["story_id"] for r in store.rows(
+                select(articles.c.story_id).where(articles.c.story_id.in_(ids_[i:i + 500]),
+                                                  articles.c.published_at >= since))}
+        mine = fresh
     mine -= frozen_ids(store)
     if not mine:
         return {}
@@ -845,6 +867,37 @@ def assess(store, sid: int) -> bool:
     bump("story_qualified")
     LANE_OF_STORY[sid] = (lane, story_sig(arts))
     return True
+
+
+def still_holds(store, sid: int) -> bool:
+    """The express rule checked again NOW, by code (no model, funnel not counted). An express qualification is kept
+    from the run that made it, and a report that joins later (a second outlet, unread) does not by itself bring the
+    story back for a check: story 23995 qualified on Oct 13 on one outlet, Aaj Tak joined on Oct 16 unread, and the
+    desk wrote it on the old mark. So the desk asks this before writing, and every run clears a mark that fails it."""
+    _QUIET[0] += 1
+    try:
+        ok = assess(store, sid)
+    finally:
+        _QUIET[0] -= 1
+        LANE_OF_STORY.pop(sid, None)
+    return ok
+
+
+def revoke_stale(store, skip: set[int] | frozenset = frozenset()) -> list[int]:
+    """Every unpublished story marked qualified by the express rule (except `skip`: closed, or just checked this run)
+    that no longer passes `still_holds` loses the mark and is set dirty, so it is read and checked again. Returns the ids."""
+    from sqlalchemy import select, update
+    from .db import stories
+    out = []
+    for r in store.rows(select(stories.c.id, stories.c.analysis).where(stories.c.qualifies.is_(True))):
+        if r["id"] in skip or (r["analysis"] or {}).get("qualified_by") != "express":
+            continue
+        if not still_holds(store, r["id"]):
+            store.exec(update(stories).where(stories.c.id == r["id"]).values(qualifies=False, dirty=True))
+            out.append(r["id"])
+    if out:
+        bump("story_revoked", len(out))
+    return out
 
 
 def settle_decision(now: dt.datetime, last: dt.datetime | None, met: dt.datetime | None,

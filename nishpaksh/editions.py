@@ -197,6 +197,8 @@ def settle_reason(store: Store, sid: int, now: dt.datetime | None = None) -> str
     if an.get("qualified_by") == "express":
         # one or two outlets (express.py): written after its own short wait, not the 8-hour cap or the quiet rule
         from . import express
+        if not express.still_holds(store, sid):      # checked again at writing time: a later outlet must be read first
+            return None
         return express.settle_decision(now, last, _parse(ed.get("met_at")), SETTINGS.stale_after_hours)
     return settle_decision(now, last, _parse(ed.get("met_at")), lambda: unread_sources(store, sid))
 
