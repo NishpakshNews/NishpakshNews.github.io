@@ -1330,6 +1330,17 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   `translate_strings`) replaces Latin names in cached Hindi with what the registry knows now, at no cost. Logged per
   page as "hindi: {strings, drafts_with_problem, edit_calls, edit_accepted, names_known, names_translated, ...}".
   Tests: `tests/test_hindi.py`.
+- **Readings checked against their reports (Oct 16 2026, session 7 of the translation/learning plan; `readcheck.py`).**
+  The reading prompt's rule 2d asks to keep every small word that limits a claim (not, never, only/केवल/सिर्फ/महज,
+  at least/कम से कम, up to, more than/से अधिक, directly/सीधे, alleged/कथित) and add none. In `extract._extract_one`,
+  after `ground()` and the dates, every statement (English and Hindi reports alike) is checked by
+  `fidelity.check_reading` against the sentence it came from (strict qualifiers only; negation not compared for a
+  "denies" statement, which rule 4 writes as the positive claim). An article's flagged statements get ONE repair call
+  on the `quality` tier, each shown with its report sentence and problem; a repair is taken only when the check then
+  passes and the statement keeps its numbers. At most `MAX_CALLS_PER_RUN` (30) repair calls a run; no quota = nothing
+  repaired, nothing waits. An unrepaired statement is KEPT and counted (`DROP_UNREPAIRED = False`): the audit showed
+  real catches beside wrong-sentence matches, so dropping waits for the counts. Logged as "readcheck: {checked,
+  sourced, flagged, repaired, kept, calls, no_quota, over_cap}". Tests: `tests/test_readcheck.py`.
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:
   missed merges (statement pairs with 60%+ shared root words left apart, by the language mix of the story's sources:
   en / hi / mixed, and what code and the twice-asked question said of them), English left in Hindi pages (by field, top

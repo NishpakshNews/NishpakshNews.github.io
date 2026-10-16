@@ -88,6 +88,9 @@ Rules:
    b) "said" and the speaker's name belong in "attributed_to", never inside the fact: write
    "Three companies have licences in India" (attributed_to "Scindia"), never "...licences in Scindia said".
    A place stays a place and a person stays a person.
+   d) Keep every small word that limits a claim, exactly as the article has it: not, never, only (केवल, सिर्फ,
+   महज), at least (कम से कम), up to, more than (से अधिक), directly (सीधे), alleged (कथित). Never add one the
+   article does not have ("specific", "only", "about").
    c) Resolve "his", "her", "their", "he", "it" to the person or body the article means, by name: when a
    speaker talks about someone else's profit or business, write that person ("Ambani's business will not
    close"), not the speaker, and keep the speaker in "attributed_to".
@@ -275,7 +278,7 @@ def store_extraction(store: Store, article_id: int, story_id: int | None, ex: di
             c.execute(insert(claims), rows)
 
 
-def _extract_one(store: Store, router: Router, a: dict, names: str = "") -> str:
+def _extract_one(store: Store, router: Router, a: dict, names: str = "", registry=None) -> str:
     # names: the registry's English spellings of the names this Hindi article uses (namepair.py, Oct 16 2026)
     prompt = EXTRACT_PROMPT.format(outlet=a["outlet"], published=_fmt_ist(a["published_at"]),
                                    title=a["title"] or "", text=(a["text"] or "")[: SETTINGS.max_article_chars],
@@ -292,6 +295,13 @@ def _extract_one(store: Store, router: Router, a: dict, names: str = "") -> str:
             for it in ex[kind]:
                 if it.get("time"):
                     it["time"] = _when.read_time(it["time"], it.get("text"), a["published_at"])
+        # each statement against the sentence of the article it came from; a lost or added small word gets one
+        # repair on the quality tier (readcheck.py, Oct 16 2026). Never a reason to lose a reading.
+        try:
+            from . import readcheck
+            readcheck.check(ex, f"{a['title'] or ''}. {a['text'] or ''}", a.get("lang") or "en", router, registry)
+        except Exception as e:  # noqa: BLE001
+            log.warning("readcheck failed for article %s: %s", a["id"], str(e)[:150])
         # what "It" and "the new scheme" point to, from the article itself (refs.py, Oct 15 2026)
         try:
             from . import refs as _refs
@@ -484,8 +494,13 @@ def extract_pending(store: Store, router: Router, deadline: float, workers: int 
         return 0
     # a story's names paired across languages before any of its articles is read (namepair.py, Oct 16 2026):
     # the readings run in parallel, so this cannot wait for one of them
-    from . import namepair
+    from . import namepair, names as _names, readcheck
     name_hints = namepair.prepare(store, router, pending, deadline)
+    readcheck.reset_run()
+    try:
+        registry = _names.load(store)          # Hindi names that tie a statement to its report sentence
+    except Exception:  # noqa: BLE001
+        registry = None
     stop = threading.Event()
     counts = {"done": 0, "failed": 0, "quota": 0}
     lock = threading.Lock()
@@ -500,7 +515,7 @@ def extract_pending(store: Store, router: Router, deadline: float, workers: int 
                 a = next(queue, None)
             if a is None:
                 return
-            outcome = _extract_one(store, router, a, name_hints.get(a["id"], ""))
+            outcome = _extract_one(store, router, a, name_hints.get(a["id"], ""), registry)
             with lock:
                 counts[outcome] += 1
             if outcome == "quota":
@@ -511,6 +526,8 @@ def extract_pending(store: Store, router: Router, deadline: float, workers: int 
         t.start()
     for t in threads:
         t.join()
+    if readcheck.STATS:
+        log.info("readcheck: %s", dict(readcheck.STATS))
     left = len(pending) - counts["done"] - counts["failed"]
     log.info("extract: %d done, %d failed, %d left for next run%s", counts["done"], counts["failed"], left,
              " (quota exhausted)" if counts["quota"] else "")
