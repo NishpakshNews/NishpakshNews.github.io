@@ -400,13 +400,13 @@ def run(store, router=None, days: float = 3, dry_run: bool = False, path: Path |
     ids = [a["id"] for a in arts]
     by_canon: dict[int, list[dict]] = defaultdict(list)
     words_by_article: dict[int, set[str]] = defaultdict(set)
-    loaded: set[str] = set()
+    loaded_tags: list[str] = []
     for start in range(0, len(ids), 400):
         for c in store.rows(select(claims.c.id, claims.c.story_id, claims.c.article_id, claims.c.canonical_id,
                                    claims.c.kind, claims.c.text, claims.c.time, claims.c.loaded_words)
                             .where(claims.c.article_id.in_(ids[start:start + 400]))):
             for w in c.get("loaded_words") or []:
-                loaded.update(x.lower() for x in str(w).split())
+                loaded_tags.extend(x.lower() for x in str(w).split())
             if c.get("kind") in ("event", "claim") and c.get("text"):
                 words_by_article[c["article_id"]] |= {_stem(t.lower()) for t in _tokens(c["text"])}
                 if c.get("canonical_id") is not None:
@@ -420,6 +420,7 @@ def run(store, router=None, days: float = 3, dry_run: bool = False, path: Path |
     info = {a["id"]: {"source": N.source_key(a), "story": a.get("story_id"), "when": a.get("published_at")} for a in arts}
     cands = L.load(store, KIND)
     new = record(cands, found, info, words_by_article)
+    loaded = L.loaded_set(loaded_tags)
     fresh, withdrawn, used = decide(cands, loaded, router, L.model_due(store, KIND, now), now,
                                     learned_stems=learned_stems(path) if path.exists() else set())
     out = {"articles": len(arts), "statements": len(by_canon), "new_evidence": new, "candidates": len(cands),

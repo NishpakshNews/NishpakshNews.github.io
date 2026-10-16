@@ -55,6 +55,10 @@ LABEL_SHARE = 0.2
 DISPUTE_SHARE = 0.1
 QUOTED_SHARE = 0.5
 CONTEXTS = 5                # sample contexts kept per word (in the newsroom only), for the model's look
+MIN_FOR_SHARES = 5          # sightings before a share (one person) can block: 2 of 2 says nothing (replay, Oct 16)
+NEVER = "on the never list"
+LOADED = "a reading tagged it as a loaded word"
+PERMANENT = {NEVER, LOADED}
 WAITING = "waiting for the model's look (once a day)"
 
 HEADER = """# Titles learned from the news (nishpaksh/learn.py, owner Oct 10 2026). titles.py reads this file after the
@@ -223,12 +227,12 @@ def advocate(c: L.Candidate, loaded=frozenset()) -> L.Verdict:
     w = c.key.lower()
     n = int(c.facets.get("sightings") or 0) or 1
     if w in {x.lower() for x in L.cues().get("never_titles", [])}:
-        return L.Verdict("block", "on the never list")
+        return L.Verdict("block", NEVER)
     if w in loaded:
-        return L.Verdict("block", "a reading tagged it as a loaded word")
+        return L.Verdict("block", LOADED)
     per = c.facets.get("per_person") or {}
     total = sum(per.values())
-    if total and max(per.values()) / total > CONCENTRATION:
+    if total >= MIN_FOR_SHARES and max(per.values()) / total > CONCENTRATION:
         top = max(per, key=per.get)
         return L.Verdict("block", f"{per[top]} of {total} sightings stand before {top}: a nickname sticks to one person")
     out = []
@@ -287,14 +291,18 @@ def decide(cands: dict[str, L.Candidate], loaded=frozenset(), router=None, model
             if v.state == "block":
                 review.append({"word": c.key, "reason": v.reason})
             continue
-        if c.status in ("blocked", "proposed"):
-            if c.status == "proposed" and advocate(c, loaded).state == "block":
-                v = advocate(c, loaded)
-                mark(c, status="blocked", verdict="block", reason=v.reason)
+        if c.status == "blocked":
             continue
         v = advocate(c, loaded)
         if v.state == "block":
-            mark(c, status="blocked", verdict="block", reason=v.reason)
+            # for good only when the reason cannot change (the never list, a loaded word); a block from shares of
+            # the evidence (one person, label or insult cues) is looked at again as evidence grows
+            if v.reason in PERMANENT:
+                mark(c, status="blocked", verdict="block", reason=v.reason)
+            elif c.verdict != "block" or c.reason != v.reason:
+                mark(c, verdict="block", reason=v.reason)
+            continue
+        if c.status == "proposed":
             continue
         if BAR.fails(c) or extra_rules(c):
             continue
@@ -360,14 +368,14 @@ def run(store, router=None, days: float = 3, dry_run: bool = False, config_dir: 
     rows = [r for r in heavy.fill(store, rows, "text") if r.get("text") and (r.get("lang") or "en") == "en"]
     ids = [r["id"] for r in rows]
     attributed: dict[int, list[str]] = defaultdict(list)
-    loaded: set[str] = set()
+    loaded_tags: list[str] = []
     for start in range(0, len(ids), 400):
         for c in store.rows(select(claims.c.article_id, claims.c.attributed_to, claims.c.loaded_words)
                             .where(claims.c.article_id.in_(ids[start:start + 400]))):
             if c.get("attributed_to"):
                 attributed[c["article_id"]].append(c["attributed_to"])
             for w in c.get("loaded_words") or []:
-                loaded.update(x.lower() for x in str(w).split())
+                loaded_tags.extend(x.lower() for x in str(w).split())
     names_of = {i: person_names(v) for i, v in attributed.items()}
     info = {r["id"]: {"source": N.source_key(r), "story": r.get("story_id"), "when": r.get("published_at"),
                       "anchor": bool(r.get("agency")) or region_of(r.get("outlet"), r.get("url"), r.get("lang")) == "world"}
@@ -375,6 +383,7 @@ def run(store, router=None, days: float = 3, dry_run: bool = False, config_dir: 
     seen = sightings(rows, names_of, {r["outlet"] for r in rows if r.get("outlet")})
     cands = L.load(store, KIND)
     new = record(cands, seen, info, "\n".join(r["text"] for r in rows))
+    loaded = L.loaded_set(loaded_tags)
     fresh, review, used = decide(cands, loaded, router, L.model_due(store, KIND, now), now)
     out = {"articles": len(rows), "sightings": len(seen), "new_evidence": new, "candidates": len(cands),
            "funnel": L.funnel(cands.values(), BAR, extra_rules), "near": L.near(cands.values(), BAR, extra_rules), "proposed_now": [c.key for c in fresh],

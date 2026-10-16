@@ -13,12 +13,16 @@ T0 = dt.datetime(2026, 10, 1, 9)
 TOPICS = [("flood", "बाढ़"), ("drought", "सूखा"), ("earthquake", "भूकंप"), ("cyclone", "चक्रवात")]
 
 
-def story(k, en_word, hi_word, day=0, extra_hi=""):
+def story(k, en_word, hi_word, day=0, extra_hi="", aligned=True):
+    """Two English and two Hindi reports of one story; with `aligned` their sentences share a number (40), so they
+    report the same thing."""
     when = T0 + dt.timedelta(days=day)
+    n_hi = "40" if aligned else "75"
     en = [{"source": f"owner:e{k}{i}", "when": when,
-           "text": f"Officials said the {en_word} hit villages and the {en_word} relief camps opened"} for i in range(2)]
+           "text": f"Officials said the {en_word} hit 40 villages and the {en_word} relief camps opened."} for i in range(2)]
     hi = [{"source": f"owner:h{k}{i}", "when": when,
-           "text": f"अधिकारियों ने कहा कि {hi_word} से गांव प्रभावित हुए और {hi_word} राहत शिविर खुले {extra_hi}"} for i in range(2)]
+           "text": f"अधिकारियों ने कहा कि {hi_word} से {n_hi} गांव प्रभावित हुए और {hi_word} राहत शिविर खुले {extra_hi}।"}
+          for i in range(2)]
     return {"en": en, "hi": hi}
 
 
@@ -57,12 +61,25 @@ def accumulate(runs=3):
     return cands, partners
 
 
-def test_evidence_adds_up_over_runs_and_a_clean_pair_is_learned():
+def test_words_that_only_share_a_story_are_not_paired():
+    # the replay's "rolls = ज्ञानेश": same stories, but no Hindi and English sentence reporting the same thing
+    stories = {k: story(k, en, hi, aligned=False) for k, (en, hi) in enumerate(TOPICS * 2)}
+    assert G.pairs(stories)[0] == []
+
+
+def test_evidence_adds_up_and_a_clean_pair_waits_for_the_owner_for_now():
     cands, partners = accumulate()
     c = cands["flood = बाढ़"]
     assert G.BAR.fails(c) == [] and G.extra_rules(c) == []
     learned, proposed = G.decide(cands, partners=partners)
-    assert "flood = बाढ़" in {x.key for x in learned} and c.status == "learned"
+    assert learned == [] and c.status == "proposed" and c.reason == G.CLEAN_PROPOSAL
+
+
+def test_with_auto_learning_on_a_clean_pair_is_learned(monkeypatch):
+    monkeypatch.setattr(G, "AUTO_LEARN", True)
+    cands, partners = accumulate()
+    learned, _ = G.decide(cands, partners=partners)
+    assert "flood = बाढ़" in {x.key for x in learned} and cands["flood = बाढ़"].status == "learned"
 
 
 def test_a_competing_rendering_goes_to_the_owner_not_into_translations():
@@ -99,8 +116,16 @@ def test_the_file_keeps_the_owners_edits_and_has_no_article_text(tmp_path):
     path = tmp_path / "glossary_learned.yaml"
     G.write(path, cands, dt.date(2026, 10, 7))
     doc = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert {"en": "flood", "hi": "बाढ़"}.items() <= doc["terms"][[t["en"] for t in doc["terms"]].index("flood")].items()
+    assert doc["terms"] == [] and "flood" in [p["en"] for p in doc["proposed"]]
     assert "villages" not in path.read_text(encoding="utf-8")
+    # the owner approves it: moves the line from proposed: to terms:
+    doc["terms"] = [p for p in doc["proposed"] if p["en"] == "flood"]
+    path.write_text(yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8")
+    G.decide(cands, partners=partners, approved={"flood = बाढ़"})
+    G.write(path, cands, dt.date(2026, 10, 7))
+    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert cands["flood = बाढ़"].status == "learned" and [t["en"] for t in doc["terms"]] == ["flood"]
+    assert "flood" not in [p["en"] for p in doc["proposed"] or []]
     # the owner refuses one: next write drops it
     doc["rejected"] = ["flood"]
     path.write_text(yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8")

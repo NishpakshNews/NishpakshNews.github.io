@@ -287,3 +287,14 @@ def near(cands, bar: Bar, extra=None, n: int = 15) -> list[dict]:
         out.append({"key": c.key, "sources": len(c.sources), "stories": len(c.stories), "days": len(c.days),
                     "status": c.status, "stops_at": why[0] if why else "", "reason": c.reason})
     return out
+
+
+LOADED_MIN_TAGS = 3     # readings that must tag a word as loaded before the learners treat it so
+
+
+def loaded_set(tags) -> set[str]:
+    """Words readings tagged as loaded at least LOADED_MIN_TAGS times: one quirky reading tagging "relief" or
+    "detained" must not block a neutral word for good (the replay of Oct 16 2026)."""
+    from collections import Counter
+    c = Counter(tags)
+    return {w for w, n in c.items() if n >= LOADED_MIN_TAGS}

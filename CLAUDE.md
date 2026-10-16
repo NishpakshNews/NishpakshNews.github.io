@@ -1387,18 +1387,32 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   `learn_glossary.py`, `config/glossary_learned.yaml`).** Evidence only from Hindi and English OUTLETS on the same
   stories, never our own translations (a repeated mistranslation would look like evidence). Per story with 2+
   independent English and 2+ independent Hindi sources: English lower-case words 2+ English sources used, Hindi words
-  2+ Hindi sources used that the name registry does not know; stop words out. Across the window's stories: a pair in
-  2+ stories, Dice >= 0.6, each the other's single best partner, no tie, neither in over a quarter of the stories
+  2+ Hindi sources used that the name registry does not know; stop words out. A pair counts in a story only when the
+  two words stand in an English and a Hindi SENTENCE that share a number (10 or more, by value, any script): story-
+  level pairing paired words that merely share a story ("rolls = ज्ञानेश", "shipping = ईरान" in the first replay, Oct
+  16 2026; that memory, kind "glossary", is deleted; the aligned memory is kind "glossary2"). Across the window's
+  stories: a pair in 2+ stories, Dice >= 0.6, each the other's single best partner, no tie, neither in over a quarter of the stories
   (with 8+ stories). Such pairs add their stories to memory (`learn_candidates`, kind "glossary"). Bar: 2+ English
   and 2+ Hindi independent sources, 3+ stories, 3+ days, no day over half. Devil's advocate, CODE ONLY (no model):
   blocks a loaded English word, a fidelity qualifier, a Hindi dispute/insult cue, the owner's `rejected:`; sends to
   the OWNER (`proposed:`, not binding) a competing rendering (another Hindi word with Dice >= 0.6 for the same English
   word), unstable evidence (fails without its best day and best source), a Hindi word already bound to another English
-  word. Otherwise LEARNED automatically (at most 5 a run) into `terms:`. `fidelity.terms_in` uses hand-written terms
+  word. Clean pairs are PROPOSED too for now (`AUTO_LEARN = False`, Oct 16 2026: the owner sees what the aligned rule
+  learns first; True binds clean pairs automatically, at most 5 a run, into `terms:`). `fidelity.terms_in` uses hand-written terms
   first, then learned ones (`all_terms`; a hand-written English word always wins); learned terms do NOT change
   `hindi.cache_version` (no re-translation bill). The owner approves a proposal by moving its line to `terms:`, refuses
   with `rejected:` (also drops a learned term). The file is rewritten each run from memory plus the owner's edits;
   counts only, no article text. Logged "glossary candidates: {funnel}". Tests: `tests/test_learn_glossary.py`.
+- **The learners replayed on stored data (Oct 16 2026, session 12; `tools/audit.learners_report`, dry run over the
+  14 days of retained text, memory empty, no model).** Titles: 53 sightings, 28 words; most stopped by the one-person
+  rule ("Sabha" before Rahul Gandhi: "Leader of Opposition in the Lok Sabha Rahul Gandhi"), "Justices" and "Answers"
+  still short of days / an anchor; nothing proposed. Synonyms: 16 sightings in 13,022 merged statements (13 pairs),
+  most blocked by evidence against ("remark / statement", "raid / search" stand in one statement); the signal is rare,
+  not the bar. Glossary (story-level, before the fix): 309 pairs, real ones ("arrested = गिरफ्तार", "complaint =
+  शिकायत", "flight = विमान", "hearing = सुनवाई") beside junk from shared stories; fixed by sentence alignment and
+  proposals only. Changes from it: a word tagged loaded counts only after 3+ readings tagged it (`learning.loaded_set`:
+  one reading tagged "relief" and "detained"); a title's one-person rule needs 5+ sightings, and a block from shares of
+  the evidence is re-judged as evidence grows (only the never list and a loaded word block a title for good).
 - **Open (Oct 16 2026):** `tests/test_express_db.py::test_nothing_is_embedded_while_the_pacing_curve_has_given_the_slice_out`
   fails at some hours of the day (failed at ~05:30 UTC with and without the session 9 changes, passed at 04:xx).
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:

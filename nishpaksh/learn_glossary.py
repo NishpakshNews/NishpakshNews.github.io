@@ -45,7 +45,8 @@ from . import learning as L
 log = logging.getLogger(__name__)
 
 FILE = "glossary_learned.yaml"
-KIND = "glossary"
+KIND = "glossary2"          # sentence-aligned evidence (Oct 16 2026); "glossary" rows held story-level pairs: removed
+LEGACY_KINDS = ("glossary",)
 BAR = L.Bar(sources=4, stories=3, days=3, max_day_share=0.5)
 MIN_SIDE_SOURCES = 2        # per language
 MIN_STORY_SOURCES = 2       # independent sources of one language in one story
@@ -53,6 +54,11 @@ MIN_PAIR_STORIES = 2        # stories the pair shares within the window
 DICE = 0.6
 MAX_SHARE = 0.25            # of the window's stories: commoner words go with everything
 MAX_NEW = 5
+# Proposals only, for now (Oct 16 2026): the first replay on 14 days of stored stories showed story-level pairing
+# learning "rolls = ज्ञानेश" (a name) and proposing "shipping = ईरान". Sentence alignment fixes the signal; until the
+# owner has seen what it learns, clean pairs wait in `proposed:` too. Set True to bind clean pairs automatically.
+AUTO_LEARN = False
+CLEAN_PROPOSAL = "passed the bar and the devil's advocate: waiting for the owner"
 
 HEADER = """# English-Hindi terms learned from the outlets by nishpaksh/learn_glossary.py (Oct 16 2026). Evidence: Hindi
 # and English outlets covering the same stories, never our own translations. Hand-written terms in glossary.yaml
@@ -115,26 +121,69 @@ def story_words(arts: list[dict], lang: str, names=None) -> dict[str, set[str]]:
     return {w: s for w, s in by.items() if len(s) >= MIN_STORY_SOURCES}
 
 
+MAX_SENTENCES = 300         # per language per story
+
+
+def _sentence_numbers(text: str) -> set[str]:
+    """The numbers a sentence reports, by value in either script; small ones (under 10) say too little to align."""
+    from .fidelity import numbers
+    out = set()
+    for v in numbers(text):
+        try:
+            if abs(float(v)) >= 10:
+                out.add(v)
+        except ValueError:
+            continue
+    return out
+
+
+def aligned_pairs(en_arts: list[dict], hi_arts: list[dict], en_words: set[str], hi_words: set[str]) -> set:
+    """(English word, Hindi word) pairs that stand in an English and a Hindi sentence of one story sharing a number
+    (by value, any script): the two sentences report the same thing, so their words may translate each other."""
+    from .fidelity import sentences
+    def sents(arts, words, rx, stop):
+        out = []
+        for a in arts:
+            for s in sentences(a.get("text") or "")[:MAX_SENTENCES]:
+                nums = _sentence_numbers(s)
+                if nums:
+                    ws = (set(rx.findall(s)) - stop) & words
+                    if ws:
+                        out.append((nums, ws))
+        return out[:MAX_SENTENCES]
+    en_s = sents(en_arts, en_words, _EN_WORD, EN_STOP)
+    hi_s = sents(hi_arts, hi_words, _HI_WORD, HI_STOP)
+    out = set()
+    for en_nums, en_ws in en_s:
+        for hi_nums, hi_ws in hi_s:
+            if en_nums & hi_nums:
+                out.update((e, h) for e in en_ws for h in hi_ws)
+    return out
+
+
 def pairs(stories: dict, names=None) -> tuple[list[dict], dict]:
     """From {story id: {"en": [articles], "hi": [articles]}} (each article: source, text, when): the pairs that
     pass within this window, as [{en, hi, stories: {story: (en sources, hi sources, when)}}], and {English word:
     {Hindi partner: Dice}} (for competing renderings)."""
-    per_story = {}
+    per_story, aligned = {}, {}
     for sid, s in stories.items():
         en, hi = story_words(s.get("en") or [], "en"), story_words(s.get("hi") or [], "hi", names)
         if en and hi:
             when = min((a.get("when") for a in (s.get("en") or []) + (s.get("hi") or []) if a.get("when")), default=None)
             per_story[sid] = (en, hi, when)
+            aligned[sid] = aligned_pairs(s.get("en") or [], s.get("hi") or [], set(en), set(hi))
     n = len(per_story)
     if not n:
         return [], {}
     en_count, hi_count, both = Counter(), Counter(), Counter()
-    for en, hi, _ in per_story.values():
+    for sid, (en, hi, _) in per_story.items():
         en_count.update(list(en))
         hi_count.update(list(hi))
-        for e in en:
-            for h in hi:
-                both[(e, h)] += 1
+        # a pair counts in a story only when the two words stand in a Hindi and an English sentence that report the
+        # same thing (they share a number): words that merely share a story ("rolls" / "ज्ञानेश", "shipping" /
+        # "ईरान" in the replay of Oct 16 2026) are not translations of each other
+        for pair in aligned[sid]:
+            both[pair] += 1
     common = lambda c, w: c[w] / n > MAX_SHARE and n >= 8          # with few stories every word looks common
     best_hi: dict[str, tuple[float, str]] = {}
     best_en: dict[str, tuple[float, str]] = {}
@@ -156,7 +205,7 @@ def pairs(stories: dict, names=None) -> tuple[list[dict], dict]:
         if ties:
             continue                                     # two equally good partners teach nothing
         st = {sid: (sorted(per_story[sid][0][e]), sorted(per_story[sid][1][h]), per_story[sid][2])
-              for sid in per_story if e in per_story[sid][0] and h in per_story[sid][1]}
+              for sid in per_story if (e, h) in aligned[sid]}
         out.append({"en": e, "hi": h, "stories": st})
     return out, partners
 
@@ -264,6 +313,11 @@ def decide(cands: dict, loaded=frozenset(), partners=None, bound=None, struck=fr
                 mark(c, status="proposed", verdict="hold", reason=v.reason)
                 proposed.append(c)
             continue
+        if not AUTO_LEARN:
+            if c.status != "proposed":
+                mark(c, status="proposed", verdict="clear", reason=CLEAN_PROPOSAL)
+                proposed.append(c)
+            continue
         if len(learned) >= MAX_NEW:
             continue
         mark(c, status="learned", verdict="clear", reason="passed the bar and the devil's advocate")
@@ -306,6 +360,16 @@ def write(path: Path, cands: dict, today: dt.date) -> None:
 
 # -- the run -------------------------------------------------------------------------------------------------------
 
+def _drop_legacy(store) -> None:
+    """The first hours' memory paired words that merely shared a story; it is not evidence under the aligned rule."""
+    from sqlalchemy import delete
+    from .db import learn_candidates as t
+    try:
+        store.exec(delete(t).where(t.c.kind.in_(LEGACY_KINDS)))
+    except Exception as e:  # noqa: BLE001
+        log.info("glossary: legacy rows not removed (%s)", str(e)[:80])
+
+
 def run(store, days: float = 3, dry_run: bool = False, path: Path | None = None) -> dict:
     from . import fidelity, heavy, names as N
     from .config import CONFIG_DIR
@@ -325,13 +389,15 @@ def run(store, days: float = 3, dry_run: bool = False, path: Path | None = None)
     stories = {sid: s for sid, s in stories.items()
                if len({a["source"] for a in s["en"] if a["source"]}) >= MIN_STORY_SOURCES
                and len({a["source"] for a in s["hi"] if a["source"]}) >= MIN_STORY_SOURCES}
-    loaded: set[str] = set()
+    loaded_tags: list[str] = []
     ids = [r["id"] for r in rows]
     for start in range(0, len(ids), 400):
         for c in store.rows(select(claims.c.loaded_words).where(claims.c.article_id.in_(ids[start:start + 400]))):
             for w in c.get("loaded_words") or []:
-                loaded.update(x.lower() for x in str(w).split())
+                loaded_tags.extend(x.lower() for x in str(w).split())
     found, partners = pairs(stories, N.load(store))
+    if not dry_run:
+        _drop_legacy(store)
     cands = L.load(store, KIND)
     new = record(cands, found)
     doc = _doc(path) if path.exists() else {}
@@ -339,6 +405,7 @@ def run(store, days: float = 3, dry_run: bool = False, path: Path | None = None)
     hand = {en.lower() for en, _ in fidelity.glossary()["terms"]}
     bound = {c.key.split(" = ", 1)[1]: c.key.split(" = ", 1)[0] for c in cands.values() if c.status == "learned"}
     approved = {f"{t['en']} = {t['hi']}" for t in doc.get("terms") or [] if isinstance(t, dict)}
+    loaded = L.loaded_set(loaded_tags)
     learned, proposed = decide(cands, loaded, partners, bound, struck, hand, now, approved)
     out = {"articles": len(rows), "mixed_stories": len(stories), "pairs_in_window": len(found), "new_evidence": new,
            "candidates": len(cands), "funnel": L.funnel(cands.values(), BAR, extra_rules), "near": L.near(cands.values(), BAR, extra_rules),
