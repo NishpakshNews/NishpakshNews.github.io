@@ -3691,7 +3691,7 @@ def test_flow_stats_count_what_code_can_still_see():
             {"text": "Asha Rao asked for a CBI inquiry.", "ids": [6]},
             {"text": " ".join(["word"] * 50) + ".", "ids": [1]}]
     s = stats([para], by)
-    assert s == {"joins": 3, "alike": 1, "long": 1, "unlinked": 2}, s
+    assert s == {"joins": 3, "alike": 1, "long": 1, "unlinked": 2, "parallel": 0, "parallel_apart": 0}, s
 
 
 def test_the_article_carries_the_flow_counts_and_the_links_reach_the_writer():

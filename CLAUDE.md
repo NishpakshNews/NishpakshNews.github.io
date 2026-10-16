@@ -1350,8 +1350,7 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   figures or names ("12:30 PM" had added 12, 30 and a name "PM", the Ladakh pair): two different times = different
   facts; a time only one line has is a detail, so code never lets the untimed line stand for both and asks the model
   whether the timed line covers the other. These also reach `narrative._drop_repeats`, the last net on the written
-  article. Joining parallel sentences ("Modi will inaugurate X, Y and Z") is NOT built: the owner's decision, after
-  the plan. Tests: `tests/test_relate_forms.py`.
+  article. Joining parallel sentences ("Modi will inaugurate X, Y and Z"): built in context plan session 7 (below). Tests: `tests/test_relate_forms.py`.
 - **The learners' base and the titles learner (Oct 16 2026, session 9 of the translation/learning plan; `learning.py`,
   `learn.py`, `config/devils_advocate.yaml`, `.github/scripts/learn.sh`).** The learned files stayed empty because each
   run counted from scratch inside a 3-day window. MEMORY: `learn_candidates` in the NEWSROOM (never Supabase, never
@@ -1502,6 +1501,20 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   in `claims.rel["quote"]` (newsroom only, never published); readcheck counts by_quote / by_anchors / unsourced per run
   (the run log's "readcheck:" line) and the audit's reading report gives `found_by` per language. Readings stored
   before this have no quote, so coverage shows as new articles are read. Tests: test_fidelity, test_readcheck.
+- **Parallel statements joined (Oct 16 2026, context plan session 7; `sentences.parallel_groups`, `keep_together`,
+  `link_line`, `narrative._with_parts`).** Owner: "If Modi has said it, they should be joined" (five "Modi will
+  inaugurate ..." sentences in a row). Within ONE planned paragraph, statements with the same actor (frame.who: shared
+  name words, title words ignored, else the same words), the same action (`frames.action_key`), speaker, negation and
+  time, each about a different thing (frame.what), are a group (2 to MAX_PARALLEL = 6). Not grouped: speech actions
+  (say, allege, deny, ... : one speaker's points are the same-speaker LINK), disputed or false statements, updates,
+  partners (contradiction, response). The plan puts a group's members side by side (at the first one's place; the
+  lead stays first); each later member's LINK says PARALLEL: ONE sentence, actor and verb once, the things listed,
+  in parts one per statement when statuses differ. COLOUR: each part keeps its statement's colour; `_with_parts`
+  accepts up to MAX_PARALLEL parts for a sentence whose ids are one group (else MAX_PARTS = 3); every part is still
+  checked on its own. Hindi pages keep one colour per sentence (the weakest), as for all parts. The marks are copies
+  on the run's `by_id` (never written to the payload); the fill pass reads them from `by_id`. `sentences.stats` counts
+  `parallel` groups and `parallel_apart` (kept in separate sentences) in the page's flow stats. WRITER_VERSION not
+  bumped: pages are not all rewritten; new and rewritten pages get it. Tests: `tests/test_parallel.py`.
 - **Open (Oct 16 2026):** `tests/test_express_db.py::test_nothing_is_embedded_while_the_pacing_curve_has_given_the_slice_out`
   fails at some hours of the day (failed at ~05:30 UTC with and without the session 9 changes, passed at 04:xx).
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:

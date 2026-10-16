@@ -1,7 +1,8 @@
 """Grammar of the sentence and of the join between sentences (owner, Oct 10 2026, phase 4 of "grammar, not rules").
 
 Phase 3 fixed WHICH statements share a paragraph and how a paragraph opens. What was left is inside the paragraph:
-one claim per sentence, a repeated subject, and how a sentence connects to the one before it. Same direction as
+one claim per sentence, a repeated subject, and how a sentence connects to the one before it. (Oct 16 2026, owner:
+PARALLEL statements, one actor doing one thing to several things, are joined into one sentence: parallel_groups.) Same direction as
 before: the writer is GIVEN the connection, code APPLIES the safe fixes, and nothing is a new prohibition that
 drops a sentence. No model in this module.
 
@@ -63,6 +64,91 @@ def _when(i: dict) -> str:
     return narrative.english_when(i.get("time") or {})
 
 
+# ------------------------------------------------------------------ parallel statements (owner, Oct 16 2026)
+# "Modi will inaugurate a petroglyph park." "Modi will inaugurate 40 water bodies." ... five sentences in a row read
+# like a list cut into lines. The owner: "they should be joined". Statements of ONE paragraph with the same actor,
+# the same action, the same stance and the same time, each about a different thing, are PARALLEL: the writer is
+# told to write them as one sentence that names the actor and the verb once and lists the things. Each keeps its own
+# colour: when their statuses differ the sentence is written in parts, one per statement (narrative._with_parts
+# allows MAX_PARALLEL parts for one parallel group). Speech ("said", "alleged") is not here: one speaker's points
+# are already carried by one "said" (the same-speaker LINK).
+MAX_PARALLEL = 6
+SPEECH_ACTIONS = {"say", "claim", "alleg", "deni", "deny", "state", "tell", "told", "add", "note", "accus", "assert",
+                  "repli", "respond", "argu", "stress", "emphasis", "urg", "warn", "ask", "call"}
+
+
+def _who(i: dict) -> tuple[frozenset, str]:
+    who = str((i.get("frame") or {}).get("who") or "").strip()
+    from . import titles
+    skip = {w.lower() for w in titles.title_words()} | {"the", "a", "an"}
+    names = frozenset(w.lower() for w in re.findall(r"\b[A-Z][\w'-]+", who) if w.lower() not in skip)
+    return names, re.sub(r"\W+", " ", who.lower()).strip()
+
+
+def _same_who(a: dict, b: dict) -> bool:
+    (na, wa), (nb, wb) = _who(a), _who(b)
+    if not wa or not wb:
+        return False
+    return bool(na & nb) if na and nb else wa == wb
+
+
+def _parallel_key(i: dict) -> tuple | None:
+    from .frames import action_key, words
+    f = i.get("frame") or {}
+    act = action_key(f.get("action"))
+    if not act or not f.get("who") or not str(f.get("what") or "").strip():
+        return None
+    if set(act.split()) & SPEECH_ACTIONS:
+        return None
+    if i.get("verdict") in ("disputed", "false") or i.get("update_of") or i.get("updated_by") or i.get("adds_to"):
+        return None
+    return (act, _speaker(i) or "", bool(f.get("negated")), _when(i))
+
+
+def parallel_groups(plan_: list, by_id: dict) -> dict[int, list[int]]:
+    """{statement id: the ids of its parallel group, in plan order} for the statements of each paragraph that share
+    actor, action, speaker, negation and time and differ in what they are about (groups of 2 to MAX_PARALLEL)."""
+    from . import plan
+    from .frames import words
+    out: dict[int, list[int]] = {}
+    for p in plan_:
+        groups: list[list[dict]] = []
+        for x in p.ids:
+            i = by_id.get(x)
+            k = _parallel_key(i) if i else None
+            if k is None:
+                continue
+            for g in groups:
+                h = g[0]
+                if (_parallel_key(h) == k and _same_who(h, i) and len(g) < MAX_PARALLEL
+                        and not any(plan._links(m) & {i["id"]} or plan._links(i) & {m["id"]} for m in g)
+                        and all(words((m.get("frame") or {}).get("what")) != words((i.get("frame") or {}).get("what"))
+                                for m in g)):
+                    g.append(i)
+                    break
+            else:
+                groups.append([i])
+        for g in groups:
+            if len(g) >= 2:
+                ids = [m["id"] for m in g]
+                for m in ids:
+                    out[m] = ids
+    return out
+
+
+def keep_together(plan_: list, groups: dict[int, list[int]]) -> None:
+    """Each paragraph's parallel statements one after another, at the place of the group's first (in place)."""
+    for p in plan_:
+        new, done = [], set()
+        for x in p.ids:
+            if x in done:
+                continue
+            g = [m for m in groups.get(x, [x]) if m in p.ids] or [x]
+            new += [m for m in g if m not in done]
+            done |= set(g)
+        p.ids = new
+
+
 # ------------------------------------------------------------------ given to the writer
 def link_line(item: dict, prev: dict | None) -> str | None:
     """How `item`'s sentence connects to the statement before it in the paragraph, or None when it starts a new
@@ -74,6 +160,12 @@ def link_line(item: dict, prev: dict | None) -> str | None:
         return f"contrast with #{p}: both versions in ONE sentence, each with whose it is"
     if p in (item.get("responds_to") or []) or item["id"] in (prev.get("responds_to") or []):
         return f"the answer to #{p}: say who answers and to what, in the sentence right after it"
+    if p in (item.get("parallel") or []):
+        g = ", ".join(f"#{x}" for x in item["parallel"])
+        return (f"PARALLEL with #{p} ({g}: the same actor doing the same thing to different things): write them as "
+                "ONE sentence that names the actor and the verb once and lists each one's part (\"Modi will "
+                "inaugurate a park, 40 water bodies and a hydro project\"); if their statuses differ, write it in "
+                "parts, one per statement")
     sp, psp = _speaker(item), _speaker(prev)
     if sp and sp == psp:
         return (f"same speaker as #{p}: carry both points with ONE \"said\", or end this one with \", X said.\"; "
@@ -295,6 +387,16 @@ def stats(paragraphs: list, by_id: dict) -> dict:
     partner statement)."""
     from . import plan
     alike = long_ = unlinked = n = 0
+    # parallel groups the writer kept apart (counted: a high number says the PARALLEL lines are not holding)
+    sent_of: dict[int, set[int]] = {}
+    k_ = 0
+    for para in paragraphs:
+        for s_ in para:
+            k_ += 1
+            for x in s_.get("ids") or []:
+                sent_of.setdefault(x, set()).add(k_)
+    groups = {tuple(by_id[x]["parallel"]) for x in by_id if by_id[x].get("parallel")}
+    apart = sum(1 for g in groups if len(set().union(*[sent_of.get(x, set()) for x in g])) > 1)
     for para in paragraphs:
         texts = [str(s.get("text") or "") for s in para]
         long_ += sum(1 for t in texts if len(t.split()) > LONG)
@@ -310,4 +412,5 @@ def stats(paragraphs: list, by_id: dict) -> dict:
                     or any(plan._links(by_id[i]) & set(ia) for i in ib)):
                 continue
             unlinked += 1
-    return {"joins": n, "alike": alike, "long": long_, "unlinked": unlinked}
+    return {"joins": n, "alike": alike, "long": long_, "unlinked": unlinked, "parallel": len(groups),
+            "parallel_apart": apart}

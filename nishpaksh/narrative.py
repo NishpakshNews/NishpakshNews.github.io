@@ -104,7 +104,8 @@ Write only the sections that have statements (and "news"); skip the others.
 A disagreement is written where its subject is, in the same paragraph as the rest of that subject, with
 both versions and whose they are; never collected into a paragraph or section about differing accounts.
 Never join two statements in one sentence unless they are about the same person, body, place or
-thing. Say each fact ONCE: if two statements say the same thing, write it
+thing. Statements marked PARALLEL (one actor doing the same thing to several things) ARE joined: one sentence
+that names the actor and the verb once and lists the things, never one sentence each. Say each fact ONCE: if two statements say the same thing, write it
 once and cite both ids. Length: about {length} sentences, as the material allows; do not pad.
 
 Write as ONE author telling the story to a reader, not as a summary of reports. The page colours every
@@ -173,8 +174,8 @@ No headings, no bullet points.
 Never name the same person, place or body twice in one sentence: the second time write "the river",
 "he", "it" or the short name. Never use any of these words: {banned}
 PARTS: when one sentence joins statements with DIFFERENT statuses (an ESTABLISHED fact and a detail
-only ONE OUTLET reports, say), write it in two or three parts, the main fact first, each part with only
-its own ids, split at a comma or "and": {{"parts": [{{"text": "Twelve crew members were injured in the
+only ONE OUTLET reports, say), write it in two or three parts (for PARALLEL statements, one part per statement),
+the main fact first, each part with only its own ids, split at a comma or "and": {{"parts": [{{"text": "Twelve crew members were injured in the
 attack,", "ids": [4]}}, {{"text": "11 of them Indian nationals.", "ids": [9]}}]}}. Every number and name
 in a part must come from that part's own statements. Otherwise write a sentence as one piece.
 Every sentence lists in "ids" every statement it uses. Use EVERY statement at least once, including
@@ -199,8 +200,9 @@ do not introduce again a person it already introduced.
 write \"Kant replied.\"); never attribute to a bare \"the leaders\" / \"officials\" when the statements say who; a paragraph
 is about one thing, so write no sentence that is not about its subject (a SHAPE on a statement is the form to write it in, a LINK says how its sentence connects to the one before): only the statements given; no outlet named as a source; no number or speaker the
 statements do not have; allegations name who makes them; a claim and the response to it together;
-disputes give both versions and whose they are; a sentence joining statements of different statuses is
-written in two or three "parts", each with only its own ids (as before); a speaker is named once, then the surname or role
+disputes give both versions and whose they are; statements marked PARALLEL are joined in ONE sentence (actor and
+verb once, the things listed); a sentence joining statements of different statuses is
+written in "parts" (two or three, one per statement for PARALLEL ones), each with only its own ids (as before); a speaker is named once, then the surname or role
 (he/she only for people marked so), never "X also stated ... X further stated", the verb the statements use or "said";
 write as one author: never "according to reports",
 "reportedly" or "one report said" (the page colours each sentence); no cause words unless a statement has them; nothing loaded: {banned}.
@@ -805,7 +807,10 @@ def _part_ok(part: dict, ids: list[int], by_id: dict) -> bool:
 
 def _with_parts(out: dict, drafted: dict, by_id: dict) -> dict:
     parts = drafted.get("parts") if isinstance(drafted, dict) else None
-    if not parts or not (2 <= len(parts) <= MAX_PARTS):
+    # a joined parallel group may have one part per statement (sentences.MAX_PARALLEL)
+    group = set((by_id.get(out["ids"][0]) or {}).get("parallel") or []) if out.get("ids") else set()
+    most = sentences.MAX_PARALLEL if group and set(out["ids"]) <= group else MAX_PARTS
+    if not parts or not (2 <= len(parts) <= most):
         return out
     checked = []
     for part in parts:
@@ -1583,6 +1588,12 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
 
     # the paragraph plan: code decides which statements share a paragraph, in what order, how each opens (plan.py)
     pl = planning.build(items + background, sec)
+    # parallel statements (one actor, one action, several things) side by side and marked, to be joined (owner,
+    # Oct 16 2026); the marks are copies on this run's items only
+    groups = sentences.parallel_groups(pl, by_id)
+    sentences.keep_together(pl, groups)
+    for x, g in groups.items():
+        by_id[x] = dict(by_id[x], parallel=g)
     at = {i: n for n, p_ in enumerate(pl) for i in p_.ids}
     before = {b: a for p_ in pl for a, b in zip(p_.ids, p_.ids[1:])}     # the statement before, in its paragraph
 
@@ -1637,8 +1648,8 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
         prompt = FILL_PROMPT.format(
             now=clock.now_line(), banned=", ".join(sorted(banned)) or "(none)", article=_article_with_sections(drafted), people=_people(items),
             keys=", ".join(k for k in group if k == "news" or any(sec.get(i["id"]) == k for i in mine)),
-            statements="\n".join(f"[{sec[i['id']]}] " + _statement_line(i) + f" | paragraph: {at[i['id']] + 1}"
-                                 + (f" | LINK: {how}" if (how := sentences.link_line(i, by_id.get(before.get(i['id'])))) else "")
+            statements="\n".join(f"[{sec[i['id']]}] " + _statement_line(by_id[i["id"]]) + f" | paragraph: {at[i['id']] + 1}"
+                                 + (f" | LINK: {how}" if (how := sentences.link_line(by_id[i["id"]], by_id.get(before.get(i['id'])))) else "")
                                  for i in mine),
             failed="\n".join(f'- "{str(f["sentence"].get("text") or "")}" | problem: {f["reason"]}' for f in bad) or "(none)")
         try:
