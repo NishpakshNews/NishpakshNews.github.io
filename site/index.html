@@ -4627,6 +4627,14 @@ fillSheet = function (row, card) { fillSheetBase(row, card); if (!row) clearCRai
    wherever the card's picture is at that moment, so nothing jumps. Without a focus a picture is centred, as before. */
 const FOCUS_Y_CARD = 1 / 3, FOCUS_Y_ART = 1 / 3, DRIFT_MS = 6000;   // the eyes a third of the way down (owner, Oct 15 2026)
 const eyesOf = f => f.length > 3 ? f[3] : f[1] - f[2] * 0.1;           // older feeds have no eye line: just above the face's centre
+/* Tall photos (owner, Oct 16 2026: "a vertically large photo of the complete human, a cricketer taking a shot"). When
+   neither a face nor a body was found (a helmet, a side-on stance), the picture used to be centred: on a tall photo the
+   centre is the chest, so the head was cut off on the card and in the article. A tall photo with no focus is now framed
+   from the top instead: its eye line is taken as TALL_EYES of its height, where a full-length shot's head almost always is. */
+const TALL = 1.05, TALL_EYES = 0.12;          // taller than wide by 5%; the eye line 12% down
+function tallGuess(iw, ih) {
+  return iw && ih && ih > iw * TALL ? {fc: [[0.5, TALL_EYES + 0.03, 0.08, TALL_EYES]], ar: iw / ih, guess: true} : null;
+}
 function focusOf(id) {
   const c = (pool || []).find(x => String(x.id) === String(id)) || (cards || []).find(x => String(x.id) === String(id));
   const im = c && c.img;
@@ -4668,7 +4676,13 @@ function framings(fo, W, H, ty, zoom) {
   return {iw, ih, z, pts: pts.map(([x, y]) => [slide(W, iw, x, W / 2), slide(H, ih, y, H * ty)])};
 }
 function placeCardPic(cardEl, step) {
-  const pic = cardEl && cardEl.querySelector(".pic"), fo = cardEl && focusOf(cardEl.dataset.id);
+  const pic = cardEl && cardEl.querySelector(".pic");
+  let fo = cardEl && focusOf(cardEl.dataset.id);
+  if (pic && !fo) {                              // no focus: a tall photo is framed from the top (once its shape is known)
+    const im = pic.querySelector("img.sharp");
+    if (im && !im.naturalWidth) { if (!im.dataset.tallWait) { im.dataset.tallWait = "1"; im.addEventListener("load", () => placeCardPic(cardEl, 0), {once: true}); } return; }
+    fo = im && tallGuess(im.naturalWidth, im.naturalHeight);
+  }
   if (!pic || !fo) return;
   const W = pic.clientWidth, H = pic.clientHeight;
   if (!W || !H) return;
@@ -4749,7 +4763,7 @@ if ("DeviceOrientationEvent" in window && !REDUCED.matches) {
 fitPic = function () {
   const imgs = [...$("hpic").querySelectorAll("img")], img = imgs[0], W = hbox.getBoundingClientRect().width;
   if (!img || !img.naturalWidth || !W) return null;
-  const iw = img.naturalWidth, ih = img.naturalHeight, fo = focusOf(openId || $("hpic").dataset.sid);
+  const iw = img.naturalWidth, ih = img.naturalHeight, fo = focusOf(openId || $("hpic").dataset.sid) || tallGuess(iw, ih);
   const fr = fo ? framings({fc: fo.fc, ar: iw / ih}, W, 200, FOCUS_Y_ART, true) : null;
   const s = Math.max(W / iw, 200 / ih) * (fr ? fr.z : 1), w = iw * s, h = ih * s;
   let L = (W - w) / 2, T = (200 - h) / 2;

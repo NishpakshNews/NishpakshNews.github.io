@@ -1180,7 +1180,12 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   frame; pictures whose eyes already sit at or above the line are not zoomed, so wide shots are unchanged). Card: slid by
   object-position at cover size as before, zoomed by `scale(var(--z))` about the point that lands the eyes on the line
   (it joins the blurred copy's 1.15 and the tilt's 1.07; its origin glides with the drift); article: laid out at the
-  zoomed size. `sw.js` np-main-55. Harness (not in the repo): Playwright, `Emulation.setCPUThrottlingRate` 4, rAF gaps,
+  zoomed size. **Tall photos (owner, same evening: by "portrait" he meant a vertically long, full-length photo, e.g. a
+  cricketer playing a shot):** none were in the feed, so tested with stand-ins. With a face or body found they framed
+  correctly; with nothing found (a helmet, a side-on stance: the case such photos hit) the picture was centred, which on
+  a tall photo is the chest, so the head was cut off on the card and in the article. `tallGuess`: a photo more than 5%
+  taller than wide with no focus is framed as if its eye line were `TALL_EYES` (12%) down, i.e. from the top (card: once
+  its image has loaded and its shape is known; article: in `fitPic`). `sw.js` np-main-55. Harness (not in the repo): Playwright, `Emulation.setCPUThrottlingRate` 4, rAF gaps,
   long tasks, a CPU profile and the screencast frames of open / close / refresh.
 
 ## Pipeline (nishpaksh/run.py)
