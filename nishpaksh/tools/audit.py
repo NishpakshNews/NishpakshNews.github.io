@@ -135,6 +135,23 @@ def fidelity_report(store: Store, articles_limit: int = 600) -> dict:
     return out
 
 
+def learners_report(store: Store, days: float = 14) -> dict:
+    """The three learners replayed over the newsroom's retained articles (text is kept 14 days), as if their memory
+    started empty: how many candidates each would see and where the bar or the devil's advocate stops them. Dry run,
+    no model, nothing written: the numbers the bars are set from (session 12)."""
+    from .. import learn, learn_glossary, learn_synonyms
+    out = {}
+    for name, fn in (("titles", lambda: learn.run(store, None, days=days, dry_run=True)),
+                     ("synonyms", lambda: learn_synonyms.run(store, None, days=days, dry_run=True)),
+                     ("glossary", lambda: learn_glossary.run(store, days=days, dry_run=True))):
+        try:
+            out[name] = fn()
+        except Exception as e:  # noqa: BLE001 - one learner failing must not lose the others
+            log.exception("learner replay %s failed", name)
+            out[name] = {"error": f"{type(e).__name__}: {str(e)[:300]}"}
+    return out
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     store = Store(database_url())
@@ -145,6 +162,7 @@ def main() -> None:
                             "latin": (s["hindi"] or {}).get("with_latin"), "alike": s["openings"]["alike"]}
                            for s in rows]
     report["when"] = when_report(store)
+    report["learners"] = learners_report(store)
     try:
         report["fidelity"] = fidelity_report(store)
     except Exception as e:  # noqa: BLE001 - one part failing must not lose the rest of the audit

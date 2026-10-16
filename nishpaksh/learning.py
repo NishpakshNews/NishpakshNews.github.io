@@ -276,3 +276,14 @@ def router_for(store):
     except Exception as e:  # noqa: BLE001 - no model: candidates wait for their look
         log.info("learning: no router (%s)", str(e)[:120])
         return None
+
+
+def near(cands, bar: Bar, extra=None, n: int = 15) -> list[dict]:
+    """The candidates with the most evidence, each with where it stands (its status, the first rule it misses, or
+    the devil's advocate's reason): the readout the bars are judged from."""
+    out = []
+    for c in sorted(cands, key=lambda c: (-len(c.sources), -len(c.days), c.key))[:n]:
+        why = bar.fails(c) or (extra(c) if extra else [])
+        out.append({"key": c.key, "sources": len(c.sources), "stories": len(c.stories), "days": len(c.days),
+                    "status": c.status, "stops_at": why[0] if why else "", "reason": c.reason})
+    return out

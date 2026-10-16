@@ -341,7 +341,7 @@ def run(store, days: float = 3, dry_run: bool = False, path: Path | None = None)
     approved = {f"{t['en']} = {t['hi']}" for t in doc.get("terms") or [] if isinstance(t, dict)}
     learned, proposed = decide(cands, loaded, partners, bound, struck, hand, now, approved)
     out = {"articles": len(rows), "mixed_stories": len(stories), "pairs_in_window": len(found), "new_evidence": new,
-           "candidates": len(cands), "funnel": L.funnel(cands.values(), BAR, extra_rules),
+           "candidates": len(cands), "funnel": L.funnel(cands.values(), BAR, extra_rules), "near": L.near(cands.values(), BAR, extra_rules),
            "learned_now": [c.key for c in learned], "proposed_now": [c.key for c in proposed]}
     if dry_run:
         return out

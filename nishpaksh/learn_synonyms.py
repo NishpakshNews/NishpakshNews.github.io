@@ -423,7 +423,7 @@ def run(store, router=None, days: float = 3, dry_run: bool = False, path: Path |
     fresh, withdrawn, used = decide(cands, loaded, router, L.model_due(store, KIND, now), now,
                                     learned_stems=learned_stems(path) if path.exists() else set())
     out = {"articles": len(arts), "statements": len(by_canon), "new_evidence": new, "candidates": len(cands),
-           "funnel": L.funnel(cands.values(), BAR, extra_rules), "learned_now": [c.key for c in fresh],
+           "funnel": L.funnel(cands.values(), BAR, extra_rules), "near": L.near(cands.values(), BAR, extra_rules), "learned_now": [c.key for c in fresh],
            "withdrawn": [c.key for c in withdrawn], "model_asked": used}
     if dry_run:
         return out
