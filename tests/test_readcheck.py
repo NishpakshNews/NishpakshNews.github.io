@@ -96,3 +96,18 @@ def test_dropping_is_a_switch_off_by_default():
 def test_the_reading_prompt_asks_to_keep_the_small_words():
     from nishpaksh.extract import EXTRACT_PROMPT
     assert "सीधे" in EXTRACT_PROMPT and "Never add one" in EXTRACT_PROMPT
+
+
+def test_every_statement_is_placed_by_its_quote_first_and_counted():
+    e = ex("He said he did not name any party.", "He spoke at length.")
+    e["claims"][0]["quote"] = "राहुल गांधी ने कहा कि उन्होंने अपने"              # the second sentence, copied
+    e["claims"][1]["quote"] = "Rahul Gandhi told the court"                   # translated, not copied: not found
+    got = R.check(e, SRC, "hi", None, None)                                      # no registry: anchors are blind
+    assert got["by_quote"] == 1 and got["unsourced"] == 1 and got["flagged"] == 1
+
+
+def test_the_quote_is_read_and_stored_with_the_statement():
+    from nishpaksh import extract
+    out = extract.normalize_extraction({"signature": "s", "events": [{"id": "e1", "text": "X", "quote": " राहुल ने कहा "}]})
+    assert out["events"][0]["quote"] == "राहुल ने कहा"
+    assert extract._rel(out["events"][0])["quote"] == "राहुल ने कहा"

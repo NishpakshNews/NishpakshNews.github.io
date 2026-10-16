@@ -76,6 +76,13 @@ roles:
   - {id: officer, forms: [Officer], ref: the officer}
   - {id: general, forms: [General, Lieutenant General, Lieutenant-General, Major General, Major-General, Brigadier, Colonel, Major, Captain, Admiral, Air Marshal, Air Chief Marshal, Wing Commander, Squadron Leader, Group Captain, Marshal],
      ref: the officer}
+  # "Captain" by context (owner, Oct 16 2026): an Army or Navy rank above (the fallback), a team's captain in a sports
+  # story, the pilot in command in an aviation story. Each reads as its role only when its words appear.
+  - {id: team_captain, forms: [Captain], ref: the captain,
+     requires_any: [cricket, Cricket, football, Football, hockey, Hockey, kabaddi, Kabaddi, match, matches, innings,
+                    wicket, wickets, World Cup, IPL, ODI, T20, Test series, tournament, squad, BCCI, FIFA, batting, bowling]}
+  - {id: pilot_captain, forms: [Captain], ref: the pilot,
+     requires_any: [pilot, pilots, cockpit, flight, flights, aircraft, airline, airlines, plane, DGCA, Air India, IndiGo]}
   - {id: jawan, forms: [Jawan, Sepoy, Naik, Sergeant], ref: the jawan}
   - {id: ceo, forms: [CEO, Chief Executive Officer], ref: the CEO}
   - {id: chairman, forms: [Chairman, Chairperson, Chair], ref: the chairman}

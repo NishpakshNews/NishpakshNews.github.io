@@ -1,8 +1,10 @@
 """A reading checked against its report (session 7 of the translation/learning plan, Oct 16 2026).
 
 Each statement the reading model wrote from an article (English or Hindi) is compared with the sentence of the article
-it came from (fidelity.check_reading: found by numbers, dates, names and entities only; qualifiers compared in the
-statement's own scope). A statement that lost a small word the report has ("only 45 of 303 stations" read as "45 of
+it came from. EVERY statement (owner, Oct 16 2026: anchors found the sentence for about one in four Hindi statements):
+the reading model copies the first six words of that sentence (`quote`), code finds them word for word in the
+article (fidelity.quoted_window); only when the copy is not there does it fall back to numbers, dates, names and
+entities (fidelity.source_window). Qualifiers are compared in the statement's own scope. A statement that lost a small word the report has ("only 45 of 303 stations" read as "45 of
 303 stations") or added one it lacks ("the only authorized sites" where the report said designated) gets ONE repair:
 all of an article's flagged statements in one call on the quality tier (the Translator key), each shown with its
 source sentence and its problem. The repaired text is taken only when the check then passes and it keeps the
@@ -65,7 +67,8 @@ def _take_call() -> bool:
 
 def problems_of(item: dict, source: str, lang: str, registry=None) -> tuple[str | None, list[F.Problem]]:
     """(the source sentence, the strict problems) of one statement; negation left out for a denial."""
-    win, probs = F.check_reading(item.get("text") or "", source, lang, registry, strict_only=True)
+    win, probs = F.check_reading(item.get("text") or "", source, lang, registry, strict_only=True,
+                                 quote=item.get("quote"))
     if item.get("stance") == "denies":
         probs = [p for p in probs if p.what not in NEGATION]
     return win, probs
@@ -81,11 +84,14 @@ def _describe(p: F.Problem) -> str:
 def check(ex: dict, source: str, lang: str, router=None, registry=None) -> dict:
     """Check every statement of a reading against its article; repair the flagged ones once. Changes `ex` in place;
     returns counts."""
-    out = {"checked": 0, "sourced": 0, "flagged": 0, "repaired": 0, "kept": 0, "dropped": 0}
+    out = {"checked": 0, "sourced": 0, "by_quote": 0, "by_anchors": 0, "unsourced": 0, "flagged": 0, "repaired": 0,
+           "kept": 0, "dropped": 0}
     flagged = []
     for kind in ("events", "claims", "context"):
         for it in ex.get(kind) or []:
             out["checked"] += 1
+            _, how = F.find_source(it.get("text") or "", source, lang, registry, it.get("quote"))
+            out["by_quote" if how == "quote" else "by_anchors" if how == "anchors" else "unsourced"] += 1
             win, probs = problems_of(it, source, lang, registry)
             if win is not None:
                 out["sourced"] += 1

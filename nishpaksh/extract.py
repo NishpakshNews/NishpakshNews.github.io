@@ -46,20 +46,20 @@ Return ONE JSON object with exactly these keys:
 {{
   "signature": "one neutral English sentence naming the core event: who, what, where",
   "events": [
-    {{"id": "e1", "text": "...", "when_text": "...", "start": "YYYY-MM-DDTHH:MM or null",
+    {{"id": "e1", "text": "...", "quote": "...", "when_text": "...", "start": "YYYY-MM-DDTHH:MM or null",
       "end": "YYYY-MM-DDTHH:MM or null", "precision": "exact|hour|part_of_day|day|week|month|unknown",
       "stance": "asserts|attributes|denies", "attributed_to": "...", "evidence": "...", "loaded_words": ["..."],
       "frame": {{"who": "...", "action": "...", "what": "...", "value": "...", "where": "...", "negated": false}}}}
   ],
   "claims": [
-    {{"id": "c1", "text": "...", "stance": "asserts|attributes|denies", "attributed_to": "...",
+    {{"id": "c1", "text": "...", "quote": "...", "stance": "asserts|attributes|denies", "attributed_to": "...",
       "evidence": "...", "loaded_words": ["..."], "frame": {{"who": "...", "action": "...", "what": "...", "value": "...", "where": "...", "negated": false}}}}
   ],
   "relations": [
     {{"from": "e1", "to": "e2", "type": "before|caused", "stance": "asserts|attributes|denies", "attributed_to": "..."}}
   ],
   "context": [
-    {{"id": "x1", "type": "background|related|explanation|reaction|next", "text": "...", "event": "...",
+    {{"id": "x1", "type": "background|related|explanation|reaction|next", "text": "...", "quote": "...", "event": "...",
       "when_text": "...", "start": "YYYY-MM-DDTHH:MM or null", "end": "YYYY-MM-DDTHH:MM or null",
       "precision": "exact|hour|part_of_day|day|week|month|unknown",
       "stance": "asserts|attributes|denies", "attributed_to": "...", "evidence": "...", "loaded_words": ["..."],
@@ -132,7 +132,10 @@ Rules:
    "at least 40"), a date, a place, or a short word ("corrupt", "guilty"); keep words like "about",
    "at least", "nearly" with the number; where = place if given; negated = true only if the item says
    it did NOT happen. Use the article's facts only; empty string when a field does not apply.
-10. Reply with the JSON only.
+10. "quote": the FIRST SIX WORDS of the article sentence the item is read from, copied exactly as the article
+   writes them, in the article's language and script (Hindi stays in Devanagari; do not translate, fix or shorten
+   them). When the item comes from two sentences, the first six words of the first one.
+11. Reply with the JSON only.
 """
 
 
@@ -176,6 +179,7 @@ def normalize_extraction(data: dict) -> dict | None:
             item = {
                 "id": local,
                 "text": str(it["text"]).strip()[:500],
+                "quote": str(it.get("quote") or "").strip()[:200],
                 "stance": it.get("stance") if it.get("stance") in STANCES else "asserts",
                 "attributed_to": str(it.get("attributed_to") or "article")[:200],
                 "evidence": it.get("evidence") if it.get("evidence") in EVIDENCE else "none",
@@ -248,6 +252,8 @@ def _rel(it: dict) -> dict | None:
         rel["refs"] = it["refs"]
     if it.get("refs_open"):
         rel["refs_open"] = it["refs_open"]
+    if it.get("quote"):
+        rel["quote"] = it["quote"]          # the source sentence's first words (newsroom only): the audit's coverage
     return rel or None
 
 

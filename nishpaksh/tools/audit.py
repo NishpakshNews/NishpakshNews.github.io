@@ -111,17 +111,23 @@ def fidelity_report(store: Store, articles_limit: int = 600) -> dict:
         select(articles.c.id, *heavy.columns(store, "text")).where(articles.c.id.in_([a["id"] for a in arts] or [-1]))),
         "text")}
     lang = {a["id"]: (a["lang"] or "en") for a in arts}
-    rows = store.rows(select(claims.c.article_id, claims.c.text).where(claims.c.article_id.in_(list(texts) or [-1]),
-                                                                       claims.c.kind != "relation"))
+    rows = store.rows(select(claims.c.article_id, claims.c.text, claims.c.rel)
+                      .where(claims.c.article_id.in_(list(texts) or [-1]), claims.c.kind != "relation"))
     for lg in ("hi", "en"):
         c: collections.Counter = collections.Counter()
+        how_n: collections.Counter = collections.Counter()
         ex = []
         n = found = flagged = 0
         for r in rows:
             if lang.get(r["article_id"]) != lg or not r["text"]:
                 continue
             n += 1
-            win, probs = F.check_reading(r["text"], texts.get(r["article_id"]) or "", lg, reg, strict_only=False)
+            quote = (r.get("rel") or {}).get("quote") if isinstance(r.get("rel"), dict) else None
+            how_n["with_quote"] += bool(quote)
+            src = texts.get(r["article_id"]) or ""
+            _, how = F.find_source(r["text"], src, lg, reg, quote)
+            how_n[how] += 1
+            win, probs = F.check_reading(r["text"], src, lg, reg, strict_only=False, quote=quote)
             if win is None:
                 continue
             found += 1
@@ -130,7 +136,7 @@ def fidelity_report(store: Store, articles_limit: int = 600) -> dict:
                 c.update(str(p) for p in probs)
                 if len(ex) < 30 and any(p.strict for p in probs):
                     ex.append({"statement": r["text"][:300], "source": win[:300], "problems": [str(p) for p in probs]})
-        out["reading"][lg] = {"statements": n, "source_found": found, "with_problem": flagged,
+        out["reading"][lg] = {"statements": n, "source_found": found, "found_by": dict(how_n), "with_problem": flagged,
                               "problems": dict(c.most_common()), "examples": ex}
     return out
 

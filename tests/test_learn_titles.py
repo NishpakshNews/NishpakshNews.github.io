@@ -231,3 +231,11 @@ def test_an_approved_title_sense_is_used_only_where_its_context_fits(monkeypatch
     finally:
         for f in caches:
             f.cache_clear()
+
+
+def test_captain_by_context_in_the_hand_written_registry():
+    from nishpaksh import titles
+    assert titles.role_of("Captain", "India won the T20 match after the captain scored 80") == "team_captain"
+    assert titles.role_of("Captain", "The pilot said the flight landed safely") == "pilot_captain"
+    assert titles.role_of("Captain", "The Army said the officer was posted in Kupwara") == "general"
+    assert titles.role_of("Group Captain", "the IPL match") == "general"

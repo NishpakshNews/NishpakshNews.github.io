@@ -1481,6 +1481,24 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   — added the other way. Statement matching (`relate.Profile`) reads strong forms as "not <base>"
   (`polarity.as_particles`): "unaffected" = "not affected", and differs from "affected". A word belongs in `strong`
   only when its usual rendering in the other language is itself negated. Tests: `tests/test_polarity.py`.
+- **"Captain" by context in titles.yaml (Oct 16 2026, owner).** It was only an Army rank (`general`), so a cricket
+  captain read as one. Now `team_captain` (requires_any: cricket/football/hockey/match/innings/IPL/ODI/T20/...;
+  ref "the captain") and `pilot_captain` (pilot/flight/aircraft/airline/DGCA/...; ref "the pilot") come after it;
+  role_of returns a conditional role when its words appear, else the Army fallback. "Group Captain" stays `general`.
+  "Skipper" is left to the learner (it has senses: a cricket skipper, a trawler's skipper).
+- **Every statement checked (Oct 16 2026, context plan session 6; `extract.py` rule 10, `fidelity.quoted_window`,
+  `find_source`, `readcheck.py`, `tools/audit.py`).** Anchors (numbers, dates, names, entities) found the source
+  sentence for about one Hindi statement in four. The reading model now writes `quote` for each item: the first six
+  words of the article sentence it read it from, copied in the article's language and script. Code verifies the copy:
+  `quoted_window` folds both, ignores punctuation, and needs the quote's words (up to 8, at least 4, shortened from
+  the end for a slip) to stand in order exactly ONCE in the report; it returns that sentence (and the next while the
+  quote runs on). A translated or paraphrased quote finds nothing and anchors are tried (`find_source` -> "quote" /
+  "anchors" / "none"). A sentence found by its quote is the statement's source: when anchors cannot place the
+  statement in one of its clauses (`_in_scope`, Hindi), the whole sentence is in scope (`blind_whole`), so "did not
+  name any party" read from "...सीधे नाम नहीं लेंगे" is flagged lost:directly with no registry. The quote is stored
+  in `claims.rel["quote"]` (newsroom only, never published); readcheck counts by_quote / by_anchors / unsourced per run
+  (the run log's "readcheck:" line) and the audit's reading report gives `found_by` per language. Readings stored
+  before this have no quote, so coverage shows as new articles are read. Tests: test_fidelity, test_readcheck.
 - **Open (Oct 16 2026):** `tests/test_express_db.py::test_nothing_is_embedded_while_the_pacing_curve_has_given_the_slice_out`
   fails at some hours of the day (failed at ~05:30 UTC with and without the session 9 changes, passed at 04:xx).
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:

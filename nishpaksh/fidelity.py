@@ -13,7 +13,8 @@ has is kept and none it lacks is added.
                                              consonant-skeleton tie-break made सीधे match "side". No clear sentence:
                                              None, and nothing is checked (a false flag would cost a good statement).
     compare(source, target, src, tgt)        qualifiers lost and added
-    check_reading(statement, source, lang)   both of the above for a statement read from a report
+    quoted_window(quote, source)             the sentence found by the words the reading model copied from its start
+    check_reading(statement, source, lang)   both of the above for a statement read from a report (quote first)
     latin_left(hindi, english)               Latin words left inside a Hindi string (URLs, units and the names the
                                              newsroom keeps in brackets on purpose left out)
     missing_terms(english, hindi)            our binding Hindi renderings (glossary `terms`) not used
@@ -214,7 +215,8 @@ _ATTRIBUTES = {"en": re.compile(r"(?<![\w-])(?:alleg\w*|claim\w*|accus\w*)"), "h
 _CLAUSE = re.compile(r"[,;:\u2014\u2013]|\s(?:लेकिन|जबकि|बल्कि|मगर|while|whereas|but)\s")
 
 
-def _in_scope(source_t: str, start: int, end: int, statement: str, src_lang: str, registry) -> bool:
+def _in_scope(source_t: str, start: int, end: int, statement: str, src_lang: str, registry,
+              blind_whole: bool = False) -> bool:
     """Does the statement say the thing this qualifier of the source is about? A statement read from part of a
     sentence ("In Puducherry, the NDA won by 8,482 votes" from "...the BJP won by over 75,000 votes, while in
     Puducherry ...") has not lost the qualifiers of the other part. English source: the words right after the
@@ -222,6 +224,8 @@ def _in_scope(source_t: str, start: int, end: int, statement: str, src_lang: str
     if src_lang == "en":
         scope = source_t[end:end + 60]
         return bool(_words(scope) & _words(fold(statement)))
+    if blind_whole and anchors(statement, source_t, src_lang, registry) == 0:
+        return True     # the sentence is known (quoted) but no clause holds an anchor: the whole sentence is in scope
     cuts = [0] + [m.end() for m in _CLAUSE.finditer(source_t)] + [len(source_t) + 1]
     a = max(c for c in cuts if c <= start)
     b = min(c for c in cuts if c > start)
@@ -229,7 +233,7 @@ def _in_scope(source_t: str, start: int, end: int, statement: str, src_lang: str
 
 
 def compare(source: str, target: str, src_lang: str, tgt_lang: str, strict_only: bool = False,
-            scoped: bool = False, registry=None) -> list[Problem]:
+            scoped: bool = False, registry=None, blind_whole: bool = False) -> list[Problem]:
     """Qualifiers the source has and the target lost, and the ones the target added. A number-bound qualifier
     ("over", "से अधिक") is compared number by number, only for numbers both texts carry. `scoped` (a statement read
     from a report): a qualifier counts as lost only when the statement says what it is about (`_in_scope`)."""
@@ -247,7 +251,7 @@ def compare(source: str, target: str, src_lang: str, tgt_lang: str, strict_only:
     for q, a, b, n in oa:
         if n or q in plain_b or q in lost:
             continue
-        if not scoped or _in_scope(st, a, b, target, src_lang, registry):
+        if not scoped or _in_scope(st, a, b, target, src_lang, registry, blind_whole):
             lost.add(q)
     if _ATTRIBUTES[tgt_lang].search(fold(target)):
         lost.discard("alleged")
@@ -343,14 +347,56 @@ def source_window(statement: str, source: str, src_lang: str, registry=None) -> 
     return scored[0][1]
 
 
-def check_reading(statement: str, source: str, src_lang: str, registry=None,
-                  strict_only: bool = True) -> tuple[str | None, list[Problem]]:
-    """(the source sentence found, the qualifiers the statement lost or added). An English statement read from a
-    Hindi or English report."""
+_QTOK = re.compile(rf"[{_DEV}\w]+")
+QUOTE_WORDS = 8             # words of a quote compared (the reading model copies the sentence's first words)
+QUOTE_MIN = 4               # fewest words a quote must match, in order, exactly once in the report
+
+
+def quoted_window(quote: str | None, source: str) -> str | None:
+    """The report sentence a statement came from, found by the words the reading model copied from its start
+    (`quote`, context plan session 6, Oct 16 2026): the sentence where those words stand, word for word, in order
+    (folded, punctuation ignored), with the next sentences while the quote runs on. Code checks the copy: a quote
+    that is not in the report (the model paraphrased or translated it) or that stands in two places finds nothing."""
+    q = _QTOK.findall(fold(quote or ""))[:QUOTE_WORDS]
+    if len(q) < QUOTE_MIN:
+        return None
+    sents = sentences(source)
+    flat: list[tuple[str, int]] = []
+    for i, s in enumerate(sents):
+        flat += [(w, i) for w in _QTOK.findall(fold(s))]
+    words = [w for w, _ in flat]
+    for n in range(len(q), QUOTE_MIN - 1, -1):          # the whole copy, else its first words (a slip at its end)
+        hits = [k for k in range(len(words) - n + 1) if words[k:k + n] == q[:n]]
+        if len(hits) == 1:
+            k = hits[0]
+            a, b = flat[k][1], flat[k + n - 1][1]
+            return " ".join(sents[a:b + 1])
+        if len(hits) > 1:
+            return None
+    return None
+
+
+def find_source(statement: str, source: str, src_lang: str, registry=None,
+                quote: str | None = None) -> tuple[str | None, str]:
+    """(the report sentence a statement came from, how it was found: "quote", "anchors" or "none")."""
+    win = quoted_window(quote, source)
+    if win is not None:
+        return win, "quote"
     win = source_window(statement, source, src_lang, registry)
+    return win, ("anchors" if win is not None else "none")
+
+
+def check_reading(statement: str, source: str, src_lang: str, registry=None,
+                  strict_only: bool = True, quote: str | None = None) -> tuple[str | None, list[Problem]]:
+    """(the source sentence found, the qualifiers the statement lost or added). An English statement read from a
+    Hindi or English report; `quote`: the first words of its source sentence as the reading model copied them."""
+    win, how = find_source(statement, source, src_lang, registry, quote)
     if win is None:
         return None, []
-    return win, compare(win, statement, src_lang, "en", strict_only, scoped=True, registry=registry)
+    # a sentence found by its quote IS the statement's source: when anchors cannot place the statement in one of its
+    # clauses (a Hindi sentence with no number or known name), the whole sentence is in scope
+    return win, compare(win, statement, src_lang, "en", strict_only, scoped=True, registry=registry,
+                        blind_whole=how == "quote")
 
 
 # -- translations into Hindi ---------------------------------------------------------------------------------------

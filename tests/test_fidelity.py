@@ -147,3 +147,25 @@ def test_third_audit_cases():
                                "आरक्षण के लिए 50 प्रतिशत की अधिकतम सीमा") == []
     assert F.qualifiers("सीधे सेटों में हराया", "hi") == set()
     assert F.qualifiers("चुना जाना चाहिए या नहीं.", "hi") == set()
+
+
+# -- every statement checked: the reading model copies its sentence's first words (context plan session 6) ---------
+
+QSRC = "राहुल गांधी ने कहा कि वे किसी दल का सीधे नाम नहीं लेंगे। बाद में उन्होंने भाजपा पर हमला किया। बाद में उन्होंने रैली की।"
+
+
+def test_a_quote_finds_its_sentence_word_for_word_and_only_once():
+    assert F.quoted_window("राहुल गांधी ने कहा कि वे", QSRC).startswith("राहुल गांधी ने कहा")
+    assert F.quoted_window("बाद में उन्होंने भाजपा पर हमला", QSRC) == "बाद में उन्होंने भाजपा पर हमला किया।"
+    assert F.quoted_window("राहुल गांधी ने कहा, कि वे गलत शब्द", QSRC).startswith("राहुल")     # a slip at its end
+    assert F.quoted_window("बाद में उन्होंने", QSRC) is None                       # too short
+    assert F.quoted_window("बाद में उन्होंने कहा", QSRC) is None                   # not in the report
+    assert F.quoted_window("Rahul Gandhi said that he", QSRC) is None             # translated, not copied
+
+
+def test_a_hindi_statement_with_no_anchor_is_checked_through_its_quote():
+    st = "Rahul Gandhi said he would not name any party."
+    assert F.check_reading(st, QSRC, "hi") == (None, [])                          # anchors alone: unchecked
+    win, probs = F.check_reading(st, QSRC, "hi", quote="राहुल गांधी ने कहा कि वे")
+    assert win and [str(p) for p in probs] == ["lost:directly"]
+    assert F.find_source(st, QSRC, "hi", quote="no such words in it at all")[1] == "none"
