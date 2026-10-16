@@ -1214,8 +1214,23 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   `beat_seat` keeps the list and `beat_seat_empty` says how many stayed empty (ledger reads both); (3) `talk.js` `end()` did not
   wake a start still waiting for the server or the intro (it returned 15-30 s later). The Node controller tests now start, then
   open the fake socket (`openReady`), since `start()` returns only after the intro; their fake server ends the intro turn itself.
-  **Still clock-dependent:** `test_end_to_end` fails just after midnight IST (seen 00:15 IST, also on the untouched code; the
-  fixtures' `NOW` is the real clock in UTC, a step compares IST dates); passes the rest of the day. Not yet traced.
+  **Clock part fixed:** `test_end_to_end` failed from 18:30 to 24:00 UTC (IST already the next day): the headline the fake
+  wrote carried the news line's "(dated: ...)" note; the fake now strips it and the assertion accepts either lead fact.
+  **Still open:** with `PYTHONHASHSEED=7` at night it fails with KeyError 'A section of the Kesarganj flyover collapsed'
+  (a merge upstream depends on set order). Not yet traced.
+- **The Translator key is reserved for quality work (owner, Oct 16 2026; its own Google Cloud project).** Secret
+  `GEMINI_API_KEY_4` (add it on GitHub; passed in hourly.yml). `models.yaml` `keys:` names which tiers a key may serve:
+  a key named there serves ONLY its tiers, and a tier named there is served ONLY by its keys (`router.Router.allowed`).
+  The new tier `quality` (Flash-Lite models) is served by key 4 alone; without the secret, `quality` is empty and a call
+  raises QuotaExhausted (nothing else falls back to it). Usage keys carry the secret's suffix (`@k4`), never the position,
+  so quota counts stay right whichever keys are set (`config.gemini_key_name`). Nothing calls `quality` yet: it is for the
+  translation and fidelity work of the next sessions. Tests: `tests/test_key_reservation.py`.
+- **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:
+  missed merges (statement pairs with 60%+ shared root words left apart, by the language mix of the story's sources:
+  en / hi / mixed, and what code and the twice-asked question said of them), English left in Hindi pages (by field, top
+  words), repeated sentence openings, mixed date / money / per-cent forms in one article. Summary in `diagnostics` kind
+  'audit'. **Tool diagnostics go to Supabase:** replay, modelcmp, probe and audit wrote their reports into the job's
+  newsroom copy since Oct 10 (thrown away at the end); they now use `store.readers.engine`.
 - **Flaky tests (seen Oct 8 2026, before the split work too):** `test_a_later_development_links_to_its_story_and_gets_background`
   and `test_published_article_is_closed_and_only_its_colours_mature` fail about 1 run in 3-8; they pass alone.
   Find the nondeterminism (set order, wall clock) before trusting a red run.

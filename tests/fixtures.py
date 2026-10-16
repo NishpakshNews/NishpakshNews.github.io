@@ -256,6 +256,7 @@ class FakeBackend:
             return json.dumps({"sections": ["life/accidents", "justice/police", "nonsense/x"]}), [], 30
         if "Write THREE different headlines" in prompt:
             news = re.search(r"^THE NEWS: (.*)$", prompt, flags=re.M).group(1)
+            news = re.sub(r"\s*\(dated: [^)]*\)\s*$", "", news)      # the prompt's date note, not part of the fact
             return json.dumps({"headlines": ["Section of Kesarganj flyover reportedly collapses",
                                              " ".join(news.rstrip(".").split()[:12]),
                                              "Section of Kesarganj flyover collapses; two dead, engineer arrested"]}), [], 50

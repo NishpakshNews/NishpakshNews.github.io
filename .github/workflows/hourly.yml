@@ -95,6 +95,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
           GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+          GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}   # the Translator project's key: quality tier only (models.yaml keys)
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
         run: python -m nishpaksh.run --time-budget 45
       - name: Move articles older than 3 days to the archive branch
@@ -107,6 +108,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
           GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+          GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}   # the Translator project's key: quality tier only (models.yaml keys)
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: python -m nishpaksh.desk --minutes 20
       - name: Learn titles from the outlets

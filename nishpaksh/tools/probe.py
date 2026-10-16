@@ -413,7 +413,7 @@ def main() -> None:
     parts = a.parts.split(",")
     extra: list[str] = []
     def save(kind, rep):
-        with store.engine.begin() as c:
+        with store.readers.engine.begin() as c:      # diagnostics live in Supabase, not in the job's newsroom copy
             c.execute(sql("insert into diagnostics (kind, report) values (:k, :r)"),
                       {"k": kind, "r": json.dumps(rep, default=str)})
         log.info("%s: %s", kind, json.dumps(rep, default=str)[:3000])

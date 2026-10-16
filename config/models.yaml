@@ -6,6 +6,15 @@
 # so close-enough names (e.g. "gemma-4-26b" -> "gemma-4-26b-a4b-it") still work.
 # Run `python -m nishpaksh.tools.list_models` to see the exact IDs on your key.
 
+# Which tiers a key may serve (owner, Oct 16 2026). A key named here serves ONLY the tiers listed for it, and a tier
+# listed here is served ONLY by the keys that list it (router.Router, `allowed`). Keys are named by their GitHub secret.
+# GEMINI_API_KEY_4 is the owner's Translator project key (its own Google Cloud project): the quality lane's alone, so
+# repairs, name pairing, the devil's advocate and the edit pass never spend the quota publication depends on. The
+# Translator's own book runs use the same key and our counter cannot see them: a refused call there is skipped, never
+# retried on the publication keys. Without the secret the quality tier has no key and quality work is simply skipped.
+keys:
+  GEMINI_API_KEY_4: {tiers: [quality]}
+
 tiers:
   # Reads articles: events, claims, times, loaded words.
   # Flash-Lite first: Gemma 4 on the free tier is heavily overloaded (mostly 500/504 errors
@@ -76,3 +85,10 @@ tiers:
   # Google counts each text in a batch as one request: rpd/rpm here are texts.
   embed:
     - {id: gemini-embedding-001, rpm: 100, tpm: 30000, rpd: 1000}
+
+  # Quality work on the Translator key only (`keys:` above): checks and repairs that improve an article but must never
+  # hold back publication. Flash-Lite, as the Translator itself (its whole book: 470 calls, all 3.5 Flash-Lite, with an
+  # edit pass). Nothing is kept back: this key has no other tier to protect.
+  quality:
+    - {id: gemini-3.5-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true}
+    - {id: gemini-3.1-flash-lite, rpm: 15, tpm: 250000, rpd: 500, json_mode: true}

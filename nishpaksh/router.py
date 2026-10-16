@@ -109,10 +109,16 @@ class ModelSlot:
     disabled: bool = False
     key: int = 0          # which API key (Google Cloud project) this slot spends
     fail_streak: int = 0  # consecutive overload errors in this run
+    key_name: str | None = None   # the key's secret ("GEMINI_API_KEY_2"), when known
 
     @property
     def usage_key(self) -> str:
-        """Name under which usage is stored: key 1 keeps the plain model id."""
+        """Name under which usage is stored: key 1 keeps the plain model id. Named after the key's SECRET when known
+        (GEMINI_API_KEY_4 -> "@k4"), so a key's counter stays its own when another key is missing or added; by position
+        otherwise (the same names for keys 1-3 as before)."""
+        if self.key_name:
+            n = self.key_name.rsplit("_", 1)[-1]
+            return self.id if not n.isdigit() else f"{self.id}@k{n}"
         return self.id if self.key == 0 else f"{self.id}@k{self.key + 1}"
 
     def wait_time(self, est_tokens: int, now: float, units: int = 1) -> float | None:
@@ -160,9 +166,11 @@ class LLMResult:
 class GeminiBackend:
     """Thin wrapper over google-genai so tests can swap in a fake."""
 
-    def __init__(self, api_key: str, timeout_s: int = 150):
+    def __init__(self, api_key: str, timeout_s: int = 150, key_name: str | None = None):
         from google import genai
         from google.genai import types
+        from .config import gemini_key_name
+        self.key_name = key_name or gemini_key_name(api_key)    # "GEMINI_API_KEY_4": which tiers it serves (models.yaml keys)
         # without a timeout a stuck call to an overloaded model can hang the whole run
         # no hidden retries inside the SDK: every request Google sees is one the router counted
         self.client = genai.Client(api_key=api_key, http_options=types.HttpOptions(
@@ -226,7 +234,8 @@ def _norm(model_id: str) -> str:
 
 
 class Router:
-    def __init__(self, tiers_cfg: dict, backend, store=None, max_wait: float = 180.0, paced: bool | None = None):
+    def __init__(self, tiers_cfg: dict, backend, store=None, max_wait: float = 180.0, paced: bool | None = None,
+                 key_rules: dict | None = None):
         # One backend per API key. Each key is a separate Google Cloud project with its own
         # free-tier quota, so every (key, model) pair is its own slot with its own counters.
         self.backends = list(backend) if isinstance(backend, (list, tuple)) else [backend]
@@ -257,14 +266,33 @@ class Router:
         self.slots: dict[tuple[int, str], ModelSlot] = {}
         self.tiers: dict[str, list[ModelSlot]] = {}
         self.keep: dict[tuple[str, int], int] = {}
+        # Which tiers a key may serve (models.yaml `keys:`, owner Oct 16 2026): a key named there serves ONLY its listed
+        # tiers, and a tier listed there is served ONLY by the keys that list it. The Translator project's key
+        # (GEMINI_API_KEY_4) is the quality lane's alone, so quality work never spends the quota publication depends on.
+        if key_rules is None:
+            try:
+                from .config import load_yaml
+                key_rules = load_yaml("models.yaml").get("keys") or {}
+            except Exception:  # noqa: BLE001  no file: no rules
+                key_rules = {}
+        self.key_names = [getattr(b, "key_name", None) for b in self.backends]
+        restricted = {t for r in key_rules.values() for t in (r or {}).get("tiers") or []}
+
+        def allowed(tier: str, k: int) -> bool:
+            rule = key_rules.get(self.key_names[k]) if self.key_names[k] else None
+            if rule is not None:
+                return tier in ((rule or {}).get("tiers") or [])
+            return tier not in restricted
         for name, models in tiers_cfg.items():
             self.tiers[name] = []
             for k in range(len(self.backends)):
+                if not allowed(name, k):
+                    continue
                 for m in models:
                     m = dict(m)
                     keep = int(m.pop("keep", 0))
                     if (k, m["id"]) not in self.slots:
-                        self.slots[(k, m["id"])] = ModelSlot(**m, key=k)
+                        self.slots[(k, m["id"])] = ModelSlot(**m, key=k, key_name=self.key_names[k])
                     slot = self.slots[(k, m["id"])]
                     self.tiers[name].append(slot)
                     self.keep[(name, id(slot))] = keep

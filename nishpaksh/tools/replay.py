@@ -155,7 +155,9 @@ def _review(local: Store, sid: int) -> dict:
 
 
 def _save(prod: Store, report: list) -> None:
-    with prod.engine.begin() as c:
+    # `diagnostics` lives with the readers' tables in Supabase (db.READER_TABLES): through `prod.engine` it went into the
+    # job's throwaway newsroom copy since the newsroom moved into the job (Oct 10 2026), and every replay report was lost
+    with prod.readers.engine.begin() as c:
         c.execute(sql("insert into diagnostics (kind, report) values ('replay', :r)"), {"r": json.dumps(report)})
 
 

@@ -44,6 +44,18 @@ def gemini_api_keys() -> list[str]:
     return list(dict.fromkeys(k for k in keys if k))
 
 
+KEY_ENVS = ["GEMINI_API_KEY"] + [f"GEMINI_API_KEY_{i}" for i in range(2, 6)]
+
+
+def gemini_key_name(api_key: str) -> str | None:
+    """The secret a key came from ("GEMINI_API_KEY_4"), or None. The router uses it for which tiers a key may serve
+    (models.yaml `keys:`) and for the name its usage is stored under, so neither depends on which other keys are set."""
+    for env in KEY_ENVS:
+        if api_key and os.environ.get(env, "").strip() == api_key:
+            return env
+    return None
+
+
 def tavily_api_key() -> str:
     return os.environ.get("TAVILY_API_KEY", "").strip()
 

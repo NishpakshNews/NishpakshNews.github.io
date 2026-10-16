@@ -218,7 +218,7 @@ def main() -> None:
         report["comparisons"][f"{ref}->{v}"] = compare(flat[ref], flat[v])
     report["colours"] = {v: dict(Counter(x["colour"] for x in flat[v].values())) for v in variants}
     log.info("%s", json.dumps({k: report[k] for k in ("colours", "comparisons", "usage")}, default=str)[:6000])
-    with prod.engine.begin() as c:
+    with prod.readers.engine.begin() as c:      # diagnostics live in Supabase, not in the job's newsroom copy
         c.execute(sql("insert into diagnostics (kind, report) values ('modelcmp', :r)"),
                   {"r": json.dumps(report, default=str, ensure_ascii=False)})
 
