@@ -1413,6 +1413,17 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   proposals only. Changes from it: a word tagged loaded counts only after 3+ readings tagged it (`learning.loaded_set`:
   one reading tagged "relief" and "detained"); a title's one-person rule needs 5+ sightings, and a block from shares of
   the evidence is re-judged as evidence grows (only the never list and a loaded word block a title for good).
+- **Context for everything learned (Oct 16 2026, context plan session 1; `context.py`).** The owner: "bank" is a
+  financial bank, a river bank, a road's bank; counting repetitions adds senses together. A sighting carries its
+  CONTEXT: the story's section (first secondary, else primary, `section_of`; "" before publication, when sections do
+  not exist yet) and the content WORDS of its sentence (stemmed / folded; stop words, numbers, names, the word itself
+  out). Sightings group into SENSES (section + signature: words seen in 2+ of its sightings, all words while it has
+  under 3). JOIN is generous: a sighting joins the senses of its section sharing any word, and a sighting sharing
+  words with two senses of a section merges them; with an unknown section it needs 3 signature words. USE is strict
+  (`best`): the sense of the sentence's section with the most signature words, at least 2 (3 with an unknown
+  section), strictly more than any other; no match = nothing stored is used (a new context never borrows another
+  context's entry). Two renderings in different contexts are two senses, not rivals. `story_sections` reads published
+  pages' sections. The learners and translation move onto senses in the next sessions. Tests: `tests/test_context.py`.
 - **Open (Oct 16 2026):** `tests/test_express_db.py::test_nothing_is_embedded_while_the_pacing_curve_has_given_the_slice_out`
   fails at some hours of the day (failed at ~05:30 UTC with and without the session 9 changes, passed at 04:xx).
 - **Audits (Oct 16 2026; `audit.py`, `tools/audit.py`, workflow `audit`, read-only, no model).** Over every live article:
