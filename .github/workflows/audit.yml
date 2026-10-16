@@ -40,4 +40,6 @@ jobs:
       - env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/newsroom
           READERS_DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python -m nishpaksh.tools.${{ github.event.inputs.tool || 'audit' }} ${{ github.event.inputs.args }}
+          TOOL: ${{ github.event.inputs.tool || 'audit' }}
+          ARGS: ${{ github.event.inputs.args }}
+        run: python -m "nishpaksh.tools.$TOOL" $ARGS

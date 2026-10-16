@@ -37,7 +37,7 @@ def main() -> None:
                       "where story_id = :s order by article_id, id", s=sid)
             can = rows("select id, kind, text, verdict, conflicts, origins from canonical where story_id = :s order by id", s=sid)
             st = rows("select id, signature, qualifies, dirty, updated_at, analysis from stories where id = :s", s=sid)
-            pub = rows("select version, published_at, updated_at, payload_en->'counts' as counts, "
+            pub = rows("select version, updated_at, payload_en->'counts' as counts, "
                        "payload_en->'qualified_by' as q from published where story_id = :s", s=sid)
             members = Counter(x["canonical_id"] for x in cl if x["canonical_id"] is not None)
             arts_of = {}
