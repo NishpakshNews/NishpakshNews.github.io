@@ -1190,18 +1190,18 @@ every outlet that covered it, and colours every sentence by how well it is suppo
 
 - **No white flash; dropdowns close smoothly (owner, Oct 16 2026, a phone recording).** (1) Opening: on the phone the sheet
   showed for ONE frame before its start position reached the GPU (the plate full-screen white, the header not drawn yet).
-  Now the morph's first keyframe is also set as plain styles (, cleared by ), the sheet is first
-  drawn at 0.01 opacity () so its layers are rasterised while the card still shows, and the
+  Now the morph's first keyframe is also set as plain styles (`holdStart`, cleared by `stopMorph`), the sheet is first
+  drawn at 0.01 opacity (`#sheet.pre:not(.anim)`) so its layers are rasterised while the card still shows, and the
   plate's white goes in 220 ms. (2) Closing: the article text left at once while the white plate covered the card, whose
-  text came back only at the end (a blank white card). Now the plate fades out first (), the card
-  stays visible under the glide with only its picture, headline, kicker and bar hidden (), and at the end
-  the two hand over in a 130 ms crossfade (, ). (3) Dropdowns (Sources, Who reported what):
+  text came back only at the end (a blank white card). Now the plate fades out first (`#sheet.leaving #plate`), the card
+  stays visible under the glide with only its picture, headline, kicker and bar hidden (`a.card.under`), and at the end
+  the two hand over in a 130 ms crossfade (`#sheet.gone`, `releaseUnder`). (3) Dropdowns (Sources, Who reported what):
   at the article's foot a closing list makes the browser pull the page down, all at once and late (measured: 144 px in
   55 ms; for the long list the heading still 0.3 s, then 618 px in 0.25 s). Closing now takes 440 ms on an ease-in-out
-  curve, the list fades over its first half, and  moves the page itself on the same curve (a spacer at the end
-  stops the browser's own pull). The tap's ring () was sized to the whole card, a ~3,600 px circle on the long
-  list that held the page for 0.3 s: now sized to what is on screen. sw.js np-main-62. Tested in the throttled harness, not
-  on a phone.
+  curve, the list fades over its first half, and `ddFollow` moves the page itself on the same curve (a spacer at the end
+  stops the browser's own pull). The tap's ring (`ddWave`) was sized to the whole card, a ~3,600 px circle on the long
+  list that held the page for 0.3 s: now sized to what is on screen. `sw.js` np-main-62. Tested in the throttled
+  harness, not on a phone.
 
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →
