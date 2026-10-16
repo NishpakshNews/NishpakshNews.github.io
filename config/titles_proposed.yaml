@@ -3,6 +3,8 @@
 # and the devil's advocate (not one person's nickname, no label or insult cues, the model's look).
 #   APPROVE: move the line into titles_learned.yaml under `roles:`.   REFUSE: add the word to `rejected:` there.
 # `review:` lists approved titles the devil's advocate now objects to (look again; nothing changes by itself).
+# Each line carries the `section` and `context` words of ONE sense of the word: approved, it is used only for text in
+# that context (a cricket "Captain" says nothing about an Army one; each sense is proposed on its own).
 
 proposed: []
 
