@@ -7,4 +7,5 @@ rejected: []
 
 terms: []
 
-proposed: []
+proposed:
+  - {en: "tricolour", hi: "पार्क", section: "", context: ["call", "cjp", "gather", "founder", "nation", "polic", "unfurl", "assur", "flag", "march", "record", "regul"], learned: "2026-10-17", stories: 4, days: 3, en_sources: 14, hi_sources: 17, why: "a competing Hindi rendering in the same context: लहरा"}
