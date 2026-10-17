@@ -9,4 +9,4 @@ terms: []
 
 proposed:
   - {en: "prohibitory", hi: "इलाकों", section: "", context: ["forc", "order", "area", "delhi", "law", "alreadi", "protest", "surround", "unauthoris", "cite", "current", "march"], learned: "2026-10-17", stories: 4, days: 3, en_sources: 25, hi_sources: 8, why: "unstable: without its best day and best source it no longer passes"}
-  - {en: "tricolour", hi: "पार्क", section: "", context: ["call", "cjp", "gather", "founder", "nation", "polic", "unfurl", "assur", "flag", "march", "record", "regul"], learned: "2026-10-17", stories: 4, days: 3, en_sources: 14, hi_sources: 18, why: "a competing Hindi rendering in the same context: लहरा"}
+  - {en: "tricolour", hi: "पार्क", section: "", context: ["call", "cjp", "gather", "founder", "nation", "polic", "unfurl", "assur", "central", "flag", "march", "protest"], learned: "2026-10-17", stories: 4, days: 3, en_sources: 14, hi_sources: 22, why: "a competing Hindi rendering in the same context: लहरा"}
