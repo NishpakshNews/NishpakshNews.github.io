@@ -2,8 +2,8 @@
 
     python -m nishpaksh.tools.export_story --title Hyundai --since 2026-10-12 --out story.json
 
-Article text is left out on purpose (publishers' copyright); claims, canonical statements, the story's analysis
-record, its thread links and the published article are what is needed to trace how a sentence was made.
+Article text is left out on purpose (publishers' copyright); claims, canonical statements and the
+published article are what is needed to trace how a sentence was made.
 """
 from __future__ import annotations
 
@@ -40,17 +40,10 @@ def main() -> None:
             d = {}
             d["articles"] = rows("select id, outlet, url, title, published_at, story_id from articles "
                                  "where story_id = :s order by id", s=sid)
-            # Step 0 (NOTES, Oct 18 2026): everything the hypothesis tests on T1-T5 need, still no article text:
-            # claims.stance/evidence/time/canonical_id (which statement each report fed, how it was read, when it
-            # happened), canonical.conflicts/detail/checkable, and the story's whole analysis record (topic groups,
-            # same-fact answers, name conflicts, attribution map, groups, speakers, roles).
-            d["claims"] = rows('select id, article_id, local_id, kind, text, stance, evidence, attributed_to, "time", '
-                               "canonical_id, rel from claims where story_id = :s order by article_id, local_id", s=sid)
-            d["canonical"] = rows("select id, kind, text, verdict, rel, origins, conflicts, detail, checkable "
-                                  "from canonical where story_id = :s order by id", s=sid)
-            d["analysis"] = (rows("select analysis from stories where id = :s", s=sid) or [{}])[0].get("analysis")
-            d["links"] = rows("select parent_id, child_id, reason from story_links "
-                              "where parent_id = :s or child_id = :s", s=sid)
+            d["claims"] = rows("select id, article_id, local_id, kind, text, attributed_to, rel from claims "
+                               "where story_id = :s order by article_id, local_id", s=sid)
+            d["canonical"] = rows("select id, kind, text, verdict, rel, origins from canonical "
+                                  "where story_id = :s order by id", s=sid)
             try:
                 d["published"] = rows("select to_jsonb(p) as row from published p where p.story_id = :s", s=sid)
             except Exception as e:  # a column name differs: say so instead of failing the whole export
