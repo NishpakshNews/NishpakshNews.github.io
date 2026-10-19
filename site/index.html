@@ -1151,6 +1151,8 @@
   .kchips .kpill { flex: 1 1 auto; justify-content: center; }
   .cpane .rail button { flex: 1 0 auto; }
   .prow .pchip { flex: 1 1 0; min-width: 0; justify-content: center; }
+  /* room for the selected pill's 5px outer ring, so the clipping wrapper does not cut it at the left/right edge */
+  .cpane .prow { padding: 0 5px; }
   /* the key card's pills: the same shape */
   .kpill { min-height: 30px; height: 30px; padding: 0 10px 0 4px; gap: 5px; border-radius: 999px; }
   /* the definition with a ‹ › stepper: walk through the lit lines one by one */
