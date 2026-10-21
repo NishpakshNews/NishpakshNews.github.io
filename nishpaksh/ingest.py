@@ -16,6 +16,7 @@ import trafilatura
 from .config import SETTINGS, load_yaml
 from .db import Store, articles, feeds, insert, select, update, utcnow
 from .wire import minhash
+from .text_hygiene import clean_source_text, decode_page
 
 log = logging.getLogger(__name__)
 IMAGE_STATS = {"with": 0, "without": 0}   # new articles this run with / without a picture (run stats "images")
@@ -185,24 +186,26 @@ def fetch_feed(feed: dict) -> list[dict]:
 def fetch_article(url: str) -> dict | None:
     try:
         r = _get(url, timeout=25)
-        if r.status_code != 200 or not r.text:
+        if r.status_code != 200 or not r.content:
             return None
-        doc = trafilatura.bare_extraction(r.text, url=url, with_metadata=True, include_comments=False)
+        page_html = decode_page(r.content, r.headers.get('Content-Type', ''), r.apparent_encoding)
+        doc = trafilatura.bare_extraction(page_html, url=url, with_metadata=True, include_comments=False)
     except Exception as e:  # noqa: BLE001
         log.debug("fetch failed %s: %s", url, e)
         return None
     if doc is None:
         return None
     d = doc.as_dict() if hasattr(doc, "as_dict") else dict(doc)
-    image = page_image(r.text, url) or clean_image(d.get("image"), url)
-    return {"text": d.get("text") or "", "author": d.get("author"), "title": d.get("title"), "image": image}
+    image = page_image(page_html, url) or clean_image(d.get("image"), url)
+    return {"text": clean_source_text(d.get("text")), "author": clean_source_text(d.get("author")),
+            "title": clean_source_text(d.get("title")), "image": image}
 
 
 def fetch_image(url: str) -> str:
     """Only the picture of a page already read ("" when it has none or cannot be read)."""
     try:
         r = _get(url, timeout=15)
-        return (page_image(r.text, url) or "") if r.status_code == 200 and r.text else ""
+        return (page_image(decode_page(r.content, r.headers.get('Content-Type', ''), r.apparent_encoding), url) or "") if r.status_code == 200 and r.content else ""
     except Exception:  # noqa: BLE001
         return ""
 
@@ -308,13 +311,14 @@ def ingest(store: Store) -> int:
         if len(text) < SETTINGS.min_full_text_chars:
             # page blocked or unreadable: fall back to what the feed itself says
             text, source = ". ".join(x for x in (en["title"], en["summary"]) if x), "summary"
+        text = clean_source_text(text)
         if len(text) < 60:
             diag[_dk(feed)]["too_short"] += 1
             continue
         author = (page or {}).get("author") or en["author"]
         values = dict(
             url=en["url"], feed_id=feed["id"], outlet=feed["name"], lang=feed["lang"], role=feed["role"],
-            title=en["title"] or (page or {}).get("title") or "", author=(author or None) and author[:300],
+            title=clean_source_text(en["title"] or (page or {}).get("title")), author=(author or None) and clean_source_text(author[:300]),
             published_at=en["published_at"] or now, fetched_at=now, text=text, text_source=source,
             agency=detect_agency(author, text), minhash=minhash(text), extract_failures=0,
             image=(page or {}).get("image") or en.get("image") or "",
