@@ -1166,7 +1166,11 @@
   /* flex always (not only .on): when .on was removed the text and the stepper stacked, so the panel jumped taller as it began to
      close. max-height follows the real height (--gh, measured in paintSpot) so the whole transition is visible both ways; a fixed
      160px for ~45px of content spent most of the close doing nothing, then snapped. */
-  .gdef { display: flex; align-items: center; gap: 10px; }
+  /* top-aligned, with auto margins on the children: centred while there is room, but when the panel is shorter than its content
+     (mid-close) auto margins resolve to 0, so the text stays at the top and is cut from the bottom only. `align-items: center`
+     cut it from both ends (the text slid up out of view and the stepper was sliced). */
+  .gdef { display: flex; align-items: flex-start; gap: 10px; }
+  .gdef .gdt, .gdef .gstep { margin-block: auto; }
   .gdef.on { max-height: var(--gh, 160px); }
   .gdef .gdt { flex: 1; min-width: 0; }
   .gstep { flex: none; display: flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
