@@ -1083,9 +1083,12 @@
   header.top .cback, .cfold .cback { position: absolute; left: 0; top: 0; z-index: 2; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.22);
                       padding: 0; background: none; color: #1f2550; display: flex; align-items: center; justify-content: center;
                       pointer-events: none; opacity: 0; transition: opacity 160ms ease; }
-  header.top .cpill, .cfold .cpill { transition: clip-path 380ms cubic-bezier(.3,.1,.2,1), -webkit-clip-path 380ms cubic-bezier(.3,.1,.2,1); clip-path: inset(0 0 0 0 round 15px); -webkit-clip-path: inset(0 0 0 0 round 15px); }
+  header.top .cpill, .cfold .cpill { transition: clip-path 380ms cubic-bezier(.3,.1,.2,1), -webkit-clip-path 380ms cubic-bezier(.3,.1,.2,1); clip-path: inset(-8px 0 0 0 round 15px); -webkit-clip-path: inset(-8px 0 0 0 round 15px); }
+  /* the unread badge sticks out of the menu button (top -4px, right -5px): the clips leave room for it at rest */
   header.top .cpill .mbtn, .cfold .cpill .mbtn { transition: clip-path 380ms cubic-bezier(.3,.1,.2,1), -webkit-clip-path 380ms cubic-bezier(.3,.1,.2,1), color 140ms ease;
-                            clip-path: inset(0 0 0 0 round 12px); -webkit-clip-path: inset(0 0 0 0 round 12px); }
+                            clip-path: inset(-8px -8px -8px -8px round 12px); -webkit-clip-path: inset(-8px -8px -8px -8px round 12px); }
+  .mbadge { transition: opacity 160ms ease; }
+  html.reading .mbadge { opacity: 0; }
   header.top .cpill svg, .cfold .cpill svg { transition: opacity 160ms ease; }
   html.reading header.top .cpill, html.reading .cfold .cpill { clip-path: inset(0 calc(100% - 30px) 0 0 round 15px); -webkit-clip-path: inset(0 calc(100% - 30px) 0 0 round 15px); }
   html.reading header.top .cpill .mbtn, html.reading .cfold .cpill .mbtn { clip-path: inset(0 12px 0 0 round 12px); -webkit-clip-path: inset(0 12px 0 0 round 12px); color: transparent; }
