@@ -144,12 +144,13 @@
      Closing: the article's text left at once while the white plate covered the card, and the card's own text came back only
      when the sheet faded at the end (a blank white card). Now the plate fades away first and the card stays visible
      underneath, only its picture, headline, kicker and bar hidden (.under) while the article's glide into their places;
-     at the end the two hand over in a short crossfade (#sheet.gone). */
+     at the end the card's copy comes back at once UNDER the article's (they are identical, so it is not seen) and only the
+     article's fades (#sheet.gone): crossfading the two let the white through for a few frames (owner, Oct 17 2026: the bar
+     went pale and the picture whitened at the hand-over). */
   #sheet.pre:not(.anim) { opacity: 0.01; }
   #sheet.leaving #plate { opacity: 0; transition: opacity 180ms ease; }
   #sheet.leaving #plate i { opacity: 0; transition: none; }
   #sheet.gone { opacity: 0; transition: opacity 130ms ease; }
-  a.card .pic, a.card h2, a.card .kk, a.card .edge { transition: opacity 130ms ease; }
   a.card.under .pic, a.card.under h2, a.card.under .kk, a.card.under .edge { opacity: 0; transition: none; }
   .sheet-scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; touch-action: pan-y pinch-zoom; overscroll-behavior: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .sheet-scroll::-webkit-scrollbar { display: none; }
@@ -415,6 +416,8 @@
     .card .pic { margin: 0 -30px; }
     .chrome { padding-top: 29px; }
     .card h2 { font-size: 32px; }
+    .hbox h1 { font-size: 32px; }   /* the article's headline on the card's base, or the two are fitted to different sizes and
+                                       lines (owner, Oct 17 2026: the headline snapped on closing, on 17 of 30 cards at this width) */
   }
   /* the sections bar (owner, Oct 9 2026; designed on the canvas as "Sections A"): joined to the bottom edge,
      rounded on top, the header's indigo. Five primary sections and All; a primary slides to the left end and
@@ -2354,7 +2357,7 @@ async function openStory(id, fromCard, opts = {}) {
     const u = `#/story/${encodeURIComponent(id)}`;
     if (location.hash !== u) { history.pushState({story: id}, "", u); openedFromDeck = true; }
   }
-  stopMorph(); releaseUnder();
+  stopMorph(); releaseUnder(); resetBar();
   sheet.classList.remove("anim", "open", "leaving", "on", "gone");
   let done = Promise.resolve();
   if (r && !STILL.matches) {
@@ -2415,10 +2418,10 @@ function closeStory(animate = true) {
     sheet.classList.add("leaving");
     closing = setTimeout(() => {   // the glide has landed on the card's own places: hand over in a short crossfade
       sheet.classList.add("gone"); releaseUnder();
-      closing = setTimeout(() => { sheet.classList.remove("on", "anim", "leaving", "pre", "gone"); stopMorph(); resetPlate(); closing = null; }, 140);
+      closing = setTimeout(() => { sheet.classList.remove("on", "anim", "leaving", "pre", "gone"); stopMorph(); resetPlate(); resetBar(); closing = null; }, 140);
     }, MOTION_MS - 20);
   } else {
-    sheet.classList.remove("on", "anim", "open", "leaving", "pre", "gone"); resetPlate(); releaseUnder();
+    sheet.classList.remove("on", "anim", "open", "leaving", "pre", "gone"); resetPlate(); releaseUnder(); resetBar();
   }
   const el = track.querySelector(`.slot[data-i="${current}"] a.card`);
   if (el) el.focus({preventScroll: true});
@@ -3055,8 +3058,10 @@ function flyBarBack(cardEl) {       // closing: the bar goes back to the card's 
   ab.style.opacity = "1";
   ab.style.transition = "transform 460ms var(--ease)";
   ab.style.transform = `translate(${a.left - b.left}px, ${a.top - b.top}px) scale(${a.width / b.width}, ${(a.height / b.height) || 0.8})`;
-  setTimeout(() => { ab.style.transition = ""; ab.style.transform = ""; ab.style.opacity = ""; ab.style.willChange = ""; }, 500);
+  // it stays over the card's bar until the sheet is gone (owner, Oct 17 2026: a fixed 500 ms reset put it back at its
+  // article place while the sheet was still fading, a bar flashing 30 px above the card's own)
 }
+function resetBar() { const ab = $("abar"); if (ab) { ab.style.transition = ""; ab.style.transform = ""; ab.style.opacity = ""; ab.style.willChange = ""; } }
 /* ======================= one motion for opening and closing (optimisation pass, owner, Oct 16 2026) =======================
    Everything that moves while an article grows out of its card (or back) moves by transform or opacity only, so the GPU
    runs it even while the page is busy, and it all starts on one frame:

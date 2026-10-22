@@ -1215,6 +1215,16 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   pane opens). A tap glides to the line and centres it too. Measured: 2/2 popped in the middle, the line within 2-20 px of
   the centre. `sw.js` np-main-63.
 
+- **No flash at the end of closing (owner, Oct 17 2026, a desktop recording: the colour bar and the picture flashed white, some
+  headlines snapped to another size).** (1) Bar: `flyBarBack` reset the article's bar after a fixed 500 ms, while the sheet was
+  still fading, so it jumped back to its place in the article for a few frames. Now `resetBar()` runs only once the sheet is
+  hidden (end of `closeStory`, the no-animation close, and the start of `openStory`). (2) White dip: the card's picture,
+  headline, kicker and bar faded in (130 ms) while the sheet faded out, two half-transparent copies over white. The card's
+  copy now appears at once under the sheet and only the sheet fades. (3) Headline snap: at 700 px and wider the card's
+  headline base is 32px but the article's was 27px, so `fitHead` fitted them to different sizes and lines (17 of 30 cards
+  at 900 px). `.hbox h1` is 32px there too: 0 of 30 differ at 900 px and on a phone. Checked in the throttled harness at
+  both widths, not on a real phone. `sw.js` np-main-64.
+
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →
 retract headline-only reads → Tavily reads blocked pages → wire copies → grouping (`stories.py`) →
