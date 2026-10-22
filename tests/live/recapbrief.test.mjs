@@ -40,9 +40,9 @@ test("every story is one numbered line the guide may highlight: s<story id>, in 
 
 test("each line carries the colour the recap shows, in words, and never a stronger one; one outlet is said as one", () => {
   const ins = buildRecapBrief(row(), "en").instruction;
-  assert.match(ins, /\[s12\] Walkout in the House \| 1 outlet\n {2}SUMMARY \(ONE OUTLET ONLY\): The opposition walked out of the House\./);
+  assert.match(ins, /\[s12\] Walkout in the House \| 1 outlet\n {2}SUMMARY \(SINGLE SOURCE\): The opposition walked out of the House\./);
   assert.match(ins, /\[s21\] RBI holds rates \| 7 outlets\n {2}SUMMARY \(DEVELOPING\)/);
-  assert.match(ins, /MORE \(NOT YET CROSS-CHECKED\): It will meet on the 20th\./);
+  assert.match(ins, /MORE \(NOT CONFIRMED\): It will meet on the 20th\./);
 });
 
 test("the summary is not said twice when it is the lead's own first sentence", () => {
@@ -64,7 +64,7 @@ test("an older recap (stories with a lead, no sections) still works, and one wit
   const old = { day: "2026-10-09", payload_en: { stories: [{ id: 5, h: "Old story", lead: [{ t: "It happened.", c: "established" }, { t: "More.", c: "single" }] }] } };
   const b = buildRecapBrief(old, "en");
   assert.deepEqual(b.sentenceIds, ["s5"]);
-  assert.match(b.instruction, /\[s5\] Old story\n {2}SUMMARY \(ESTABLISHED\): It happened\.\n {2}MORE \(ONE OUTLET ONLY\): More\./);
+  assert.match(b.instruction, /\[s5\] Old story\n {2}SUMMARY \(ESTABLISHED\): It happened\.\n {2}MORE \(SINGLE SOURCE\): More\./);
   assert.equal(buildRecapBrief({ day: "x", payload_en: { sections: [], stories: [] } }, "en"), null);
   assert.equal(buildRecapBrief({ day: "x" }, "en"), null);
 });
@@ -84,7 +84,7 @@ test("a suicide story adds the Tele-MANAS rules; no other recap does", () => {
 
 test("the guide is told the traps: not more certain than the status, no outside facts, no 'shall I go on', tap to open", () => {
   const ins = buildRecapBrief(row(), "en").instruction;
-  assert.match(ins, /ONE OUTLET ONLY is not confirmed/);
+  assert.match(ins, /SINGLE SOURCE is not confirmed/);
   assert.match(ins, /Never say a name, number, place or date that is not in the lines/);
   assert.match(ins, /Do not ask "Shall I go on\?"/);
   assert.match(ins, /call open_article with that story's number/);          // depth: the guide opens the story's article itself

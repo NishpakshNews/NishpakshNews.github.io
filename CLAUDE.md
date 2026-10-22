@@ -39,6 +39,7 @@ every outlet that covered it, and colours every sentence by how well it is suppo
   (and not disputed or false) goes INTO the article, shown purple ("one outlet only": an exclusive,
   or a mistake); the colour, not words, says so (see "One author's voice"). `narrative.shade`; the writer and the revision pass must
   use every statement, one-outlet lines included (they were "minor" and optional before).
+- **Category names (owner, Oct 22 2026).** One wording everywhere a reader or the voice guide sees it: purple `single` = "Single source" (HI "एक ही स्रोत"), clay brown `unverified` = "Not confirmed" (HI "अपुष्ट"; the site does not verify anything, so "unverified" and "not yet cross-checked" are retired). "Source" means an independent origin of information (owner groups and wire copies merged), never an article. The two are NOT the same category: `single` = one independent source; `unverified` = anything short of the confirmed rule (2 sources, one origin repeated, not checkable). Internal keys, CSS classes and the writer's own labels (`narrative.STATUS_LABEL`: ONE OUTLET ONLY / REPORTED) are unchanged, so no page is rewritten; `sw.js` np-main-67.
 - **Interim publishing rule** while perspectives are unknown: 3+ independent read outlets (state media
   and PIB not counted, see "Outlets outside India") and 2+ origins. Perspectives emerge from agreement data (no hand labels of outlets).
 - **Option B:** a page we could not read (headline/blurb only) is listed as "could not be read",
