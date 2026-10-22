@@ -1152,7 +1152,8 @@
   .pinfo b { width: 30px; height: 30px; background: rgba(255,255,255,0.12); color: #fff; box-shadow: none; font-size: 15px; }
   .pin .gdef { color: rgba(255,255,255,0.86); }
   .pin .gdef b { color: #fff !important; }
-  .pin .gdef.on { margin: 10px 0 0; font-size: 13px; }
+  .pin .gdef { font-size: 13px; }      /* the size is not tied to .on: it used to change as the panel closed, re-wrapping the text mid-close */
+  .pin .gdef.on { margin: 10px 0 0; }
   /* pills and section names share out the whole width (they still wrap, or scroll for the section names, when they do not fit) */
   .kchips .kpill { flex: 1 1 auto; justify-content: center; }
   .cpane .rail button { flex: 1 0 auto; }
@@ -1162,7 +1163,11 @@
   /* the key card's pills: the same shape */
   .kpill { min-height: 30px; height: 30px; padding: 0 10px 0 4px; gap: 5px; border-radius: 999px; }
   /* the definition with a ‹ › stepper: walk through the lit lines one by one */
-  .gdef.on { display: flex; align-items: center; gap: 10px; max-height: 160px; }
+  /* flex always (not only .on): when .on was removed the text and the stepper stacked, so the panel jumped taller as it began to
+     close. max-height follows the real height (--gh, measured in paintSpot) so the whole transition is visible both ways; a fixed
+     160px for ~45px of content spent most of the close doing nothing, then snapped. */
+  .gdef { display: flex; align-items: center; gap: 10px; }
+  .gdef.on { max-height: var(--gh, 160px); }
   .gdef .gdt { flex: 1; min-width: 0; }
   .gstep { flex: none; display: flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
   .gstep button { width: 30px; height: 30px; border-radius: 50%; border: 0; padding: 0; cursor: pointer; display: flex; align-items: center; justify-content: center;
@@ -4633,9 +4638,12 @@ function paintStep() {
 const paintSpotBase = paintSpot;
 paintSpot = function () {
   gIdx = -1;
+  // closing: pin the max-height to the panel's real height first, so the close starts moving at once and ends exactly shut
+  sheet.querySelectorAll(".gdef.on").forEach(d => d.style.setProperty("--gh", d.scrollHeight + "px"));
   paintSpotBase();
   if (spot) sheet.querySelectorAll(".gdef.on").forEach(d => {
     d.innerHTML = `<span class="gdt">${d.innerHTML}</span><span class="gstep"><button type="button" data-gstep="-1" aria-label="${lang === "hi" ? "पिछली पंक्ति" : "Previous line"}">${STEP_SVG(-1)}</button><span></span><button type="button" data-gstep="1" aria-label="${lang === "hi" ? "अगली पंक्ति" : "Next line"}">${STEP_SVG(1)}</button></span>`;
+    d.style.setProperty("--gh", d.scrollHeight + "px");     // opening / switching colour: the new content's height
   });
   paintStep();
 };
