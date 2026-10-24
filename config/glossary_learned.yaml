@@ -8,7 +8,7 @@ rejected: []
 terms: []
 
 proposed:
-  - {en: "actor", hi: "श्रॉफ", section: "", context: ["alleg", "fire", "arrest", "attack", "car", "connect", "mumbai", "polic", "three"], learned: "2026-10-24", stories: 3, days: 3, en_sources: 10, hi_sources: 6, why: "unstable: without its best day and best source it no longer passes"}
+  - {en: "actor", hi: "श्रॉफ", section: "", context: ["alleg", "fire", "arrest", "attack", "car", "connect", "mumbai", "polic", "three", "assail", "branch", "cartridg"], learned: "2026-10-24", stories: 3, days: 3, en_sources: 10, hi_sources: 6, why: "unstable: without its best day and best source it no longer passes"}
   - {en: "assemblies", hi: "निषेधाज्ञा", section: "", context: ["order", "prohibitori", "area", "alleg", "beyond", "curb", "defianc", "demonstr", "depart", "design", "despit", "district"], learned: "2026-10-24", stories: 3, days: 3, en_sources: 10, hi_sources: 9, why: "unstable: without its best day and best source it no longer passes"}
   - {en: "bail", hi: "जमानत", section: "", context: ["court", "grant", "case", "default", "accus", "appear", "arrest", "but", "camp", "chargesheet", "complet", "complex"], learned: "2026-10-24", stories: 3, days: 3, en_sources: 9, hi_sources: 9, why: "unstable: without its best day and best source it no longer passes"}
   - {en: "nationals", hi: "दूतावास", section: "", context: ["embassi", "come", "issu", "secur", "ani", "can", "case", "contact", "emergenc", "add", "further", "offic"], learned: "2026-10-24", stories: 3, days: 3, en_sources: 15, hi_sources: 11, why: "unstable: without its best day and best source it no longer passes"}
