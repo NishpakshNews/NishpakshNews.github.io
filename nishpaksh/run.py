@@ -226,6 +226,11 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
             editions.attach_updates(store, router, sid)
         except Exception as e:  # noqa: BLE001 - an update list never stops the run
             log.warning("updates of story %s not attached: %s", sid, str(e)[:150])
+    # "Latest in this story" (owner, Oct 24 2026): every page lists the follow-ups that develop it, newest last
+    try:
+        stats["children_attached"] = editions.attach_children(store)
+    except Exception as e:  # noqa: BLE001 - a link list never stops the run
+        log.warning("children not attached: %s", str(e)[:150])
     stats.update(stories_dirty=len(dirty), analysed=len(analysed), qualifying=len(qualifying),
                  settled=len(settled), settled_read=sum(1 for why in reasons.values() if why == "read"),
                  claims_checked=checked, colours_matured=matured,

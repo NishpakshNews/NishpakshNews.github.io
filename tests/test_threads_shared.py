@@ -69,3 +69,38 @@ def test_an_update_is_listed_only_once_the_old_line_is_struck(store):
     assert u["struck"] is True and u["text"] == "Twelve people died" and u["was"] == "Five people died"
     first, second = p["narrative"]["paragraphs"][0]
     assert first.get("struck") is True and not second.get("struck")             # a sentence with another fact stays
+
+
+def _page(store, sid, at, head="h", **extra):
+    nar = {"paragraphs": [[{"text": "A line.", "ids": [], "class": "single"}]]}
+    store.exec(insert(published).values(story_id=sid, version=1, updated_at=at, headline_en=head, headline_hi=head + " hi",
+                                        payload_en={"narrative": nar, "children": [], **extra},
+                                        payload_hi={"narrative": nar, "children": []}))
+
+
+def test_a_page_lists_its_follow_ups_newest_last_and_only_changes_when_they_do(store):
+    from nishpaksh.db import story_links
+    _page(store, 1, dt.datetime(2026, 10, 20), "parent")
+    _page(store, 2, dt.datetime(2026, 10, 22), "second")
+    _page(store, 3, dt.datetime(2026, 10, 21), "first")
+    for child in (2, 3):
+        store.exec(insert(story_links).values(parent_id=1, child_id=child, created_at=dt.datetime(2026, 10, 22), reason="t"))
+    assert editions.attach_children(store) == 1
+    row = store.one(select(published.c.payload_en, published.c.payload_hi).where(published.c.story_id == 1))
+    assert [c["story_id"] for c in row["payload_en"]["children"]] == [3, 2]          # oldest first, the newest is last
+    assert row["payload_en"]["children"][-1]["headline"] == "second"
+    assert row["payload_hi"]["children"][-1]["headline"] == "second hi"               # the Hindi page names it in Hindi
+    assert row["payload_en"]["narrative"]["paragraphs"][0][0]["text"] == "A line."    # the words never change
+    assert editions.attach_children(store) == 0                                       # nothing new: nothing written
+    _page(store, 4, dt.datetime(2026, 10, 23), "third")
+    store.exec(insert(story_links).values(parent_id=1, child_id=4, created_at=dt.datetime(2026, 10, 23), reason="t"))
+    assert editions.attach_children(store, only=[1]) == 1
+    row = store.one(select(published.c.payload_en).where(published.c.story_id == 1))
+    assert [c["story_id"] for c in row["payload_en"]["children"]][-1] == 4
+
+
+def test_a_follow_up_not_published_yet_is_not_listed(store):
+    from nishpaksh.db import story_links
+    _page(store, 1, dt.datetime(2026, 10, 20), "parent")
+    store.exec(insert(story_links).values(parent_id=1, child_id=9, created_at=dt.datetime(2026, 10, 22), reason="t"))
+    assert editions.attach_children(store) == 0

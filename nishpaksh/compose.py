@@ -895,6 +895,12 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     payload["version"] = hi["version"] = 1
     store.exec(insert(published).values(story_id=story_id, version=1, updated_at=now, headline_en=payload["headline"],
                                         headline_hi=hi["headline"], payload_en=payload, payload_hi=hi))
+    if parents:      # the parents' "Latest in this story" link points at this follow-up from now on
+        try:
+            from .editions import attach_children
+            attach_children(store, only=parents)
+        except Exception as e:  # noqa: BLE001 - a link never stops an article; the next run's pass does it
+            log.warning("children of %s not attached: %s", parents, str(e)[:150])
     return _outcome(story_id, "published")
 
 

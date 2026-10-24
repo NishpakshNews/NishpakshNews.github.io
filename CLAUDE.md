@@ -1677,6 +1677,15 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   "broad" are gone (settings kept, unused); run stat `settled_read` replaces `settled_broad`. Express:
   `wait_for_second_hours: 0` (two outlets are read before it qualifies). Tests: test_pipeline
   `test_a_story_is_written_once_the_rule_is_met_and_its_reports_are_read`, `test_article_is_written_once_its_reports_are_read`.
+- **"Latest in this story" was never shown (owner, Oct 24 2026: older articles had no link).** An article is written before anything
+  develops it, so `payload.children` is written as `[]`, and nothing ever filled it (`threads.relatives` had no caller; 0 of 65 live
+  files had children while 15 articles were follow-ups). Now `editions.attach_children(store, only=None)` sets every parent's
+  `children` from `story_links` (live follow-ups only, oldest first so the newest is last; the Hindi page gets Hindi headlines;
+  text never changes; written only when the list changed, so the feed stamp moves only then). Automatic: `compose` calls it for the
+  parents right after a follow-up is inserted (the link shows at once) and `run.py` calls it for every page each run (stat
+  `children_attached`), so a missed or failed attach is repaired the next hour and existing articles get their link at the next run.
+  Tests: `tests/test_threads_shared.py`. Colours were already live (`editions.mature`); few lines ever turn developing because a
+  closed article takes in no new reports, so only lines that met the 3-outlet / 2-origin rule at writing time can ripen.
 - **Latest in this story; colour notifications (Oct 16 2026, owner; step 4).** Site: an article with later
   developments opens with a "Latest in this story" link to its newest child (`latestin`). Notifications: follows of
   kind "colour" (key established / developing / disputed / false; Supabase check constraint widened, migration

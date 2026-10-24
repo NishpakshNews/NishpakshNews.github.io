@@ -358,6 +358,45 @@ def _outlets(origins: dict | None) -> int:
     return int((origins or {}).get("outlets") or 0)
 
 
+def attach_children(store: Store, only: list[int] | None = None) -> int:
+    """The "Latest in this story" link (owner, Oct 24 2026): a page's `children` are the live follow-ups that develop it
+    (story_links), oldest first, so the newest is last. An article is written before anything develops it, so its
+    `children` start empty; this fills them in (page text never changes). `only`: just these parents (the follow-up
+    that was just published passes its parents); None: every page that has a follow-up in story_links. Safe to run
+    any number of times: a page is written only when its list changed. Returns how many pages changed."""
+    links = store.rows(select(story_links.c.parent_id, story_links.c.child_id))
+    if only is not None:
+        keep = set(only)
+        links = [x for x in links if x["parent_id"] in keep]
+    kids: dict[int, set[int]] = {}
+    for x in links:
+        kids.setdefault(x["parent_id"], set()).add(x["child_id"])
+    child_ids = sorted({c for v in kids.values() for c in v})
+    live = {r["story_id"]: r for r in store.rows(
+        select(published.c.story_id, published.c.updated_at, published.c.headline_en, published.c.headline_hi)
+        .where(published.c.story_id.in_(child_ids or [-1])))}
+    changed = 0
+    for pid in sorted(kids):
+        row = store.one(select(published.c.payload_en, published.c.payload_hi).where(published.c.story_id == pid))
+        if not row:
+            continue
+        mine = sorted((live[c] for c in kids.get(pid, ()) if c in live and c != pid),
+                      key=lambda r: (r["updated_at"], r["story_id"]))
+        out = {}
+        for col, head in (("payload_en", "headline_en"), ("payload_hi", "headline_hi")):
+            p = json.loads(json.dumps(row[col])) if row[col] else None
+            if not p:
+                continue
+            want = [{"story_id": r["story_id"], "headline": r[head] or r["headline_en"] or ""} for r in mine]
+            if want != (p.get("children") or []):
+                p["children"] = want
+                out[col] = p
+        if out:
+            store.exec(update(published).where(published.c.story_id == pid).values(**out))
+            changed += 1
+    return changed
+
+
 def attach_updates(store: Store, router: Router | None, sid: int) -> bool:
     """"Updates since published" on a published page (owner, Oct 16 2026): only lines of the page that are STRUCK are
     listed there, each struck through with the later statement that replaced it after it. A later statement that REPLACES one of the
