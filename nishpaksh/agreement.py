@@ -8,7 +8,7 @@ board, panel, police ...; a government, ministry, company or party stays "it" un
 
 By code, on the finished article (no model): every "it / its / itself" whose nearest BODY before it (this sentence, else
 the sentence before) is one of those bodies becomes "they / their / themselves", and the verb after a subject "it" agrees
-(was -> were, is -> are, has -> have, does -> do, says -> say). Conservative: the nearest body decides ("The court asked
+(was -> were, is -> are, has -> have, says -> say: inflected by lemminflect). Conservative: the nearest body decides ("The court asked
 the Centre whether it ..." stays "it": the Centre is nearer), a person or a place is not a body, an expletive "it"
 ("it is not clear that ...") is left, and a pronoun with no body before it is left alone.
 """
@@ -103,32 +103,6 @@ def body_mentions(text: str) -> list[tuple[int, int, str, bool]]:
     return out
 
 
-PLURAL_VERB = {"was": "were", "is": "are", "has": "have", "does": "do", "isn't": "aren't", "wasn't": "weren't",
-               "hasn't": "haven't", "doesn't": "don't", "isn’t": "aren’t", "wasn’t": "weren’t", "hasn’t": "haven’t",
-               "doesn’t": "don’t"}
-# present-tense reporting and acting verbs: "it says" -> "they say"
-PRESENT_S = {"says", "believes", "wants", "argues", "maintains", "claims", "denies", "seeks", "adds", "notes", "takes",
-             "gives", "plans", "expects", "considers", "opposes", "supports", "finds", "holds", "orders", "directs",
-             "hears", "rejects", "accepts", "feels", "thinks", "asks", "calls", "needs", "keeps", "makes", "sees",
-             "stresses", "warns", "insists", "contends", "submits", "observes", "reserves", "issues", "grants"}
-_ADV = {"also", "now", "then", "already", "still", "never", "only", "just", "again", "further", "later", "earlier",
-        "not", "even", "yet", "soon", "currently", "reportedly"}
-# what stands before a subject "it" (a clause start) and before an object "it"
-_SUBJECT_AFTER = {"that", "and", "but", "or", "as", "when", "while", "because", "since", "if", "after", "before", "which",
-                  "whereas", "though", "although", "said", "says", "stated", "added", "noted", "argued", "claimed",
-                  "alleged", "told", "maintained", "contended", "submitted", "warned", "stressed", "observed",
-                  "clarified", "announced", "confirmed", "denied", "explained", "insisted", "whether", "why", "how",
-                  "what", "where", "until", "unless", "so", "yet", "then", "once", "now", "than"}
-_OBJECT_AFTER = {"asked", "told", "urged", "directed", "ordered", "requested", "moved", "approached", "petitioned",
-                 "before", "to", "from", "with", "against", "of", "by", "for", "on", "at", "in", "informed", "wrote",
-                 "reminded", "advised", "pressed", "challenged", "appealed", "allowed", "let", "made", "got"}
-_EXPLETIVE = re.compile(
-    r"(?i)^it\s+(?:is|was|will be|would be|has been|remains|became|seems|appears|looks|may be|might be|could be)\s+"
-    r"(?:not\s+|yet\s+|still\s+|also\s+|quite\s+|very\s+)*(?:clear|unclear|known|unknown|likely|unlikely|possible|"
-    r"impossible|expected|believed|understood|learnt|learned|time|too|the first|the second|the third|the latest|"
-    r"the last|a first|reported|alleged|said|feared|hoped|noted|important|necessary|essential|evident|obvious|"
-    r"true|false|wrong|right|fair|just|proper|improper|unfortunate|worrying|concerning|a mistake|a matter|"
-    r"raining|snowing|dark|late|early)\b")
 _PRON = re.compile(r"(?<![\w'’-])(?P<w>It|it|Its|its|Itself|itself)(?![\w'’-])")
 _QUOTE = re.compile(r'"[^"]*"|“[^”]*”')
 
@@ -138,30 +112,22 @@ def _prev_word(text: str, pos: int) -> str:
     return m.group(1).lower() if m else ""
 
 
-def _plural_verb(word: str) -> str | None:
-    w = word.lower()
-    if w in PLURAL_VERB:
-        new = PLURAL_VERB[w]
-    elif w in PRESENT_S:
-        new = w[:-3] + "y" if w.endswith("ies") else w[:-2] if w.endswith(("sses", "shes", "ches")) else w[:-1]
+def _plural(tok) -> str | None:
+    """The plural-subject form of a finite verb, from the inflection library (lemminflect), not a verb table:
+    is -> are, was -> were, has -> have, says -> say; any other tense is the same for one or many."""
+    from lemminflect import getInflection
+    if tok.tag == "VBZ":
+        forms = getInflection(tok.lemma, "VBP")
+    elif tok.tag == "VBD" and tok.lemma == "be":
+        forms = getInflection("be", "VBD")
     else:
         return None
-    return new[:1].upper() + new[1:] if word[:1].isupper() else new
-
-
-def _verb_after(text: str, end: int) -> tuple[int, int, str] | None:
-    """The first verb after a subject pronoun, past up to two adverbs: (start, end, word)."""
-    pos, skipped = end, 0
-    while True:
-        m = re.match(r"\s+([A-Za-z’']+)", text[pos:])
-        if not m:
-            return None
-        w = m.group(1)
-        if w.lower() in _ADV and skipped < 2:
-            pos += m.end()
-            skipped += 1
-            continue
-        return pos + m.start(1), pos + m.end(1), w
+    if not forms:
+        return None
+    new = forms[-1]
+    if tok.text.lower().endswith(("n't", "n’t")):
+        new += tok.text[-3:]
+    return new[:1].upper() + new[1:] if tok.text[:1].isupper() else new
 
 
 def _nearest_body(before: str) -> tuple[str, bool] | None:
@@ -193,42 +159,47 @@ def _same_clause(here: str, near: tuple[str, bool], full_before: str, context: s
 
 def fix_text(text: str, context: str = "") -> tuple[str, int]:
     """One sentence (or coloured part) with `it / its / itself` made plural where the nearest body before it acts as a
-    group. `context` is what comes before (the sentence before). Returns (text, how many pronouns changed)."""
+    group. `context` is what comes before (the sentence before). Returns (text, how many pronouns changed). The
+    grammatical role of each pronoun (subject, object, \"it is clear that\", possessive) comes from the dependency
+    parse (`nlp.parse`); a sentence that cannot be parsed is left exactly as written."""
     if not re.search(r"(?i)\bits?\b|\bitself\b", text):
         return text, 0
+    from . import nlp
+    toks = nlp.parse(text)
+    if not toks:
+        return text, 0
+    at = {t.start: t for t in toks}
     quotes = [(m.start(), m.end()) for m in _QUOTE.finditer(text)]
     edits: list[tuple[int, int, str]] = []
     for m in _PRON.finditer(text):
         if any(a <= m.start() < b for a, b in quotes):
             continue
-        w = m.group("w")
-        low = w.lower()
+        t = at.get(m.start())
+        if t is None:
+            continue
         here = text[:m.start()]
         near = _nearest_body(here) or (_nearest_body(context) if not body_mentions(here) else None)
-        if not near or not near[1]:
+        if not near or not near[1] or not _same_clause(here, near, here, context):
             continue
-        if not _same_clause(here, near, text[:m.start()], context):
-            continue
-        cap = w[:1].isupper()
+        low, cap = m.group("w").lower(), m.group("w")[:1].isupper()
         if low == "its":
             edits.append((m.start(), m.end(), "Their" if cap else "their"))
         elif low == "itself":
             edits.append((m.start(), m.end(), "Themselves" if cap else "themselves"))
-        else:
-            if _EXPLETIVE.match(text[m.start():]):
+        elif t.dep in ("nsubj", "nsubjpass"):
+            verb = next((x for x in sorted([toks[t.head]] + [c for c in toks if c.head == t.head and c.dep in ("aux", "auxpass")],
+                                           key=lambda x: x.i) if x.i > t.i and x.tag in ("VBZ", "VBD", "MD")), None)
+            if verb is None:
                 continue
-            prev = _prev_word(text, m.start())
-            at_start = not here.strip() or here.rstrip().endswith((".", "!", "?", ":", ";", '"', "”"))
-            nxt = _verb_after(text, m.end())
-            if at_start or prev in _SUBJECT_AFTER or here.rstrip().endswith(","):
-                if nxt is None:
-                    continue
-                edits.append((m.start(), m.end(), "They" if cap else "they"))
-                nv = _plural_verb(nxt[2])
-                if nv:
-                    edits.append((nxt[0], nxt[1], nv))
-            elif prev in _OBJECT_AFTER:
-                edits.append((m.start(), m.end(), "Them" if cap else "them"))
+            nv = _plural(verb) if verb.tag != "MD" else verb.text
+            if nv is None and verb.tag != "MD" and verb.tag != "VBD":
+                continue
+            edits.append((m.start(), m.end(), "They" if cap else "they"))
+            if nv and nv != verb.text:
+                edits.append((verb.start, verb.end, nv))
+        elif t.dep in ("dobj", "obj", "pobj", "dative", "iobj"):
+            edits.append((m.start(), m.end(), "Them" if cap else "them"))
+        # "expl" (it is clear that ...) and anything else: left
     if not edits:
         return text, 0
     for s, e, new in sorted(set(edits), reverse=True):

@@ -27,7 +27,7 @@ import logging
 import re
 import threading
 
-from . import clock, entities, figures, grammar, refs, sentences, voice
+from . import clock, entities, figures, grammar, langcheck, refs, sentences, voice
 from . import plan as planning
 from .grammar import (ATTRIBUTION_VERBS, CONNECTIVE, DISPUTE_MARKERS, FALSE_MARKERS,  # noqa: F401 (moved to grammar.py)
                       HEDGE_MARKERS)
@@ -1899,6 +1899,12 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
     if paragraphs:
         paragraphs, flow = sentences.polish(paragraphs, by_id, lambda s_: _still_ok(s_, by_id, banned, outlets))
         flow.update(sentences.stats(paragraphs, by_id))
+        try:                                          # counted, never enforced (langcheck.py)
+            lang = langcheck.article_stats(paragraphs)
+            if lang:
+                flow["language"] = lang
+        except Exception as e:  # noqa: BLE001
+            log.info("language check skipped: %s", str(e)[:80])
         if layout and report_text:                    # the express desk: our words, not the outlet's
             paragraphs, copy_stats = _rephrase_copies(router if model else None, paragraphs, by_id, banned, outlets,
                                                       report_text)

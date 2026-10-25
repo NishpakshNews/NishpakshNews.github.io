@@ -8,3 +8,5 @@ sentence-transformers>=3.0
 spacy>=3.7
 murmurhash<1.0.14        # 1.0.14+ breaks spaCy 3.8 model loading (OverflowError in the tokenizer)
 rapidfuzz>=3.9
+lemminflect>=0.2.3       # verb forms for agreement.py (no model download)
+language-tool-python>=2.8  # grammar checker (langcheck.py); needs Java, which the runners have

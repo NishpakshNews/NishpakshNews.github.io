@@ -37,25 +37,18 @@ from __future__ import annotations
 import logging
 import re
 
+from . import nlp
+
 log = logging.getLogger(__name__)
 
 # ----- what counts as a reference that needs an antecedent -----------------------------------------------------
 
-# things and events (not bodies or offices: "the court", "the minister" are named by names.py / gloss.py)
-HEADS = ("scheme", "programme", "program", "policy", "bill", "law", "rule", "rules", "order", "case", "incident",
-         "video", "footage", "recording", "report", "move", "decision", "meeting", "project", "plan", "mission",
-         "campaign", "initiative", "verdict", "judgment", "judgement", "ruling", "probe", "investigation",
-         "notification", "circular", "amendment", "accident", "attack", "protest", "rally", "summit", "deal",
-         "agreement", "pact", "treaty", "tender", "study", "survey", "yojana", "drive", "exercise", "process",
-         "petition", "complaint", "allegation", "claim", "proposal", "policy", "package", "ordinance")
-_HEAD_ALT = "|".join(sorted(set(HEADS), key=len, reverse=True))
-# "the new scheme", "this move", "the missing video recording", "said report", "the same case"
-DEFINITE = re.compile(
-    rf"(?<![\w'’-])(?P<det>the|this|that|these|those|said|such|same|the same)\s+"
-    rf"(?P<mods>(?:[a-z][a-z-]*\s+){{0,3}}?)(?P<head>(?:(?:{_HEAD_ALT})\s+)?(?:{_HEAD_ALT}))(?![\w-])", re.I)
+# A reference is a noun phrase that opens with a definite determiner and has a common noun for its head, found by the
+# parser's noun chunks (nlp.noun_chunks), not by a list of nouns. A name (a capital inside, or an entity the parser
+# labels a person, body, place or date) is not generic. Whether a phrase points at something that has a name is decided
+# downstream by the source: no name there, nothing is glossed.
 _DET_WORDS = {"the", "this", "that", "these", "those", "said", "such", "same"}
-# a lower-case modifier that makes it a different phrase: "the case of", "the bill was passed" keep the match;
-# but a phrase that is the object of "of" ("the head of the case") is a part of a longer name, not a reference
+_NAMED_LABELS = {"PERSON", "ORG", "GPE", "LOC", "NORP", "FAC", "DATE", "TIME", "EVENT", "LAW", "PRODUCT", "WORK_OF_ART"}
 _GENERIC_NEEDS_NOTHING = re.compile(r"(?i)\b(?:in|under|for|on)\s+the\s+(?:process|meantime|case)\s+of\b")
 
 PRON_OPEN = re.compile(r"^(?P<p>It|They|This|These|Those|Its|Their|He|She|His|Her)\b(?P<rest>.*)$", re.S)
@@ -74,25 +67,28 @@ def _norm(s: str) -> str:
 
 
 def definite_phrases(text: str) -> list[dict]:
-    """The generic references in a text: {start, end, phrase, mods, head}. A phrase with a capital in it is a name
-    ("the Waqf Bill") and is not generic."""
+    """The generic references in a text: {start, end, phrase, det, mods, head}. A phrase with a capital in it is a name
+    (\"the Waqf Bill\") and is not generic. Text the parser cannot analyse has none."""
     out = []
+    chunks = nlp.noun_chunks(text or "")
+    if not chunks:
+        return out
     quotes = [(m.start(), m.end()) for m in _QUOTE.finditer(text or "")]
-    for m in DEFINITE.finditer(text or ""):
-        phrase = m.group(0)
-        if any(a <= m.start() < b for a, b in quotes):
+    for start, end, phrase, head, tag, label in chunks:
+        words = phrase.split()
+        if len(words) < 2 or len(words) > 5 or words[0].lower() not in _DET_WORDS:
             continue
-        # a capitalised word right after the head ("the order Monday") is not part of it; a capital INSIDE means a name
-        if any(w[:1].isupper() for w in phrase.split()[1:]) :
+        det = words[0].lower()
+        if det == "the" and len(words) > 2 and words[1].lower() == "same":
+            det, words = "the same", [words[0], *words[2:]]
+        if any(a <= start < b for a, b in quotes) or tag not in ("NN", "NNS") or label in _NAMED_LABELS:
             continue
-        before = text[max(0, m.start() - 12):m.start()]
-        if _GENERIC_NEEDS_NOTHING.search(before + phrase + " of"):
+        if any(w[:1].isupper() for w in words[1:]) or any(not re.fullmatch(r"[A-Za-z-]+", w) for w in words):
             continue
-        mods = [w.lower() for w in m.group("mods").split()]
-        if {"the", "a", "an", "of", "and", "that", "to", "in", "on", "for", "by", "with"} & set(mods):
-            continue                                   # "that the video": the phrase starts at "the", not at "that"
-        out.append({"start": m.start(), "end": m.end(), "phrase": phrase, "det": m.group("det").lower(),
-                    "mods": mods, "head": m.group("head").lower()})
+        if _GENERIC_NEEDS_NOTHING.search(text[max(0, start - 12):start] + phrase + " of"):
+            continue
+        out.append({"start": start, "end": end, "phrase": phrase, "det": det,
+                    "mods": [w.lower() for w in words[1:-1]], "head": words[-1].lower()})
     return out
 
 
@@ -227,8 +223,6 @@ def usable_gloss(gloss: str | None, phrase: str, source: str) -> str | None:
     if not in_source(g, source):
         return None
     if not re.search(r"[A-Z0-9]", g[1:] if g[:1].isupper() and len(g.split()) == 1 else g):
-        return None
-    if re.fullmatch(r"(?i)(?:the|a|an|this|that)?\s*(?:" + _HEAD_ALT + r")s?", g):
         return None
     return g
 

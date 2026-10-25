@@ -82,6 +82,73 @@ def ents(text: str) -> list[Ent]:
     return out
 
 
+# ------------------------------------------------------------------ the parse, as plain tokens (agreement, references)
+@dataclass(frozen=True)
+class Tok:
+    i: int
+    text: str
+    start: int
+    end: int
+    lemma: str
+    tag: str
+    pos: str
+    dep: str
+    head: int
+
+
+_parser = None
+_parse_cache: dict[str, list] = {}
+
+
+def set_parser(fn) -> None:
+    """Tests: fn(text) -> list[Tok] (or None)."""
+    global _parser
+    _parser = fn
+    _parse_cache.clear()
+
+
+def parse(text: str) -> list[Tok] | None:
+    """The tokens of ONE sentence with tag, part of speech, dependency label and head; None when not analysed."""
+    if not text:
+        return None
+    if text in _parse_cache:
+        return _parse_cache[text]
+    if _parser is not None:
+        out = _parser(text)
+    else:
+        nlp = pipeline()
+        if nlp is None:
+            return None
+        doc = nlp(text[:5_000])
+        out = [Tok(t.i, t.text, t.idx, t.idx + len(t.text), t.lemma_.lower(), t.tag_, t.pos_, t.dep_, t.head.i) for t in doc]
+    if len(_parse_cache) > 2000:
+        _parse_cache.clear()
+    _parse_cache[text] = out
+    return out
+
+
+def noun_chunks(text: str) -> list[tuple[int, int, str, str, str, str]] | None:
+    """(start, end, text, head lemma, head tag, head entity label) of each noun phrase; None when not analysed.
+    Tests: set_chunker."""
+    if not text:
+        return None
+    if _chunker is not None:
+        return _chunker(text)
+    nlp = pipeline()
+    if nlp is None:
+        return None
+    doc = nlp(text[:5_000])
+    return [(c.start_char, c.end_char, c.text, c.root.lemma_.lower(), c.root.tag_, c.root.ent_type_) for c in doc.noun_chunks]
+
+
+_chunker = None
+
+
+def set_chunker(fn) -> None:
+    global _chunker
+    _chunker = fn
+
+
 # ------------------------------------------------------------------ clauses (B27): a dependency parse, not a word list
 SPEECH_LEMMA = {"say", "tell", "state", "claim", "allege", "add", "note", "announce", "confirm", "deny", "warn",
                 "argue", "report", "assert", "insist", "explain", "mention", "remark", "stress", "reveal"}

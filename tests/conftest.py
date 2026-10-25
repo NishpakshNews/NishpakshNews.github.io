@@ -107,9 +107,57 @@ def fake_ner(text):
     return out
 
 
+def fake_chunker(text):
+    """Stand-in for spaCy noun chunks: a determiner, up to three lower-case words, the last one is the head."""
+    import re
+    return [(m.start(), m.end(), m.group(0), m.group(0).split()[-1].lower().rstrip("s"),
+             "NNS" if m.group(0).endswith("s") else "NN", "")
+            for m in re.finditer(r"(?<![\w'’-])(?:[Tt]he|[Tt]his|[Tt]hat|[Tt]hese|[Tt]hose|[Ss]aid|[Ss]uch)(?:\s+[a-z][a-z-]*){1,3}", text)]
+
+
+_PLURAL_HEADS = {"was": ("be", "VBD"), "is": ("be", "VBZ"), "has": ("have", "VBZ"), "says": ("say", "VBZ"),
+                 "said": ("say", "VBD"), "were": ("be", "VBD"), "are": ("be", "VBP"), "have": ("have", "VBP"),
+                 "planning": ("plan", "VBG"), "examining": ("examine", "VBG"), "considering": ("consider", "VBG"),
+                 "reviewing": ("review", "VBG")}
+
+
+def fake_parser(text):
+    """Stand-in for the dependency parse: every word is a token; \"it\" is the subject of the next verb word, the object
+    after a preposition or an object verb, and an expletive before is / was + an adjective of the usual kind."""
+    import re
+    from nishpaksh import nlp
+    toks = [m for m in re.finditer(r"[A-Za-z’']+", text)]
+    out = []
+    for i, m in enumerate(toks):
+        w = m.group(0)
+        lemma, tag = _PLURAL_HEADS.get(w.lower(), (w.lower(), "NN"))
+        out.append([i, w, m.start(), m.end(), lemma, tag, "", "dep", i])
+    for i, t in enumerate(out):
+        if t[1].lower() in ("it", "its", "itself"):
+            nxt = next((j for j in range(i + 1, len(out)) if out[j][5] != "NN"), None)
+            prev = out[i - 1][1].lower() if i else ""
+            expl = i + 2 < len(out) and out[i + 1][1].lower() in ("is", "was") and out[i + 2][1].lower() in (
+                "clear", "unclear", "likely", "raining", "known", "possible")
+            if expl:
+                t[7] = "expl"
+            elif prev in ("asked", "told", "urged", "to", "from", "with", "against", "of", "by", "for", "on", "at", "in", "before"):
+                t[7] = "pobj"
+            elif nxt is not None:
+                t[7], t[8] = "nsubj", nxt
+    return [nlp.Tok(*t[:7], t[7], t[8]) for t in out]
+
+
 @pytest.fixture(autouse=True)
 def local_ner(monkeypatch):
+    from nishpaksh import nlp
+    from nishpaksh import langcheck
+    langcheck.set_backend(lambda text: [])
+    nlp.set_chunker(fake_chunker)
+    nlp.set_parser(fake_parser)
     from nishpaksh import nlp
     nlp.set_backend(fake_ner)
     yield
     nlp.set_backend(None)
+    nlp.set_chunker(None)
+    nlp.set_parser(None)
+    langcheck.set_backend(None)
