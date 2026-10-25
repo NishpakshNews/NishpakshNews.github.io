@@ -46,7 +46,9 @@ def compare(payload: dict) -> dict:
     t.build()
 
     out: dict = {"speakers": len(speakers)}
-    old = {sp: voice.speaker_key(sp) for sp in speakers if not voice.is_body(sp)}
+    # persons only: a body ("Ministry of External Affairs") is not this table's business and made noise in the first run
+    old = {sp: voice.speaker_key(sp) for sp in speakers if not voice.is_body(sp)
+           and t.entity(sp) is not None and t.entity(sp).person}
     new = {sp: (t.entity(sp).id if t.entity(sp) is not None and t.entity(sp).person else None) for sp in old}
     split, merged = [], []
     by_old: dict[str, set] = {}
@@ -68,6 +70,22 @@ def compare(payload: dict) -> dict:
     out["old_short"], out["new_short"] = len(o), len(n)
     out["gained"] = sorted(set(n) - set(o))
     out["lost"] = sorted(set(o) - set(n))
+    why_lost = {}
+    for name in out["lost"]:
+        e = t.entity(name)
+        if e is None or not e.person:
+            why_lost[name] = "not a person to the table"
+        elif e.ambiguous:
+            why_lost[name] = "ambiguous"
+        elif len(e.fullest.tokens) < 2:
+            why_lost[name] = "one word"
+        else:
+            sk = voice_key = None
+            from ..entities import _tok_key
+            sk = _tok_key(e.surname)
+            clash = [x.name for x in t.entities if x is not e and sk in {k for m in x.mentions for k in m.keys}]
+            why_lost[name] = "surname is a word of " + ", ".join(clash[:3]) if clash else "other"
+    out["lost_why"] = why_lost
     weak = []
     for name in out["gained"]:
         e = t.entity(name)
@@ -107,7 +125,7 @@ def main() -> None:
         for nm in c["gained"]:
             ex["gained"].append({"story": r["story_id"], "name": nm})
         for nm in c["lost"]:
-            ex["lost"].append({"story": r["story_id"], "name": nm})
+            ex["lost"].append({"story": r["story_id"], "name": nm, "why": c["lost_why"].get(nm)})
         for w in c["weak"]:
             ex["weak"].append({"story": r["story_id"], **w})
     report = {"counts": dict(agg), "examples": {k: v[:EXAMPLES] for k, v in ex.items()}}

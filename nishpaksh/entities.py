@@ -28,6 +28,14 @@ from dataclasses import dataclass, field
 from . import spelling, titles
 
 PARTICLES = {"al", "el", "bin", "bint", "ibn", "de", "van", "von"}
+# words that stand before a name and are no part of it ("Capt Gurudeep Bala", "Shree Narendra Modi", the slogan "Free
+# Sharjeel Imam", a portfolio "Communications Pemmasani Chandra Sekhar"); the titles registry holds the real titles
+EXTRA_PREFIX = {"capt", "shree", "shri", "sri", "smt", "free", "communications", "commissioners", "students"}
+# a name that ends in, or holds, one of these is a body, place or event, never a person ("US Geological Survey",
+# "Jamiat Ulema-e-Hind", "Singapore-India Maritime Bilateral Exercise", "BCCI Women"); found in the first shadow run
+BODY_WORDS = {"survey", "exercise", "bilateral", "maritime", "hind", "women", "men", "branch", "house", "secretariat",
+              "bureau", "agency", "authority", "association", "federation", "union", "front", "force", "army", "navy",
+              "league", "cup", "trophy", "series", "tournament", "summit", "mission", "scheme", "yojana", "abhiyan"}
 _TOKEN = re.compile(r"[A-Za-z][A-Za-z.'’-]*")
 _KIN = re.compile(r"[’']s\s+(?:mother|father|wife|husband|son|daughter|brother|sister|parents|family|relatives|"
                   r"uncle|aunt|cousin|nephew|niece)\b", re.I)
@@ -96,7 +104,8 @@ def parse(raw: str) -> Mention:
     run: list[str] = []
     for t in reversed(toks):
         b = _bare(t)
-        if b in stop or b.lower() in ROLES_LOWER:
+        low = b.lower()
+        if b in stop or low in ROLES_LOWER or low in EXTRA_PREFIX or (low.endswith("s") and low[:-1] in ROLES_LOWER):
             break
         if b[:1].isupper() or (b.lower() in PARTICLES and run):
             run.append(re.sub(r"[’']s$", "", b))
@@ -105,11 +114,16 @@ def parse(raw: str) -> Mention:
     run.reverse()
     while run and run[0].lower() in PARTICLES:
         run.pop(0)
+    if len(run) >= 4 and len(run) % 2 == 0 and run[: len(run) // 2] == run[len(run) // 2:]:
+        run = run[: len(run) // 2]                       # "Lokesh Adhikari Lokesh Adhikari"
     prefix = toks[: len(toks) - len(run)]
     pw = set(titles.person_title_words())
     titled = any(_bare(w) in pw or _bare(w).lower() in ROLES_LOWER for w in prefix)
     title = " ".join(prefix)
-    if is_body(s) or any(w in NOT_PERSON for w in run):
+    name_text = " ".join(run)
+    words = {w.lower() for t in run for w in t.split("-")}
+    acronym = len(run) >= 2 and any(len(t) >= 3 and t.isupper() for t in run)
+    if (is_body(name_text) if titled else is_body(s)) or any(w in NOT_PERSON for w in run) or (words & BODY_WORDS) or acronym:
         return Mention(raw, title, tuple(run), "body", titled)
     if not run:
         return Mention(raw, title, (), "role", titled)
@@ -174,7 +188,9 @@ class Entity:
         # name, then the one written most often
         def written(m: Mention) -> int:
             return sum(1 for t in m.tokens if len(_bare(t).replace(".", "")) > 2)
-        return max(self.mentions, key=lambda m: (written(m), len(m.tokens), sum(1 for x in self.mentions if x.keys == m.keys),
+        def loose(m: Mention) -> bool:       # "Chief Electoral Officer of Uttar Pradesh Navdeep Rinwa": the place leaked in
+            return m.title.split()[-1:] in (["of"], ["for"], ["in"], ["from"])
+        return max(self.mentions, key=lambda m: (not loose(m), written(m), len(m.tokens), sum(1 for x in self.mentions if x.keys == m.keys),
                                                  -len(m.raw)))
 
     @property
@@ -246,7 +262,9 @@ class EntityTable:
         single = [k for k in order if len(k) == 1]
         clusters: list[list[tuple]] = []
         for k in multi:
-            fit = [c for c in clusters if all(_fits(reps[k], reps[x]) for x in c)]
+            # against the cluster's longest name only (the first member): "Singh Kapoor" and "Shatrujeet Kapoor" both fit
+            # "Shatrujeet Singh Kapoor" and are one person with it, though they do not fit each other
+            fit = [c for c in clusters if _fits(reps[k], reps[c[0]])]
             if len(fit) == 1:
                 fit[0].append(k)
             elif not fit:

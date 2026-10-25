@@ -149,3 +149,21 @@ def test_the_shadow_comparison_on_one_article():
     assert c["split"] and c["split"][0]["old_key"] == "singh"        # one old key, two people
     assert "Parvinder Singh Jhota" in c["gained"]                    # the victim's name is no longer repeated
     assert c["repeats_gained"] >= 2
+
+
+def test_first_shadow_run_fixes():
+    """The first live run (66 articles, Oct 25 2026) found these."""
+    for raw, name in [("Commissioners Vivek Joshi", "Vivek Joshi"), ("Capt Gurudeep Bala", "Gurudeep Bala"),
+                      ("Free Sharjeel Imam", "Sharjeel Imam"), ("Shree Narendra Modi", "Narendra Modi"),
+                      ("Minister of State for Communications Pemmasani Chandra Sekhar", "Pemmasani Chandra Sekhar")]:
+        assert E.parse(raw).text == name, raw
+    for raw in ["US Geological Survey", "BCCI Women", "Jamiat Ulema-e-Hind", "Singapore-India Maritime Bilateral Exercise"]:
+        assert E.parse(raw).kind == "body", raw
+    assert E.parse("Lokesh Adhikari Lokesh Adhikari").text == "Lokesh Adhikari"
+    # a place leaking in after "of" is one person with the plain title; the shorter name is the entity's name
+    t = table("Chief Electoral Officer Navdeep Rinwa", "Chief Electoral Officer of Uttar Pradesh Navdeep Rinwa",
+              "Uttar Pradesh Chief Electoral Officer Navdeep Rinwa")
+    assert len(t.entities) == 1 and t.entities[0].name == "Navdeep Rinwa"
+    # fits the longest name, not every member: Singh is a middle name, two shorter forms are one person with it
+    t = table("ITBP Director General Shatrujeet Singh Kapoor", "ITBP Director General Singh Kapoor", "Shatrujeet Kapoor")
+    assert len(t.entities) == 1
