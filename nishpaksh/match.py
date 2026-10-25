@@ -37,14 +37,17 @@ Reply with JSON only: {{"results": [{{"n": 1, "question": "How many people died 
 CHECK_ANSWERS = {"both_true", "cannot_both_be_true", "unsure"}
 
 
-def check_conflicts(router: Router | None, pairs: list[tuple[str, str]]) -> list[str]:
+def check_conflicts(router: Router | None, pairs: list[tuple[str, str]]) -> list[str | None]:
     """The test that defines a contradiction, asked on its own: can both statements be true? Every
     proposed contradiction passes through it, whoever proposed it (a model naming two values, or code
     seeing different numbers). Two values that differ are not enough: Oct 2026, "signed in March 2024"
     and "entered into force last October", and a target announced by one side and the same figures
     pledged by the other, were shown as disputes. Anything but a clear "cannot both be true" is not a
-    contradiction; "unsure" is returned so the caller can keep such statements from being established."""
-    out = ["unsure"] * len(pairs)
+    contradiction; "unsure" (the model's own answer) lets the caller keep such statements from being established.
+    A pair that could NOT be asked (no quota, an error, an answer that never came back) is None, never "unsure":
+    the caller must not remember it, so it is asked again (Oct 2026, F94: a failed call used to be cached as
+    "unsure" and the pair stayed doubtful for good)."""
+    out: list[str | None] = [None] * len(pairs)
     if router is None or not pairs:
         return out
     for start in range(0, len(pairs), SETTINGS.match_batch_size):
@@ -92,17 +95,19 @@ Reply with JSON only: {{"results": [{{"n": 1, "answer": "same"}}, {{"n": 2, "ans
 SAME_BATCH = 6     # small batches: the models answer short lists far better than long ones
 
 
-def same_facts(router: Router | None, pairs: list[tuple[str, str]], firsts: dict | None = None) -> list[bool]:
+def same_facts(router: Router | None, pairs: list[tuple[str, str]], firsts: dict | None = None) -> list[bool | None]:
     """Are these the same fact in other words? (Oct 7 2026: four outlets saying he takes charge on 31
     October, in four wordings, stood as four one-outlet lines.) Asked twice, A/B swapped in the second
     asking, in small batches with a plain yes/no choice: the models are simple, and a wrong "same" would
-    add outlets to a statement and could make it green. Only "same" both times counts."""
-    out = [False] * len(pairs)
+    add outlets to a statement and could make it green. Only "same" both times counts.
+    Three-valued (F123): True / False are answers; None = the pair was not answered (no quota, an error, a
+    missing item), which the caller must not remember as "different"."""
+    out: list[bool | None] = [None] * len(pairs)
     if router is None or not pairs:
         return out
 
-    def ask(ps: list[tuple[str, str]]) -> list[bool]:
-        got = [False] * len(ps)
+    def ask(ps: list[tuple[str, str]]) -> list[bool | None]:
+        got: list[bool | None] = [None] * len(ps)
         for start in range(0, len(ps), SAME_BATCH):
             chunk = ps[start:start + SAME_BATCH]
             body = "\n".join(f'{i + 1}. A: "{a}" | B: "{b}"' for i, (a, b) in enumerate(chunk))
@@ -125,9 +130,12 @@ def same_facts(router: Router | None, pairs: list[tuple[str, str]], firsts: dict
     first = ask(pairs)
     if firsts is not None:                 # the first answers, for the writing layer (fact groups)
         firsts.update({i: ok for i, ok in enumerate(first)})
+    for i, ok in enumerate(first):
+        if ok is False:
+            out[i] = False                 # answered "different": a real answer
     again = [i for i, ok in enumerate(first) if ok]
     for i, ok in zip(again, ask([(pairs[i][1], pairs[i][0]) for i in again])):
-        out[i] = ok
+        out[i] = ok                        # True, False, or None when the second asking failed
     return out
 
 
@@ -147,11 +155,11 @@ If you are not sure, answer "no".
 Reply with JSON only: {{"results": [{{"n": 1, "answer": "yes"}}, {{"n": 2, "answer": "no"}}]}}"""
 
 
-def covers_facts(router: Router | None, pairs: list[tuple[str, str]], firsts: dict | None = None) -> list[bool]:
+def covers_facts(router: Router | None, pairs: list[tuple[str, str]], firsts: dict | None = None) -> list[bool | None]:
     """(detailed, short) pairs: does the detailed line say everything the short one says? Asked twice,
     the second time in reverse order of lines; only two "yes" answers count (simple models answer
-    by position and length as much as by meaning)."""
-    out = [False] * len(pairs)
+    by position and length as much as by meaning). Three-valued like same_facts: None = not answered."""
+    out: list[bool | None] = [None] * len(pairs)
     if router is None or not pairs:
         return out
 
@@ -178,10 +186,13 @@ def covers_facts(router: Router | None, pairs: list[tuple[str, str]], firsts: di
 
     first = ask(list(range(len(pairs))))
     if firsts is not None:
-        firsts.update(first)
+        firsts.update(first)               # only answered pairs; a missing key = not answered
+    for i, ok in first.items():
+        if not ok:
+            out[i] = False                 # answered "no": a real answer
     again = ask([i for i in reversed(range(len(pairs))) if first.get(i)])
-    for i, ok in again.items():
-        out[i] = ok and first.get(i, False)
+    for i in [i for i, ok in first.items() if ok]:
+        out[i] = again[i] if i in again else None   # None when the second asking failed
     return out
 
 

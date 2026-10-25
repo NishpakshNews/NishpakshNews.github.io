@@ -241,15 +241,25 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     same_checks = dict(analysis.get("same_checks") or {})
     todo = [p for p in ask_pairs if key(p) not in same_checks][:SAME_ASK_MAX]
     firsts: dict[int, bool] = {}
+    unanswered = 0
     for n, (p, ok) in enumerate(zip(todo, same_facts(router, [(texts[a], texts[b]) for a, b in todo], firsts))):
+        if ok is None:                    # not answered (quota, error): remember nothing, ask again next time (F123)
+            unanswered += 1
+            continue
         same_checks[key(p)] = ok
-        same_checks["f" + key(p)] = firsts.get(n, False)
+        same_checks["f" + key(p)] = bool(firsts.get(n))
     ckey = lambda p: "c" + key(p)  # noqa: E731
     todo = [p for p in ask_cover if ckey(p) not in same_checks][:SAME_ASK_MAX]
     firsts = {}
     for n, (p, ok) in enumerate(zip(todo, covers_facts(router, [(texts[a], texts[b]) for a, b in todo], firsts))):
+        if ok is None:
+            unanswered += 1
+            continue
         same_checks[ckey(p)] = ok
-        same_checks["f" + ckey(p)] = firsts.get(n, False)
+        same_checks["f" + ckey(p)] = bool(firsts.get(n))
+    if unanswered:
+        log.warning("consolidate story %s: %d same/cover questions not answered (asked again next time)",
+                    story_id, unanswered)
     for big, small in ask_cover:
         if same_checks.get(ckey((big, small))):
             covered.setdefault(small, big)
@@ -284,6 +294,9 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
         if t is not None:
             rtimes.setdefault(r["canonical_id"], []).append(t)
     checks = dict(analysis.get("conflict_checks") or {})     # answers kept per (ordered) pair of texts
+    if analysis.get("conflict_checks_v") != 2:
+        # before Oct 2026 a failed call was stored as "unsure" (F94): forget those once, real ones come back
+        checks = {k: v for k, v in checks.items() if v != "unsure"}
     conflicts, doubtful, updates = judge(router, texts, rtimes, proposed, response_pairs, checks)
     for pair in earlier - conflicts:
         _remove_conflict(store, *pair)       # not confirmed by the gate: taken back
@@ -367,7 +380,7 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     analysis.update(consolidated=_hash(after), speakers=speakers,
                     names={**(analysis.get("names") or {}), **names},
                     roles=roles, related_event=related, responses=[list(p) for p in all_resp],
-                    name_conflicts=name_conf, conflict_checks=dict(list(checks.items())[-400:]),
+                    name_conflicts=name_conf, conflict_checks=dict(list(checks.items())[-400:]), conflict_checks_v=2,
                     same_checks=dict(list(same_checks.items())[-400:]),
                     dupe_checks=dict(list(dupe_checks.items())[-60:]),
                     # a line another line says in full, with more: not written on its own (relate.py)

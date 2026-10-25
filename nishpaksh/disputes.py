@@ -148,12 +148,13 @@ def judge(router, texts: dict[int, str], times: dict[int, list], proposals: set[
                 todo.append((x, y))
     todo = todo[:2 * max_ask]
     for (x, y), ans in zip(todo, check_conflicts(router, [(texts[x], texts[y]) for x, y in todo])):
-        cache[_key(texts[x], texts[y])] = ans
+        if ans is not None:               # a pair that could not be asked is not remembered (F94)
+            cache[_key(texts[x], texts[y])] = ans
     disputes, doubtful = set(), set()
     for a, b in ask:
         first, second = cache.get(_key(texts[a], texts[b])), cache.get(_key(texts[b], texts[a]))
         if first is None or second is None:
-            doubtful |= {a, b}            # not asked yet (quota): no amber, and no green either
+            doubtful |= {a, b}            # not asked, or the asking failed (quota): no amber, no green; asked again next run
             continue
         if first == second == "cannot_both_be_true":
             disputes.add((a, b))
