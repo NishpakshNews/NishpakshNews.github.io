@@ -161,7 +161,69 @@ def fake_parser(text):
                 t[7] = "pobj"
             elif nxt is not None:
                 t[7], t[8] = "nsubj", nxt
+    _speech_structure(text, toks, out)
     return [nlp.Tok(*t[:7], t[7], t[8]) for t in out]
+
+
+_SPEECH_FORMS = {"said": "say", "says": "say", "stated": "state", "states": "state", "added": "add", "adds": "add",
+                 "noted": "note", "claimed": "claim", "alleged": "allege", "announced": "announce",
+                 "mentioned": "mention", "remarked": "remark", "asserted": "assert", "maintained": "maintain",
+                 "denied": "deny", "warned": "warn", "insisted": "insist", "explained": "explain"}
+_ATTRIB_ADVERBS = ("also", "further", "then", "later", "additionally")
+_DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+
+
+def _speech_structure(text, toks, out):
+    """The parse of an attribution for the stand-in: the first speech verb is the root; the words before it are its
+    subject (after the last comma when the sentence opens with the reported clause); an adverb, an "on <day>" phrase
+    and a "that" hang on the verb; the reported clause is the rest, headed by its first word."""
+    v = next((i for i, t in enumerate(out) if i > 0 and t[1].lower() in _SPEECH_FORMS), None)
+    if v is None:
+        return
+    start = toks[v].start()
+    comma = text.rfind(",", 0, start)
+    body_first = comma != -1 and text[comma + 1:start].strip() != "" and v > 0
+    lo = next((i for i, t in enumerate(out) if t[2] > comma), v) if body_first else 0
+    subj = [i for i in range(lo, v) if out[i][1].lower() not in _ATTRIB_ADVERBS]
+    advs = [i for i in range(lo, v) if out[i][1].lower() in _ATTRIB_ADVERBS]
+    if not subj:
+        return
+    out[v][4], out[v][5], out[v][6], out[v][7], out[v][8] = _SPEECH_FORMS[out[v][1].lower()], "VBD", "VERB", "ROOT", v
+    for j in range(v + 1, len(out)):                       # a later "he said" / "she added" inside the reported part
+        if out[j][1].lower() in _SPEECH_FORMS and out[j - 1][1].lower() in ("he", "she"):
+            out[j][4], out[j][5], out[j][6] = _SPEECH_FORMS[out[j][1].lower()], "VBD", "VERB"
+            out[j - 1][7], out[j - 1][8] = "nsubj", j
+    for i in subj:
+        out[i][7], out[i][8] = ("nsubj", v) if i == subj[-1] else ("compound", subj[-1])
+    for i in advs:
+        out[i][7], out[i][8] = "advmod", v
+    rest = list(range(v + 1, len(out))) if not body_first else list(range(0, lo))
+    j = 0
+    if not body_first:
+        if rest and out[rest[0]][1].lower() == "on" and len(rest) > 1 and out[rest[1]][1].lower() in _DAYS:
+            out[rest[0]][7], out[rest[0]][8] = "prep", v
+            out[rest[1]][7], out[rest[1]][8] = "pobj", rest[0]
+            j = 2
+    else:
+        tail = [i for i in range(v + 1, len(out))]
+        if tail and out[tail[0]][1].lower() == "on" and len(tail) > 1 and out[tail[1]][1].lower() in _DAYS:
+            out[tail[0]][7], out[tail[0]][8] = "prep", v
+            out[tail[1]][7], out[tail[1]][8] = "pobj", tail[0]
+    body = rest[j:]
+    if not body:
+        return
+    mark = None
+    if out[body[0]][1].lower() == "that" and len(body) > 1:
+        mark, body = body[0], body[1:]
+    head = next((out[i][8] for i in body if out[i][7] == "nsubj" and out[i][8] in body), None)
+    if head is None:
+        head = body[0]
+    out[head][7], out[head][8] = "ccomp", v
+    if mark is not None:
+        out[mark][7], out[mark][8] = "mark", head
+    for i in body:
+        if i != head and out[i][7] == "dep":
+            out[i][8] = head
 
 
 @pytest.fixture(autouse=True)

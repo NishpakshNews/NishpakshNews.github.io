@@ -151,7 +151,7 @@ def set_chunker(fn) -> None:
 
 # ------------------------------------------------------------------ clauses (B27): a dependency parse, not a word list
 SPEECH_LEMMA = {"say", "tell", "state", "claim", "allege", "add", "note", "announce", "confirm", "deny", "warn",
-                "argue", "report", "assert", "insist", "explain", "mention", "remark", "stress", "reveal"}
+                "argue", "report", "assert", "maintain", "insist", "explain", "mention", "remark", "stress", "reveal"}
 
 
 def _text(tokens) -> str:

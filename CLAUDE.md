@@ -64,8 +64,19 @@ certainty from the parse; a "may / might / could" statement is a characterisatio
 identities); `inspector.py` (B9: one counted look over the finished text, `narrative.flow.inspector`). Perspectives now need a stored
 positions report (`positions.groups`); old tests were updated to feed one. Test stand-ins in `tests/conftest.py` script the NLI
 (check-worthiness, decisive acts, one court filing). All paths with real models still untested until the audit.
-Still not built: B18 remainder (the attribution regexes), B9's discourse model for the writer, B16 steps 5-6 (survivorship), the
-Fellegi-Sunter comparison, cross-lingual entity linking, the evaluation harness (the single audit).
+**Rebuild 14 (Oct 25 2026, same branch; fakes only until the audit):** `attribution.py` (B18: who-said-it read from the dependency
+parse: subject, speech verb, adverb, "on Monday", reported clause; replaces `style.CHAIN` / `BODY_LEAD` / `PRON_ATTRIB` / `NEUTRAL`;
+a sentence that is more than a plain attribution, or has a quotation, is not read and is left alone); `discourse.py` (B9: introduced
+people, centering focus, time cursor per paragraph; counted in `narrative.flow.inspector` as `unintroduced`, `pronoun_without_focus`,
+`time_back`, never enforced); `redundancy.py` (B16 4-6: `constrained` union-find with cannot-link used by `consolidate` for the merge
+step, `survivor` + `analysis.variants`, `number_pairs` offered to the twice-asked question; strict = merge on two "yes", loose = fold on
+one "yes" + `tells`, both already in consolidate); `fellegisunter.py` (unsupervised EM match weight, used by `dupescore.order` while no
+labelled model exists; `bands` = size of the middle band); `crosslingual.py` (Devanagari names -> the registry's English spelling before
+they enter `EntityTable`, exact lookup only; `compose` puts the registry in scope); `tools/evaluate.py` (THE single audit: claim matching
+recall at 99% precision for code / Fellegi-Sunter / logistic, NLI score distribution, inspector counts per article, all untuned thresholds;
+one `diagnostics` row kind 'evaluate'; workflow `audit`, tool `evaluate`). The conftest fake parser now builds speech structure.
+Nothing in this list is left unbuilt except: B25/B26/B28-B32 labelled-data evaluation (the harness measures with the newsroom's own answers,
+no owner labels), a coreference model for the writer, S9 soft time level in Fellegi-Sunter beyond the date field.
 **Next:** merge `rebuild` to main only when the owner agrees; run the single audit pass (stack_probe, audit, story_check), read the
 NLI thresholds (`nli.ENTAIL/CONTRA/UNSURE`, `fidelity.SUPPORT/CONTRA`), the clause splitter and the NER-based speaker keys on real
 stories, and tune settings then.

@@ -130,17 +130,7 @@ def shorten_names(paragraphs: list[list[dict]], speakers: list[str] | tuple = ()
             sent["text"] = t[:1].upper() + t[1:]
 
 
-CHAIN = re.compile(r"^(?P<who>He|She|They|The [a-z]+(?: [a-z]+)?|(?:[A-Z][\w.-]+\s+){0,3}[A-Z][\w.-]+)\s+"
-                   r"(?:(?P<adv>also|further|then|later|additionally)\s+)?"
-                   r"(?P<verb>said|added|stated|noted|claimed|alleged|maintained|mentioned|remarked|asserted)"
-                   r"(?P<day>\s+on\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday))?(?:\s+that)?,?\s+"
-                   r"(?P<body>[^\"“”]{20,}?)(?P<end>[.!?])$")
-ATTRIB = re.compile(rf"\b{SPEECH}\b")
-PRON_ATTRIB = re.compile(r"(?:^|(?<=, ))(He|She|he|she)(?=\s+(?:also\s+|further\s+)?(?:said|added|stated|noted|claimed|alleged|told|maintained)\b)")
-NEUTRAL = {"stated": "said", "mentioned": "said", "remarked": "said", "asserted": "said", "noted": "said"}
-BODY_LEAD = re.compile(r"^(?P<who>(?:The\s+)?[A-Z][^,\"“”]{1,70}?)\s+(?:(?:also|further|additionally)\s+)?"
-                       r"(?P<verb>said|stated|added|noted|announced|alleged|claimed|maintained|asserted)(?:\s+that)?,?\s+"
-                       r"(?P<body>[^\"“”]{20,}?)(?P<end>[.!?])$")
+from . import attribution
 
 
 class Refs:
@@ -225,22 +215,21 @@ def vary_attribution(paragraphs: list[list[dict]], refs: Refs | None = None, spe
             return None
         text = sent["text"].strip()
         options = body_refs(sps[0])
-        m = BODY_LEAD.match(text)
+        sp = attribution.read(text)
+        sp = sp if sp and sp.subject_first else None
         # a body opening with its own pronoun ("... claimed its primary activity ...") would read "Its ..., it claimed"
-        if not m or ATTRIB.search(m.group("body")) or wrong_speaker(text, sps, "", {}) \
-                or re.match(r"(?i)(its|their|it|they)\b", m.group("body")):
+        if not sp or attribution.has_speech(sp.body) or wrong_speaker(text, sps, "", {}) \
+                or re.match(r"(?i)(its|their|it|they)\b", sp.body):
             # "The US Department of State identified ..." after its own line: "The department identified ..."
             name = re.match(rf"^(?:The\s+)?{re.escape(re.sub(r'(?i)^the\s+', '', sps[0]))}\b", text)
             subj = next((o for o in options if o not in ("it", "they")), None)
-            if name and subj and not ATTRIB.search(text[name.end():name.end() + 40]):
+            if name and subj and not attribution.has_speech(text[name.end():name.end() + 40]):
                 return subj[:1].upper() + subj[1:] + text[name.end():]
             return None
         n = body_used.get(sps[0], 0)
         body_used[sps[0]] = n + 1
         ref = options[n % len(options)]
-        verb = "said" if m.group("verb") == "added" else NEUTRAL.get(m.group("verb"), m.group("verb"))
-        body = m.group("body").rstrip(",;: ")
-        return f"{body[:1].upper()}{body[1:]}, {ref} {verb}{m.group('end')}"
+        return attribution.trailing(sp, ref, plain_added=True)
 
     for para in paragraphs:
         for k in range(len(para)):
@@ -253,44 +242,39 @@ def vary_attribution(paragraphs: list[list[dict]], refs: Refs | None = None, spe
                 if varied:
                     para[k]["text"] = varied
                     continue
-            m = CHAIN.match(cur)
-            if m and k > 0 and ATTRIB.search(para[k - 1]["text"]) and not ATTRIB.search(m.group("body")):
-                who = m.group("who")
+            m = attribution.read(cur)
+            m = m if m and m.subject_first else None
+            if m and k > 0 and attribution.has_speech(para[k - 1]["text"]) and not attribution.has_speech(m.body):
+                who = m.subject
                 # "The ..." is the current speaker only when it is that speaker's own role ("The MLA"); "The Centre",
                 # "The Supreme Court" are other speakers (Oct 9 2026, story 16197: "The Centre alleged ..." after
                 # Kapil Sibal became "..., the advocate alleged", "The Supreme Court stated ..." after a line naming
                 # Mishra became "..., she said")
                 own_role = bool(current) and who.lower() == (refs.roles.get(current) or "").lower()
-                pron = who in ("He", "She", "They")
+                pron = m.pronoun
                 full = current if pron or own_role else (None if who.startswith("The ") else refs.person(who))
                 if full and (pron or own_role) and speakers_of:
                     full, _ = own(para[k], full)
                 if full and (pron or own_role or full in (current, refs.person(para[k - 1]["text"]))):
-                    ref = refs.next(full)
-                    verb = NEUTRAL.get(m.group("verb"), m.group("verb"))
-                    body = m.group("body").rstrip(",;: ")
-                    para[k]["text"] = f"{body[:1].upper()}{body[1:]}, {ref} {verb}{m.group('day') or ''}{m.group('end')}"
+                    para[k]["text"] = attribution.trailing(m, refs.next(full))
                     current = full
                     continue
-            opens = m and (k == 0 or not ATTRIB.search(para[k - 1]["text"]))
-            if opens and (m.group("adv") or m.group("verb") == "added" or m.group("verb") in NEUTRAL):
+            opens = m and (k == 0 or not attribution.has_speech(para[k - 1]["text"]))
+            if opens and (m.adverb or m.lemma == "add" or m.lemma in attribution.NEUTRAL_LEMMA):
                 # "Kabir also stated / further stated / added that" with nothing before it to add to: "Kabir said"
-                verb = "said" if m.group("verb") == "added" else NEUTRAL.get(m.group("verb"), m.group("verb"))
-                adv = rf"{m.group('adv')}\s+" if m.group("adv") else ""
-                para[k]["text"] = re.sub(rf"^({re.escape(m.group('who'))})\s+{adv}{m.group('verb')}\b",
-                                         rf"\1 {verb}", cur, count=1)
+                para[k]["text"] = attribution.without_adverb(cur, m, plain_added=True)
             # "he said" / "She added" for someone without the outlets' evidence: the surname
             t = para[k]["text"]
-            for pm in reversed(list(PRON_ATTRIB.finditer(t))):
-                full, body = own(para[k], refs.person(t[:pm.start()]) or current)
+            for ps, pe, pw in reversed(attribution.pronoun_subjects(t)):
+                full, body = own(para[k], refs.person(t[:ps]) or current)
                 if body and is_body(body):
-                    t = t[:pm.start()] + body_name(body) + t[pm.end():]     # a body is never "he" / "she"
+                    t = t[:ps] + body_name(body) + t[pe:]     # a body is never "he" / "she"
                 elif body:
                     # a person the article's name list does not hold: the surname, never "the Raghoo Puri"
-                    t = t[:pm.start()] + body.split()[-1] + t[pm.end():]
-                elif full and not refs.allowed(full, pm.group(1)):
+                    t = t[:ps] + body.split()[-1] + t[pe:]
+                elif full and not refs.allowed(full, pw):
                     short = full.split()[-1]
-                    t = t[:pm.start()] + short + t[pm.end():]
+                    t = t[:ps] + short + t[pe:]
             para[k]["text"] = t[:1].upper() + t[1:]
             current = refs.person(para[k]["text"]) or named or current
 

@@ -48,7 +48,13 @@ def prob(feats: list[float]) -> float | None:
 
 def order(pairs: list[tuple[int, int]], prof: dict, texts: dict) -> list[tuple[int, int]]:
     """The same pairs, likeliest first (stable). Unchanged when no model is fitted."""
-    if not _model or len(pairs) < 2:
+    if not _model:
+        try:                                  # no labelled model yet: the unsupervised Fellegi-Sunter weight orders the questions
+            from . import fellegisunter
+            return fellegisunter.order(pairs, prof)
+        except Exception:                     # noqa: BLE001
+            return list(pairs)
+    if len(pairs) < 2:
         return list(pairs)
     from .idf import Weights
     weights = Weights(list(texts.values()))

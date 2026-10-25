@@ -848,7 +848,11 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     an = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
     draft = _remap_draft(store, an.get("writer_draft"), payload)
     report_text = _express_report(store, story_id) if payload.get("qualified_by") == "express" else None
-    from . import bodies
+    from . import bodies, crosslingual, names as _names
+    try:
+        crosslingual.use(_names.load(store))               # a Hindi speaker is the English entity the registry pairs it with
+    except Exception:  # noqa: BLE001
+        crosslingual.use(None)
     body_stats = bodies.prefetch(store, _speakers_of(payload))        # Wikidata: which body each speaker is
     from . import dossier
     dossier.record(store, story_id, "statements", {"items": dossier.statements_trace(ordered_items(payload)),

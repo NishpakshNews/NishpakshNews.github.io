@@ -300,7 +300,8 @@ class EntityTable:
     # ------------------------------------------------------------------ output
     def entity(self, raw: str) -> Entity | None:
         self.build()
-        m = parse(raw)
+        from . import crosslingual
+        m = parse(crosslingual.to_english(raw))
         return self._by_keys.get(m.keys) if m.tokens else None
 
     def speaker_key(self, raw: str) -> str | None:
@@ -341,11 +342,12 @@ _current: contextvars.ContextVar = contextvars.ContextVar("entity_table", defaul
 
 def for_items(items: list[dict]) -> EntityTable:
     """The table of one story: every statement's speaker (as a speaker) and every statement's text (analysed)."""
+    from . import crosslingual
     t = EntityTable()
     for i in items:
         if i.get("speaker"):
-            t.add(i["speaker"], "speaker", i.get("text") or "")
-    t.add_text(" ".join(i.get("text") or "" for i in items))
+            t.add(crosslingual.to_english(i["speaker"]), "speaker", i.get("text") or "")
+    t.add_text(crosslingual.to_english(" ".join(i.get("text") or "" for i in items)))
     return t.build()
 
 

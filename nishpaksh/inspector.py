@@ -32,5 +32,11 @@ def inspect(paragraphs: list[list[dict]]) -> dict:
             seen.append(text)
             profiles.append(pr)
             prev = text
-    out["problems"] = out["opens_with_pronoun"] + out["pronoun_without_antecedent"] + out["repeats"]
+    try:
+        from . import discourse
+        out.update(discourse.inspect(paragraphs))
+    except Exception:
+        pass                                   # the discourse model is a count; it never stops an article
+    out["problems"] = (out["opens_with_pronoun"] + out["pronoun_without_antecedent"] + out["repeats"]
+                       + out.get("unintroduced", 0) + out.get("pronoun_without_focus", 0) + out.get("time_back", 0))
     return out

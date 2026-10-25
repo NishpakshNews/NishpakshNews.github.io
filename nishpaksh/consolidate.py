@@ -225,6 +225,8 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
         neg_ok = prof[a].neg == prof[b].neg or (a, b) in d_same
         if r in ("same", "ask") or (neg_ok and numbers_close(prof[a], prof[b])):
             ask_pairs.append((a, b))
+    from . import redundancy
+    ask_pairs += redundancy.number_pairs(prof)        # one card per subject and measure: offered to the question, decides nothing
     ask_pairs = list(dict.fromkeys(tuple(sorted(p)) for p in ask_pairs if tuple(sorted(p)) not in code_same_set))
     same_checks = dict(analysis.get("same_checks") or {})
     from . import dupescore
@@ -298,13 +300,17 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     merged = 0
     gone: set[int] = set()
     merged_into: dict[int, int] = {}
-    for g in same_groups:
-        g = [x for x in g if x not in gone]
-        if len(g) < 2:
-            continue
-        dst = max(g, key=lambda x: (support.get(x, 0), len(by_id[x]["text"])))
+    variants: dict[str, list[str]] = {}
+    # clusters of the "same" pairs with cannot-link constraints (redundancy.py): a dispute, an updated figure or a pair the
+    # question answered "different" is never put into one cluster by the pairs around it
+    cannot = set(keep_apart) | {tuple(sorted(p)) for p in ask_pairs if same_checks.get(key(p)) is False}
+    clusters, refused = redundancy.constrained([tuple(g) for g in same_groups], cannot)
+    for g in clusters:
+        dst, var = redundancy.survivor(g, support, {x: by_id[x]["text"] for x in g})
+        if var:
+            variants[str(dst)] = [t for v in var.values() for t in v][:4]
         for src in g:
-            if src == dst or tuple(sorted((src, dst))) in keep_apart:
+            if src == dst:
                 continue
             _merge(store, src, dst)
             merged_into[src] = dst
@@ -376,6 +382,7 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
                     name_conflicts=name_conf, conflict_checks=dict(list(checks.items())[-400:]), conflict_checks_v=2,
                     same_checks=dict(list(same_checks.items())[-400:]),
                     dupe_checks=dict(list(dupe_checks.items())[-60:]),
+                    variants=variants,
                     # a line another line says in full, with more: not written on its own (relate.py)
                     covered={str(k): v for k, v in resolve_covered(
                         {merged_into.get(k, k): merged_into.get(v, v) for k, v in covered.items()}).items()
