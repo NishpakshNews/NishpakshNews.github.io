@@ -157,6 +157,24 @@ name_pairs = Table(  # the name registry (names.py): one name part in English an
     Column("last_seen", DateTime),
 )
 
+dossiers = Table(  # the story dossier (dossier.py): what each stage decided, for the audit; never published
+    "dossiers", md,
+    Column("story_id", Integer, primary_key=True),
+    Column("updated_at", DateTime),
+    Column("data", JSON),
+)
+
+body_links = Table(  # which body a speaker name is (bodies.py): Wikidata's answer, asked once per name
+    "body_links", md,
+    Column("name", String(160), primary_key=True),
+    Column("key", String(40)),           # gov:<country> / court:<id> / org:<id>; NULL = Wikidata does not know it
+    Column("kind", String(12)),
+    Column("label", String(200)),
+    Column("country", String(20)),
+    Column("words", JSON),               # label and aliases
+    Column("checked_at", DateTime),
+)
+
 quota_usage = Table(
     "quota_usage", md,
     Column("model", String(100), primary_key=True),

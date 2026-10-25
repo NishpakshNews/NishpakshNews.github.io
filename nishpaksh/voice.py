@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 
-from . import titles as _titles
+from . import bodies, titles as _titles
 from .style import ROLES_LOWER, _candidates
 
 # verbs that say what KIND of act a statement is; each may be written only if the statements say so,
@@ -174,36 +174,7 @@ def problems(para: list[dict], speakers: list[str]) -> list[str]:
 # ------------------------------------------------------------------ one speaker, however named
 # (owner, Oct 9 2026, story 16197: "The Centre alleged ..." and "The Central government alleged ..." were one
 # argument written in two paragraphs with other speakers between them)
-ALIASES = {
-    "centre": ("centre", "center", "central government", "union government", "government of india", "union of india",
-               "solicitor general", "additional solicitor general", "attorney general", "centre's counsel"),
-    "supreme court": ("supreme court", "apex court", "top court", "chief justice of india", "cji", "bench"),
-}
-
-
-# a foreign government however it is named ("US Department of State", "US officials", "the United States government",
-# "Washington": one speaker; Oct 9 2026, story 16708 had them as three)
-COUNTRY = {"us": "us", "u.s.": "us", "united states": "us", "american": "us", "washington": "us", "white house": "us",
-           "state department": "us", "treasury": "us", "china": "china", "chinese": "china", "beijing": "china",
-           "pakistan": "pakistan", "pakistani": "pakistan", "islamabad": "pakistan", "russia": "russia",
-           "russian": "russia", "moscow": "russia", "iran": "iran", "iranian": "iran", "tehran": "iran",
-           "israel": "israel", "israeli": "israel", "uk": "uk", "british": "uk", "bangladesh": "bangladesh",
-           "nepal": "nepal", "sri lanka": "sri lanka", "canada": "canada", "canadian": "canada"}
-GOV_WORD = re.compile(r"\b(government|officials?|administration|department|ministry|treasury|embassy|authorities|"
-                      r"spokesperson|white house|state department)\b")
-
-
-def _country_gov(low: str) -> str | None:
-    m = re.match(r"^(?:the\s+)?(u\.s\.|us|united states|american|washington|white house|state department|treasury|"
-                 r"china|chinese|beijing|pakistan|pakistani|islamabad|russia|russian|moscow|iran|iranian|tehran|israel|"
-                 r"israeli|uk|british|bangladesh|nepal|sri lanka|canada|canadian)\b(?P<rest>.*)$", low)
-    if not m:
-        return None
-    country = COUNTRY[m.group(1)]
-    if m.group(1) in ("washington", "white house", "state department", "treasury", "beijing", "islamabad", "moscow",
-                      "tehran") or GOV_WORD.search(m.group("rest")) or "department of" in low:
-        return f"{country} government"
-    return None
+# Who a body is comes from Wikidata (bodies.py), looked up once per story before writing; the cache is read here.
 
 
 def speaker_key(name: str | None) -> str | None:
@@ -212,12 +183,10 @@ def speaker_key(name: str | None) -> str | None:
     if not name or not name.strip():
         return None
     low = re.sub(r"^(?:the|a|an)\s+", "", name.strip().lower())
-    gov = _country_gov(low)
-    if gov:
-        return gov
-    for key, names in ALIASES.items():
-        if any(low == a or low.startswith(a + " ") or low.endswith(" " + a) for a in names):
-            return key
+    from . import bodies
+    body = bodies.key_for(name)
+    if body:
+        return body
     from . import entities
     k = entities.person_key(name)             # a person: one identity per man or woman in this story
     if k:
@@ -234,11 +203,11 @@ def speaker_words(name: str | None) -> set[str]:
         return set()
     out = {w.lower() for w in re.findall(r"[A-Za-z]{3,}", name)}
     key = speaker_key(name)
-    for a in ALIASES.get(key, ()):
-        out |= {w for w in a.split() if len(w) >= 3}
+    from . import bodies
+    out |= bodies.words_of(name)
     return out - {"the", "and", "for", "senior", "india", "government", "court"} | (
-        {"court"} if key == "supreme court" or "court" in name.lower() else set()) | (
-        {"government"} if key == "centre" or "government" in name.lower() else set())
+        {"court"} if "court" in name.lower() or (key or "").startswith("court:") else set()) | (
+        {"government"} if "government" in name.lower() or (key or "").startswith("gov:") else set())
 
 
 # ------------------------------------------------------------------ who a sentence says is speaking
@@ -287,7 +256,7 @@ def wrong_speaker(sentence: str, speakers: list[str], source_text: str, pron: di
         if words and not (words & allowed) and not words <= src:
             # "the judge", "the minister" for a person whose role the article gives; never for a body ("the
             # advocate" for the Centre)
-            person = any(len(re.findall(r"\b[A-Z][\w.'-]+", sp)) >= 2 and speaker_key(sp) not in ALIASES
+            person = any(len(re.findall(r"\b[A-Z][\w.'-]+", sp)) >= 2 and not bodies.is_known_body(sp)
                          for sp in speakers)
             if person and words <= ROLE_WORDS:
                 continue
@@ -320,8 +289,9 @@ def body_refs(name: str) -> list[str]:
         return ["they"] + ([f"the {word}"] if word != "police" else ["police"])
     words = re.findall(r"[a-z]+", low)
     short = next((w for w in reversed(words) if w in SHORT_BODY), None)
-    if speaker_key(name) == "centre":
-        short = "the Centre"
+    gk = speaker_key(name) or ""
+    if gk.startswith("gov:"):
+        short = "the Centre" if gk == "gov:" + bodies.CONTEXT_COUNTRY else "the government"
     elif short:
         short = f"the {short}"
     from .agreement import is_collective
@@ -339,7 +309,7 @@ def is_body(name: str | None) -> bool:
     Court", "Kanzeon Public Charitable Trust", "US officials"); "Union Minister Jyotiraditya Scindia" is a person."""
     if not name:
         return False
-    if speaker_key(name) in ALIASES or (speaker_key(name) or "").endswith(" government") or PLURAL_BODY.search(name.strip()):
+    if bodies.is_known_body(name) or PLURAL_BODY.search(name.strip()):
         return True
     words = re.findall(r"[A-Za-z]+", name)
     last = words[-1].lower() if words else ""

@@ -214,7 +214,7 @@ def fetch_article(url: str) -> dict | None:
         html = page_text(r)
         if r.status_code != 200 or not html:
             return None
-        doc = trafilatura.bare_extraction(html, url=url, with_metadata=True, include_comments=False)
+        doc = trafilatura.bare_extraction(html, url=url, with_metadata=True, include_comments=False, favor_precision=True)
     except Exception as e:  # noqa: BLE001
         log.debug("fetch failed %s: %s", url, e)
         return None
@@ -222,7 +222,9 @@ def fetch_article(url: str) -> dict | None:
         return None
     d = doc.as_dict() if hasattr(doc, "as_dict") else dict(doc)
     image = page_image(html, url) or clean_image(d.get("image"), url)
-    return {"text": d.get("text") or "", "author": d.get("author"), "title": d.get("title"), "image": image}
+    from . import blocks
+    text, _dropped = blocks.clean(html, d.get("text") or "")      # related-link strips are not the story (B33)
+    return {"text": text, "author": d.get("author"), "title": d.get("title"), "image": image}
 
 
 def fetch_image(url: str) -> str:

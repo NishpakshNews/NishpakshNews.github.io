@@ -389,6 +389,15 @@ def _collect_strings(payload: dict) -> list[str]:
     return [s for s in dict.fromkeys(out) if s]
 
 
+def _speakers_of(payload: dict) -> list[str]:
+    """Every speaker name the payload's statements carry (in whichever list the payload keeps them)."""
+    out = []
+    for k, v in payload.items():
+        if isinstance(v, list):
+            out += [x["speaker"] for x in v if isinstance(x, dict) and isinstance(x.get("speaker"), str) and x["speaker"]]
+    return out
+
+
 def _mended(store: Store, cache: dict, strings: list[str]) -> dict:
     """Names left in Latin letters in cached Hindi, replaced by what the registry knows now (hindi.py): a name learned
     after a string was translated mends it on the next render, at no cost."""
@@ -839,11 +848,20 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     an = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
     draft = _remap_draft(store, an.get("writer_draft"), payload)
     report_text = _express_report(store, story_id) if payload.get("qualified_by") == "express" else None
+    from . import bodies
+    body_stats = bodies.prefetch(store, _speakers_of(payload))        # Wikidata: which body each speaker is
+    from . import dossier
+    dossier.record(store, story_id, "statements", {"items": dossier.statements_trace(ordered_items(payload)),
+                                                   "bodies": body_stats, "qualified_by": payload.get("qualified_by")})
     nar = write_narrative(router, payload, banned, draft=draft if _keepable({"model": (draft or {}).get("model"),
                                                                              "paragraphs": [1]}) else None,
                           report_text=report_text, bar=bar)
     drafted = nar.pop("drafted", None)
     essay_good = essay_ok(nar, payload, bar) and _keepable(nar)
+    dossier.record(store, story_id, "writer", {"model": nar.get("model"), "essay_good": bool(essay_good), "bar": bar,
+                                               "plan": nar.get("plan"), "flow": nar.get("flow"), "refs": nar.get("refs"),
+                                               "plural_bodies": nar.get("plural_bodies"),
+                                               "shortfall": None if essay_good else essay_shortfall(nar, payload, bar)})
     if essay_good:
         from .news import write_headline
         lead = " ".join(x["text"] for x in (nar.get("paragraphs") or [[]])[0])

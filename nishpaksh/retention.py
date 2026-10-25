@@ -104,6 +104,8 @@ def delete_stories(store: Store, doomed: list[int], keep_links: bool = False) ->
 
 
 def enforce(store: Store) -> dict:
+    from . import dossier
+    dossier.prune(store)
     stats = _apply(store, 1.0)
     size = db_size_mb(store)
     if size is not None and size > SETTINGS.storage_soft_limit_mb:
