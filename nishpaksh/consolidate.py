@@ -318,6 +318,14 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
             merged_into[src] = dst
             gone.add(src)
             merged += 1
+    try:                                      # E5: what this review decided, for the single audit
+        from . import dossier
+        dossier.append(store, story_id, "consolidate", {
+            "statements": len(rows), "asked_same": len(ask_pairs), "asked_cover": len(ask_cover),
+            "unanswered": unanswered, "merged": merged, "clusters": len(clusters), "unions_refused": refused,
+            "covered": len(covered), "disputes": len(conflicts), "updates": len(updates), "variants": len(variants)})
+    except Exception:  # noqa: BLE001
+        pass
     added = 0
     for a, b in conflicts:
         if a in gone or b in gone:
@@ -378,7 +386,7 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
         name_conf = {k: v for k, v in name_conf.items() if classify(v, texts) == "disagreement"}
     after = [r for r in store.rows(select(canonical.c.id, canonical.c.text, canonical.c.kind)
                                    .where(canonical.c.story_id == story_id)) if r["kind"] != "relation" and r["text"]]
-    analysis.update(consolidated=_hash(after), speakers=speakers,
+    analysis.update(consolidated=_hash(after), unanswered_asks=unanswered, speakers=speakers,
                     names={**(analysis.get("names") or {}), **names},
                     roles=roles, related_event=related, responses=[list(p) for p in all_resp],
                     name_conflicts=name_conf, conflict_checks=dict(list(checks.items())[-400:]), conflict_checks_v=2,

@@ -64,7 +64,7 @@ def _slim(headline, s0, s1) -> dict:
 
 def find_parents(store: Store, router: Router | None, story_id: int, headline: str, summary: str,
                  max_candidates: int = 6, window_days: int = 60) -> list[int]:
-    story = store.one(select(stories.c.analysis, stories.c.created_at).where(stories.c.id == story_id))
+    story = store.one(select(stories.c.analysis).where(stories.c.id == story_id))
     if not story:
         return [r["parent_id"] for r in store.rows(select(story_links.c.parent_id).where(story_links.c.child_id == story_id))]
     analysis = dict(story["analysis"] or {})
@@ -86,8 +86,6 @@ def find_parents(store: Store, router: Router | None, story_id: int, headline: s
                                        pe[("narrative", "paragraphs", 0, 0, "text")].as_string().label("s0"),
                                        pe[("narrative", "paragraphs", 0, 1, "text")].as_string().label("s1"))
                                 .where(published.c.story_id != story_id, published.c.updated_at >= since))]
-    created = {r["id"]: r["created_at"] for r in store.rows(select(stories.c.id, stories.c.created_at)
-                                                             .where(stories.c.id.in_([r["story_id"] for r in rows] or [-1])))}
     # parents that already moved to the archive branch (pagearchive.py) are candidates too
     from . import pagearchive
     have = {r["story_id"] for r in rows}
@@ -99,7 +97,6 @@ def find_parents(store: Store, router: Router | None, story_id: int, headline: s
                          "payload_en": {"headline": x.get("headline_en"),
                                         "narrative": {"paragraphs": [[{"text": x.get("summary") or ""}]]}},
                          "updated_at": None})
-            created.setdefault(x["story_id"], _when(x.get("written_at")))
     daughters = {r["child_id"] for r in store.rows(select(story_links.c.child_id).where(story_links.c.parent_id == story_id))}
     # candidate retrieval and decision (B34): meaning similarity, a shared specific name, and no contradiction
     from . import embed, idf, nli
@@ -109,7 +106,11 @@ def find_parents(store: Store, router: Router | None, story_id: int, headline: s
     found: list[int] = []
     cands: list[tuple] = []
     if texts:
-        vecs, how = embed.vectors([new_text] + texts)
+        try:
+            vecs, how = embed.vectors([new_text] + texts)
+        except Exception as e:  # noqa: BLE001
+            log.warning("threads: candidates not scored (%s); the stored parents stand", str(e)[:100])
+            return sorted(existing_parents(store, story_id))              # E37: never "no parents" because a call failed
         sims = vecs[1:] @ vecs[0]
         order = sorted(range(len(texts)), key=lambda i: -sims[i])[:max_candidates]
         need = LINK[how]
@@ -119,6 +120,14 @@ def find_parents(store: Store, router: Router | None, story_id: int, headline: s
             shared = _shared_names(new_text, texts[i], weights)
             if shared:
                 cands.append((round(float(sims[i]) * 100), pool[i]["story_id"], texts[i], shared))
+        import hashlib
+        key = hashlib.md5((headline + "|" + ",".join(str(c[1]) for c in sorted(cands, key=lambda c: c[1]))).encode()).hexdigest()[:12]
+        if cands and analysis.get("thread_cand_key") == key:
+            # E39: the same headline against the same candidate set was already judged: the answer stands
+            analysis["thread_checked"] = headline
+            analysis["thread_checked_at"] = newest
+            store.exec(update(stories).where(stories.c.id == story_id).values(analysis=analysis))
+            return sorted(existing_parents(store, story_id))
         if cands:
             res = nli.predict([(c[2], new_text) for c in cands])
             if any(r is None for r in res):
@@ -130,10 +139,12 @@ def find_parents(store: Store, router: Router | None, story_id: int, headline: s
     for pid in found:
         if pid not in existing:
             store.exec(insert(story_links).values(parent_id=pid, child_id=story_id, created_at=utcnow(),
-                                                  reason=json.dumps(sorted(next(c[3] for c in cands if c[1] == pid)))))
+                                                  reason=json.dumps({"type": "develops", "names": sorted(next(c[3] for c in cands if c[1] == pid))})))
             # the parent is a closed article (editions.py): it is not touched
     analysis["thread_checked"] = headline
     analysis["thread_checked_at"] = newest
+    if cands:
+        analysis["thread_cand_key"] = key
     store.exec(update(stories).where(stories.c.id == story_id).values(analysis=analysis))
     if found:
         log.info("threads: story %s develops %s", story_id, found)
@@ -158,10 +169,13 @@ def root_of(store: Store, story_id: int, depth: int = 20) -> int:
     seen = {story_id}
     cur = story_id
     for _ in range(depth):
-        ps = sorted(r["parent_id"] for r in store.rows(select(story_links.c.parent_id).where(story_links.c.child_id == cur)))
+        ps = [r["parent_id"] for r in store.rows(select(story_links.c.parent_id).where(story_links.c.child_id == cur))]
         ps = [p for p in ps if p not in seen]
         if not ps:
             return cur
+        # E41: the oldest line = the parent created first (id only breaks a tie), not whichever has the smallest id
+        made = {r["id"]: r["created_at"] for r in store.rows(select(stories.c.id, stories.c.created_at).where(stories.c.id.in_(ps)))}
+        ps.sort(key=lambda p: (made.get(p) or dt.datetime.max, p))
         cur = ps[0]
         seen.add(cur)
     return cur
@@ -206,15 +220,23 @@ def save_links(store: Store, parent_id: int, judged: dict) -> int:
             x["twins"] = [t for t in x.get("twins") or [] if t not in later]
             x["superseded_by"] = [t for t in x.get("superseded_by") or [] if t not in later]
     n = 0
+    # E38: a later statement keeps its twins on OTHER pages of the thread; only the twin on this parent is replaced
+    prior = {t for v in rows.values() for t in (v.get("rel") or {}).get("twins") or []} - set(rows)
+    if prior:
+        for r in store.rows(select(canonical.c.id, canonical.c.story_id, canonical.c.rel).where(canonical.c.id.in_(sorted(prior)))):
+            rows[r["id"]] = r
     for cid, v in later.items():
         if cid not in rows:
             continue
         x = rel(cid)
+        keep = [t for t in x.get("twins") or [] if t in rows and rows[t]["story_id"] != parent_id]
         x.pop("twins", None)
         x.pop("updates", None)
+        if keep:
+            x["twins"] = keep
         same, upd = v.get("same_as"), v.get("updates")
         if same in rows and rows[same]["story_id"] != rows[cid]["story_id"]:
-            x["twins"] = [same]
+            x["twins"] = sorted(set(x.get("twins") or []) | {same})
             y = rel(same)
             y["twins"] = sorted(set(y.get("twins") or []) | {cid})
             n += 1
@@ -223,9 +245,10 @@ def save_links(store: Store, parent_id: int, judged: dict) -> int:
             y = rel(upd)
             y["superseded_by"] = sorted(set(y.get("superseded_by") or []) | {cid})
             n += 1
-    for cid, x in changed.items():
-        x = {k: v for k, v in x.items() if v not in ([], None)}
-        store.exec(update(canonical).where(canonical.c.id == cid).values(rel=x or None))
+    with store.engine.begin() as c:                                # one transaction: a thread is never half saved
+        for cid, x in changed.items():
+            x = {k: v for k, v in x.items() if v not in ([], None)}
+            c.execute(update(canonical).where(canonical.c.id == cid).values(rel=x or None))
     return n
 
 

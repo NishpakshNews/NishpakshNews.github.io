@@ -171,8 +171,11 @@ def quoted_window(quote: str | None, source: str) -> str | None:
 
 
 def find_source(statement: str, source: str, src_lang: str, registry=None,
-                quote: str | None = None) -> tuple[str | None, str]:
-    """(the report sentence a statement came from, how it was found: "quote", "anchors" or "none")."""
+                quote: str | None = None, span: str | None = None) -> tuple[str | None, str]:
+    """(the report sentence a statement came from, how it was found: "span", "quote", "anchors" or "none"). `span` is the
+    sentence the reading model pointed at by number (evidence.py), already checked against the report."""
+    if span:
+        return span, "span"
     win = quoted_window(quote, source)
     if win is not None:
         return win, "quote"
@@ -182,12 +185,12 @@ def find_source(statement: str, source: str, src_lang: str, registry=None,
 
 def check_reading(statement: str, source: str, src_lang: str, registry=None,
                   strict_only: bool = True, quote: str | None = None,
-                  stance: str | None = None) -> tuple[str | None, list[Problem]]:
+                  stance: str | None = None, span: str | None = None) -> tuple[str | None, list[Problem]]:
     """(the source sentence found, the problems). An English statement read from a Hindi or English report: the
     report's sentence must entail it. A denial is written as the positive claim (reading rule 4), so only support is
     asked of it, not the absence of contradiction."""
     from . import nli
-    win, how = find_source(statement, source, src_lang, registry, quote)
+    win, how = find_source(statement, source, src_lang, registry, quote, span)
     if win is None:
         return None, []
     r = nli.predict([(win, statement)])[0]
@@ -197,6 +200,13 @@ def check_reading(statement: str, source: str, src_lang: str, registry=None,
         return win, [Problem("contradicted", "meaning")]
     if r[0] < SUPPORT and stance != "denies":
         return win, [Problem("unsupported", "meaning")]
+    try:                                         # S13: the independent second detector, one slot at a time
+        from . import qa
+        bad = qa.mismatches(statement, win)
+        if bad:
+            return win, [Problem("qa_mismatch", bad[0])]
+    except Exception:  # noqa: BLE001
+        pass
     return win, []
 
 
@@ -251,4 +261,28 @@ def check_translation(english: str, hindi: str, strict_only: bool = True, sectio
                 out.append(Problem("added", "meaning"))
     out += [Problem("latin", w) for w in dict.fromkeys(latin_left(hindi, english))]
     out += [Problem("term", t) for t in missing_terms(english, hindi, section)]
+    low = quality_low(english, hindi)                       # B20: reference-free quality estimation, a third opinion
+    if low is not None:
+        out.append(Problem("low_quality", f"{low:.2f}", strict=False))
     return out
+
+
+QE_MIN = 0.55            # cross-lingual sentence-embedding cosine under which a translation is suspect (untuned)
+
+
+def quality_low(english: str, hindi: str) -> float | None:
+    """B20: reference-free translation quality estimation by cross-lingual sentence-embedding similarity (the multilingual
+    bi-encoder places a sentence and its faithful translation close together; an unrelated, garbled or half-translated string
+    is far). The cosine when it is under QE_MIN, else None; also None when only the TF-IDF fallback is loaded (it cannot compare
+    two scripts) or either string is too short to judge."""
+    if len((english or "").split()) < 5 or len((hindi or "").split()) < 3:
+        return None
+    try:
+        from . import embed
+        v, how = embed.vectors([english, hindi])
+        if how != "bi-encoder":
+            return None
+        cos = float(v[0] @ v[1])
+        return cos if cos < QE_MIN else None
+    except Exception:  # noqa: BLE001
+        return None

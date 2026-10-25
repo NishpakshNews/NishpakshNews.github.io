@@ -137,6 +137,9 @@ def _cluster(units: list[list[dict]], words) -> list[list[dict]]:
             glued[-1] = glued[-1] + u
         else:
             glued.append(list(u))
+    coded = _theme_order(glued)
+    if coded is not None:
+        return coded
     left = list(glued)
     out: list[list[dict]] = []
     while left:
@@ -150,6 +153,42 @@ def _cluster(units: list[list[dict]], words) -> list[list[dict]]:
             left.remove(nxt)
             out.append(nxt)
             grp_words = set().union(*(words(i) for i in nxt))       # the next one must fit the one before it
+    return out
+
+
+def _theme_order(units: list[list[dict]]) -> list[list[dict]] | None:
+    """S28: themes by CONSTRAINED CLUSTERING in code. The units are the must-link atoms (a statement with its contradiction,
+    response or updated figure is one unit already); agglomerative clustering (average linkage) on sentence-embedding
+    distance groups the units into themes; two units naming different people (both name someone, no name in common) are
+    cannot-link (their distance is set beyond any threshold). Themes come in the order of their earliest unit, units inside
+    a theme in their own order. None (no clustering possible) = the older word-overlap grouping."""
+    if len(units) < 3:
+        return None
+    try:
+        import numpy as np
+        from sklearn.cluster import AgglomerativeClustering
+        from . import embed
+        from .relate import Profile
+        texts = [" ".join(i.get("text") or "" for i in u) for u in units]
+        v, how = embed.vectors(texts)
+        dist = 1.0 - np.clip(v @ v.T, -1.0, 1.0)
+        names = [set().union(*(Profile(i.get("text") or "").names for i in u)) for u in units]
+        for a in range(len(units)):
+            for b in range(a + 1, len(units)):
+                if names[a] and names[b] and not names[a] & names[b]:
+                    dist[a, b] = dist[b, a] = 2.0
+        np.fill_diagonal(dist, 0.0)
+        cut = 1.0 - embed.PROPOSE[how]
+        labels = AgglomerativeClustering(n_clusters=None, metric="precomputed", linkage="average",
+                                         distance_threshold=cut).fit_predict(dist)
+    except Exception:  # noqa: BLE001
+        return None
+    first: dict[int, int] = {}
+    for k, lab in enumerate(labels):
+        first.setdefault(int(lab), k)
+    out: list[list[dict]] = []
+    for lab in sorted(first, key=lambda x: first[x]):
+        out += [units[k] for k, l_ in enumerate(labels) if int(l_) == lab]
     return out
 
 

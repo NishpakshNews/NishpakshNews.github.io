@@ -595,6 +595,9 @@ def _validate(sentence: dict, by_id: dict[int, dict], banned: set[str], outlets:
                            for i in ids)
     if not _numbers(text, written=True) <= _numbers(source_text):
         return _no("number not in statements")
+    from . import hygiene
+    if hygiene.leaks(text, "en") and not re.search(r"[\u0900-\u097f]", source_text):     # B10: a sentence in the other script
+        return _no("Hindi words in English text")
     if re.search(r"[\u0900-\u097f]", text) and not re.search(r"[\u0900-\u097f]", source_text):
         return _no("Hindi words in English text")
     # "A said that B claimed X" must stay reported speech: a sentence may not drop the "said" and

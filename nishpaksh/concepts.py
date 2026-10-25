@@ -37,9 +37,16 @@ def map_new(store, router: Router | None, words: set[str], max_calls: int = 3) -
     stands for itself: never a guess). Needs the bi-encoder; the TF-IDF fallback has no cross-lingual space, so nothing is
     mapped. Returns how many were added."""
     from . import embed
+    import datetime as dt
     known = lookup(store, words)
-    todo = sorted(w for w in words if DEVA.search(w) and w not in known)
-    english = sorted({w.lower() for w in words if not DEVA.search(w)} | {v for v in known.values() if not DEVA.search(v)})
+    now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+    fails = _failures(store, [w for w in words if DEVA.search(w) and w not in known])
+    # E26: a word that found no neighbour is not tried again at once (each failure doubles the wait); the run takes the
+    # words tried least often first, at most MAX_WORDS, so a long tail cannot use up every run
+    todo = sorted((w for w in words if DEVA.search(w) and w not in known and fails.get(w, (0, now))[1] <= now),
+                  key=lambda w: (fails.get(w, (0, now))[0], w))[:MAX_WORDS]
+    pool = {w.lower() for w in words if not DEVA.search(w)} | {v for v in known.values() if not DEVA.search(v)}
+    english = _by_stem(pool)
     if not todo or not english:
         return 0
     vecs, how = embed.vectors(todo + english)
@@ -47,11 +54,48 @@ def map_new(store, router: Router | None, words: set[str], max_calls: int = 3) -
         return 0
     hi, en = vecs[:len(todo)], vecs[len(todo):]
     sims = hi @ en.T
-    put = {}
+    put, failed = {}, {}
     for k, w in enumerate(todo):
         j = int(sims[k].argmax())
         if sims[k, j] >= MIN_SIM:
             put[_key(w)] = english[j]
-    if put:
-        store.translation_put(put)
+        else:
+            n = fails.get(w, (0, now))[0] + 1
+            failed[_fail_key(w)] = f"{n}|{(now + dt.timedelta(hours=min(24 * 14, 6 * 2 ** n))).isoformat(timespec='minutes')}"
+    if put or failed:
+        store.translation_put({**put, **failed})
     return len(put)
+
+
+MAX_WORDS = 300
+
+
+def _fail_key(word: str) -> str:
+    return hashlib.sha256(("conceptfail|" + word).encode("utf-8")).hexdigest()
+
+
+def _failures(store, words: list[str]) -> dict[str, tuple[int, "object"]]:
+    import datetime as dt
+    got = store.translation_get([_fail_key(w) for w in words]) if words else {}
+    out = {}
+    for w in words:
+        v = got.get(_fail_key(w))
+        if v:
+            try:
+                n, until = v.split("|", 1)
+                out[w] = (int(n), dt.datetime.fromisoformat(until))
+            except ValueError:
+                continue
+    return out
+
+
+def _by_stem(words: set[str]) -> list[str]:
+    """One English word per stem (the shortest), so "riots" and "rioting" do not both stand as separate concepts to map to."""
+    from .frames import words as roots
+    best: dict[str, str] = {}
+    for w in sorted(words):
+        r = roots(w)
+        k = sorted(r)[0] if r else w
+        if k not in best or len(w) < len(best[k]):
+            best[k] = w
+    return sorted(best.values())

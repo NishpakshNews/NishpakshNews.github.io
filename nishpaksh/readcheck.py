@@ -64,7 +64,7 @@ def _take_call() -> bool:
 def problems_of(item: dict, source: str, lang: str, registry=None) -> tuple[str | None, list[F.Problem]]:
     """(the source sentence, the strict problems) of one statement; a denial is only checked for contradiction-free support."""
     return F.check_reading(item.get("text") or "", source, lang, registry, strict_only=True,
-                           quote=item.get("quote"), stance=item.get("stance"))
+                           quote=item.get("quote"), stance=item.get("stance"), span=item.get("src_text"))
 
 
 def _describe(p: F.Problem) -> str:
@@ -81,8 +81,8 @@ def check(ex: dict, source: str, lang: str, router=None, registry=None) -> dict:
     for kind in ("events", "claims", "context"):
         for it in ex.get(kind) or []:
             out["checked"] += 1
-            _, how = F.find_source(it.get("text") or "", source, lang, registry, it.get("quote"))
-            out["by_quote" if how == "quote" else "by_anchors" if how == "anchors" else "unsourced"] += 1
+            _, how = F.find_source(it.get("text") or "", source, lang, registry, it.get("quote"), it.get("src_text"))
+            out["by_quote" if how in ("quote", "span") else "by_anchors" if how == "anchors" else "unsourced"] += 1
             win, probs = problems_of(it, source, lang, registry)
             if win is not None:
                 out["sourced"] += 1

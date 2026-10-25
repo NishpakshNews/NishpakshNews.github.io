@@ -110,6 +110,25 @@ nov dec""".split()}
 _MONTHS = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?"
 
 
+_NORM_RULES = [
+    (re.compile(r"[\u2010-\u2015\u2212]"), "-"),                                    # every dash is a hyphen
+    (re.compile(r"(?i)(?:\b(?:rs\.?|inr|rupees?)|₹)\s*(?=\d)|(?<=\d)\s*(?:rupees?)\b"), " rs "),   # Rs 375 = 375 rupees = ₹375
+    (re.compile(r"(?i)\bper\s*cent\b|\bpercent\b|%"), " percent "),
+    (re.compile(r"(?<=\d)\s*[-–]\s*(?=\d)"), " to "),                                # a range: 10-12 = 10 to 12
+    (re.compile(r"(?i)\bbetween\s+(\d[\d.,]*)\s+and\s+(\d)"), r"\1 to \2"),
+]
+
+
+def normalise(text: str) -> str:
+    """B8: the form two lines are compared in: NFKC, one hyphen, one way to write rupees and per cent, a range as "a to b",
+    lower case, punctuation and spacing gone. Two lines equal here are the same words (the exact-match fast path)."""
+    import unicodedata
+    t = unicodedata.normalize("NFKC", text or "")
+    for rx, rep in _NORM_RULES:
+        t = rx.sub(rep, t)
+    return re.sub(r"\W+", " ", t.lower()).strip()
+
+
 def _ner_names(text: str) -> set[str]:
     try:
         from . import nlp
@@ -129,7 +148,7 @@ class Profile:
 
     def __init__(self, text: str):
         t = text or ""
-        self.norm = re.sub(r"\W+", " ", t.lower()).strip()
+        self.norm = normalise(t)
         # a clock time is a time, not figures and not a name ("12:30 PM" read as 12, 30 and a name "PM" kept two
         # tellings of the Ladakh inauguration apart, Oct 15 2026); compared as times, through the statements' times
         from .when import find as _find_times

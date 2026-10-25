@@ -29,6 +29,7 @@ uses) so plan.py never puts two topics in one paragraph.
 from __future__ import annotations
 
 import hashlib
+import re
 import logging
 
 from .db import Store, select, stories, update
@@ -105,9 +106,21 @@ def _story_text(payload: dict) -> tuple[str, str]:
     return news_text, shown.strip() or "(none)"
 
 
+STATS: dict[str, int] = {"asked": 0, "answered": 0, "unparsed": 0, "close_kept": 0}
+
+
 def _norm(answer: object) -> str | None:
-    a = str(answer or "").strip().lower().replace("-", "").replace(" ", "").replace("_", "")
-    return a if a in TAGS else None
+    """E32: the tag an answer names. Punctuation and case are ignored; an answer of several words ("history / background")
+    is read from its FIRST listed word that is a tag; anything else is unparsed (counted, never guessed)."""
+    raw = str(answer or "").strip().lower()
+    whole = re.sub(r"[^a-z]", "", raw)
+    if whole in TAGS:
+        return whole
+    for w in re.split(r"[^a-z\-_]+", raw):                 # "history / background", "history, because ..."
+        w = re.sub(r"[^a-z]", "", w)
+        if w in TAGS:
+            return w
+    return None
 
 
 def resolve(answers: list[str]) -> str | None:
@@ -133,18 +146,18 @@ def _news_start(payload: dict):
     return min(starts) if starts else None
 
 
-def slot_of(tag: str, item: dict, news_start) -> str:
+def slot_of(tag: str, item: dict, news_start, leadup_days: int | None = None) -> str:
     """history or leadup. A dated line is placed by its date (code owns what code can know); an undated one by the
     model's answer ('bg': history)."""
     import datetime as dt
     from .plan import _start
     st = _start(item)
     if news_start is not None and st != dt.datetime.max:
-        return "leadup" if (news_start - st) <= dt.timedelta(days=LEADUP_DAYS) else "history"
+        return "leadup" if (news_start - st) <= dt.timedelta(days=LEADUP_DAYS if leadup_days is None else leadup_days) else "history"
     return "leadup" if tag == "leadup" else "history"
 
 
-def place(payload: dict, tags: dict[str, str | None]) -> dict:
+def place(payload: dict, tags: dict[str, str | None], leadup_days: int | None = None) -> dict:
     """Moves each tagged context line to where it belongs: role changed, or into payload["also"]. {kept, also, moved}."""
     from .plan import _start
     import datetime as dt
@@ -171,7 +184,7 @@ def place(payload: dict, tags: dict[str, str | None]) -> dict:
                 i["role"] = "related"            # dated after the news: not background
             else:
                 i["role"] = "background"
-                i["slot"] = slot_of(tag, i, news_start)
+                i["slot"] = slot_of(tag, i, news_start, leadup_days)
         i["tag"] = tag
         moved += i["role"] != was
         keep.append(i)
@@ -207,20 +220,28 @@ def check(store: Store, router: Router | None, story_id: int, payload: dict) -> 
         return {"kept": len(payload.get("context") or []), "also": 0, "moved": 0}
     row = store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}
     an = dict(row.get("analysis") or {})
-    cache: dict[str, list] = {k: [a for a in v if a in TAGS] for k, v in (an.get("context_tags") or {}).items()
-                              if isinstance(v, list)}
     news, story = _story_text(payload)
+    # E33: an answer belongs to the line AND to the news it was judged against (a new lead = a new question); the forward
+    # and the reverse answer are kept apart, so a line is never "answered twice" by two forward askings.
+    nh = hashlib.sha1(news.encode("utf-8")).hexdigest()[:8]
+
+    def ck(i: dict) -> str:
+        return _key(i["text"]) + "@" + nh
+
+    cache: dict[str, dict] = {k: dict(v) for k, v in (an.get("context_tags2") or {}).items() if isinstance(v, dict)}
     # B32: a line close in meaning to the story's own news (bi-encoder similarity) is kept without asking the model;
     # only the rest goes to the twice-asked question. Never drops anything: the model's "other news" still decides that.
     close = _close_lines(lines, news)
     keep_as = {"explanation": "explains", "related": "linked", "background": "bg"}      # its own role, confirmed
     for i in close:
-        cache.setdefault(_key(i["text"]), [keep_as.get(i.get("role"), "linked")] * 2)
+        cache.setdefault(ck(i), {"f": keep_as.get(i.get("role"), "linked"), "r": keep_as.get(i.get("role"), "linked")})
+        STATS["close_kept"] += 1
 
-    def ask(todo: list[dict]) -> None:
+    def ask(todo: list[dict], slot: str) -> None:
         for start in range(0, len(todo), BATCH):
             chunk = todo[start:start + BATCH]
             body = "\n".join(f'{k + 1}. "{i["text"]}"' for k, i in enumerate(chunk))
+            STATS["asked"] += len(chunk)
             try:
                 res = router.call("page", PROMPT.format(news=news, story=story, lines=body), json_out=True,
                                   max_output_tokens=400)
@@ -236,19 +257,32 @@ def check(store: Store, router: Router | None, story_id: int, payload: dict) -> 
                 except (KeyError, TypeError, ValueError):
                     continue
                 tag = _norm(item.get("answer")) if isinstance(item, dict) else None
-                if 0 <= n < len(chunk) and n not in got and tag:
-                    got.add(n)
-                    cache.setdefault(_key(chunk[n]["text"]), []).append(tag)
+                if not (0 <= n < len(chunk) and n not in got):
+                    continue
+                if not tag:
+                    STATS["unparsed"] += 1                   # E32: counted, the line is simply asked again next time
+                    continue
+                got.add(n)
+                STATS["answered"] += 1
+                cache.setdefault(ck(chunk[n]), {})[slot] = tag
 
     if router is not None:
-        # first asking for lines never answered; then everything with one answer, the lines in reverse order
-        ask([i for i in lines if not cache.get(_key(i["text"]))])
-        ask(list(reversed([i for i in lines if len(cache.get(_key(i["text"])) or []) == 1])))
-        if cache != (an.get("context_tags") or {}):
-            an["context_tags"] = cache
+        # first asking (forward) for lines without one; then the reverse asking, the lines in reverse order
+        ask([i for i in lines if "f" not in cache.get(ck(i), {})], "f")
+        ask(list(reversed([i for i in lines if "r" not in cache.get(ck(i), {})])), "r")
+        if cache != (an.get("context_tags2") or {}):
+            an["context_tags2"] = dict(list(cache.items())[-600:])
+            an.pop("context_tags", None)
             store.exec(update(stories).where(stories.c.id == story_id).values(analysis=an))
-    tags = {_key(i["text"]): resolve(cache.get(_key(i["text"])) or []) for i in lines}
-    return place(payload, tags)
+    tags = {_key(i["text"]): resolve([v for v in (cache.get(ck(i), {}).get("f"), cache.get(ck(i), {}).get("r")) if v])
+            for i in lines}
+    out = place(payload, tags)
+    try:                                                    # E36: what this pass decided, for the single audit
+        from . import dossier
+        dossier.append(store, story_id, "belong", {**STATS, **out, "lines": len(lines), "leadup_days": LEADUP_DAYS})
+    except Exception:  # noqa: BLE001
+        pass
+    return out
 
 
 def assign_topics(store: Store, router: Router | None, story_id: int, payload: dict) -> int:
@@ -274,10 +308,26 @@ def assign_topics(store: Store, router: Router | None, story_id: int, payload: d
         return 0
     by_id = {i["id"]: i for i in items}
     topic = {x: n for n, g in enumerate(groups) for x in g}
-    for i in items:                                  # linked statements share the topic of the first
+    # E34: statements that must be written together join their WHOLE topics (union-find over topic numbers), so the result
+    # does not depend on the order the links are read in; topics are then numbered by first appearance
+    parent = {t: t for t in set(topic.values())}
+
+    def find(t: int) -> int:
+        while parent[t] != t:
+            parent[t] = parent[parent[t]]
+            t = parent[t]
+        return t
+
+    for i in items:
         for x in plan._links(i):
             if x in topic and i["id"] in topic:
-                topic[x] = topic[i["id"]]
+                a, b = find(topic[x]), find(topic[i["id"]])
+                if a != b:
+                    parent[max(a, b)] = min(a, b)
+    number: dict[int, int] = {}
     for i in items:
-        i["topic"] = topic.get(i["id"])
-    return len({t for t in topic.values()})
+        if i["id"] in topic:
+            number.setdefault(find(topic[i["id"]]), len(number))
+    for i in items:
+        i["topic"] = number.get(find(topic[i["id"]])) if i["id"] in topic else None
+    return len(number)

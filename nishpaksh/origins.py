@@ -146,19 +146,38 @@ def _attribution_map(router: Router | None, signature: str, raws: list[str], kno
                 continue
             kind = str(it.get("kind") or "other").lower()
             gov = it.get("government")
-            gov = str(gov).strip() if gov and str(gov).strip().lower() not in ("null", "none", "") else None
+            from .places import government_name
+            gov = government_name(gov)            # E21: a government outside the closed set is unknown (pooled), not a new origin
             name = str(it.get("name") or r).strip()
             out[r] = {"key": _key_for(name, kind, gov), "kind": kind, "government": gov, "name": _norm(name)}
             names_so_far = sorted(set(names_so_far) | {_norm(name)})
     return out
 
 
-# a real dateline: "NEW DELHI:", "IMPHAL, Oct 3:", "Mumbai, October 3 (PTI) -" ... A capitalised place
-# name alone is not enough ("Also Read:", "Highlights:" must not pass), so either the place is in
-# capitals or it is followed by a date.
+# a real dateline: "NEW DELHI:", "IMPHAL, Oct 3:", "Mumbai, October 3 (PTI) -", "नई दिल्ली:" ... Capital letters alone are not
+# enough ("HIGHLIGHTS:", "ALSO READ:", "WATCH:" must not pass, E20): the place must be in the gazetteer (places.is_place), or the
+# line must carry a date or an agency tag after the place.
 DATELINE = re.compile(
-    r"^\s*(?:[A-Z][A-Z.\- ]{2,28}(?:,\s*[A-Z][a-z]{2,8}\.?\s*\d{1,2}(?:,\s*\d{4})?)?\s*[:—–(]"
-    r"|[A-Z][a-z]+(?:\s[A-Z][a-z]+)?,\s*(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s*\d{1,2}\b)")
+    r"^\s*(?P<place>[A-Z][A-Za-z.\- ]{2,28}|[\u0900-\u097f][\u0900-\u097f ]{1,24})"
+    r"(?P<tag>,\s*(?:[A-Z][a-z]{2,8}\.?\s*\d{1,2}|\d{1,2}\s+[A-Z\u0900-\u097f][a-z\u0900-\u097f]{2,8})(?:,\s*\d{4})?)?"
+    r"\s*(?P<end>[:\u2014\u2013(])")
+AGENCY_TAG = re.compile(r"^\s*\(?\s*(?:PTI|ANI|IANS|UNI|Reuters|AFP|AP|Bhasha|भाषा)\b", re.I)
+
+
+def has_dateline(text: str) -> bool:
+    from . import places
+    t = text or ""
+    m = DATELINE.match(t)
+    if not m:
+        return False
+    place = m.group("place").strip()
+    if places.is_place(place):
+        return True
+    if m.group("tag") and re.match(r"[A-Z][a-z]+(?: [A-Z][a-z]+)?$", place):
+        return True                                    # "Imphal, Oct 3:" - a date after a capitalised word
+    if place.isupper() and len(place) >= 4 and place.title() in t[m.end():]:
+        return True                                    # "KESARGANJ:" - a small town the report goes on to name
+    return bool(m.group("end") == "(" and AGENCY_TAG.match(t[m.end():]))
 
 
 def article_originality(arts: dict[int, dict], first_support: dict[int, int], unique: dict[int, int]) -> dict[int, bool]:
@@ -173,7 +192,7 @@ def article_originality(arts: dict[int, dict], first_support: dict[int, int], un
         author = (a.get("author") or "").strip()
         named = bool(author) and len(author) <= 60 and not GENERIC_AUTHOR.search(author) \
             and _norm(author) != _norm(a.get("outlet"))
-        dateline = bool(DATELINE.match(a.get("text") or ""))
+        dateline = has_dateline(a.get("text") or "")
         out[aid] = named and (dateline or (first_support.get(aid, 0) >= 2 and unique.get(aid, 0) >= 1))
     return out
 
@@ -218,12 +237,13 @@ def compute_origins(store: Store, router: Router | None, story_id: int) -> dict[
     for r in rows:
         if r["stance"] in ("asserts", "attributes"):
             supporters[r["canonical_id"]].append(r)
+    answered = (story["analysis"] or {}).get("unanswered_asks", 0) == 0
     first_support: dict[int, int] = defaultdict(int)
     unique: dict[int, int] = defaultdict(int)
     for cid, rs in supporters.items():
         earliest = min(rs, key=lambda r: (arts[r["article_id"]]["published_at"], r["article_id"]))
         first_support[earliest["article_id"]] += 1
-        if len({r["article_id"] for r in rs}) == 1:
+        if len({r["article_id"] for r in rs}) == 1 and answered:      # E19: "nobody else has it" needs every ask answered
             unique[rs[0]["article_id"]] += 1
     original = {aid: ok and aid not in copied for aid, ok in article_originality(arts, first_support, unique).items()}
     original_owners = {owner_of(a["outlet"], a["url"]) for aid, a in arts.items() if original.get(aid)}
@@ -284,9 +304,21 @@ def classify_checkable(store: Store, router: Router | None, story_id: int, only:
     """Fact vs characterisation, once per statement. Unclassified statements are treated as
     characterisations (never green), so a missing answer can only make the page more cautious.
     `only` limits the question to statements that could otherwise be established."""
-    todo = [c for c in store.rows(select(canonical.c.id, canonical.c.text, canonical.c.kind, canonical.c.checkable)
-                                  .where(canonical.c.story_id == story_id))
-            if c["checkable"] is None and c["kind"] != "relation" and c["text"]
+    import hashlib
+    from datetime import datetime, timezone
+
+    def _h(t: str) -> str:
+        return hashlib.md5((t or "").encode()).hexdigest()[:12]
+
+    def _stale(c) -> bool:
+        # E22: an answer is kept with the text it was given for; the text changed since (a merge, a rewrite) = ask again.
+        # An answer stored before this record existed has no hash and stands.
+        rec = (c["rel"] or {}).get("checked") if isinstance(c["rel"], dict) else None
+        return bool(rec) and rec.get("h") != _h(c["text"])
+
+    todo = [c for c in store.rows(select(canonical.c.id, canonical.c.text, canonical.c.kind, canonical.c.checkable,
+                                         canonical.c.rel).where(canonical.c.story_id == story_id))
+            if (c["checkable"] is None or _stale(c)) and c["kind"] != "relation" and c["text"]
             and (only is None or c["id"] in only)]
     from . import checkworthy
     for i in range(0, len(todo), 50):
@@ -296,7 +328,9 @@ def classify_checkable(store: Store, router: Router | None, story_id: int, only:
             if c["id"] in hedged:
                 fact = False                    # S1: a reading marked possible / hypothetical is never a fact to establish
             if fact is not None:                # None = could not tell: stays unclassified, i.e. a characterisation
-                store.exec(update(canonical).where(canonical.c.id == c["id"]).values(checkable=fact))
+                rel = dict(c["rel"] or {})
+                rel["checked"] = {"h": _h(c["text"]), "by": "nli", "at": datetime.now(timezone.utc).isoformat()[:19]}
+                store.exec(update(canonical).where(canonical.c.id == c["id"]).values(checkable=fact, rel=rel))
 
 
 def assess_story(store: Store, router: Router | None, story_id: int) -> bool:

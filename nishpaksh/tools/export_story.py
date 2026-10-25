@@ -38,12 +38,20 @@ def main() -> None:
         out["story_ids"] = ids
         for sid in ids:
             d = {}
-            d["articles"] = rows("select id, outlet, url, title, published_at, story_id from articles "
+            d["articles"] = rows("select id, outlet, url, title, published_at, story_id, lang, text_source, "
+                                 "extract_failures, extracted_at, extraction from articles "
                                  "where story_id = :s order by id", s=sid)
-            d["claims"] = rows("select id, article_id, local_id, kind, text, attributed_to, rel from claims "
+            d["claims"] = rows("select id, article_id, local_id, kind, text, stance, attributed_to, evidence, time, "
+                               "canonical_id, rel from claims "
                                "where story_id = :s order by article_id, local_id", s=sid)
-            d["canonical"] = rows("select id, kind, text, verdict, rel, origins from canonical "
+            d["canonical"] = rows("select id, kind, text, verdict, checkable, conflicts, rel, origins from canonical "
                                   "where story_id = :s order by id", s=sid)
+            try:                      # E9: the story's own record: analysis counters (failed asks, doubtful disputes ...) and the dossier
+                d["story"] = rows("select id, analysis from stories where id = :s", s=sid)
+                d["dossier"] = rows("select data from dossiers where story_id = :s", s=sid)
+            except Exception as e:
+                c.rollback()
+                d["story"] = f"not exported: {e}"
             try:
                 d["published"] = rows("select to_jsonb(p) as row from published p where p.story_id = :s", s=sid)
             except Exception as e:  # a column name differs: say so instead of failing the whole export

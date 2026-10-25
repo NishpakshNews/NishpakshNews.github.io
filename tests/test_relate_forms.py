@@ -60,3 +60,19 @@ def test_time_is_a_soft_level_for_identical_words():
     assert relate(t, t, sat, sun) == "ask"            # one day apart, same words: the question decides, never code
     assert relate(t, t, sat, mon) == "different"       # a week apart: another event
     assert relate(t, t, sat, sat) == "same"
+
+
+def test_a_different_place_for_the_same_action_is_proposed_as_a_conflict():
+    from nishpaksh.frames import compare
+    base = {"who": "Police", "action": "arrest", "what": "five men", "value": "", "negated": False}
+    assert compare(dict(base, where="Pune"), dict(base, where="Mumbai")) == "conflict"
+    assert compare(dict(base, where="Delhi"), dict(base, where="New Delhi")) != "conflict"
+    assert compare(dict(base, where=""), dict(base, where="Mumbai")) != "conflict"
+
+
+def test_normalise_makes_written_forms_equal():
+    from nishpaksh.relate import normalise
+    assert normalise("Fee is Rs. 375") == normalise("Fee is Rs 375") == normalise("Fee is ₹375")
+    assert normalise("a rise of 10 per cent") == normalise("a rise of 10 percent") == normalise("a rise of 10%")
+    assert normalise("Between 10 and 12 people") == normalise("10-12 people") == normalise("10–12 people")
+    assert normalise("The  minister\u2019s plan") == normalise("The minister\u2019s plan")

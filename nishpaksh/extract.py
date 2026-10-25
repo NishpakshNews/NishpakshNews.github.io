@@ -18,6 +18,7 @@ from .frames import normalize as normalize_frame
 from sqlalchemy import func
 from .db import Store, articles, claims, delete, insert, select, stories, update, utcnow
 from . import heavy
+from . import evidence
 from .router import CallFailed, QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
@@ -59,14 +60,14 @@ Return ONE JSON object with exactly these keys:
 {{
   "signature": "one neutral English sentence naming the core event: who, what, where",
   "events": [
-    {{"id": "e1", "text": "...", "quote": "...", "words": "...", "when_text": "...", "start": "YYYY-MM-DDTHH:MM or null",
+    {{"id": "e1", "text": "...", "quote": "...", "src": [1], "words": "...", "when_text": "...", "start": "YYYY-MM-DDTHH:MM or null",
       "end": "YYYY-MM-DDTHH:MM or null", "precision": "exact|hour|part_of_day|day|week|month|unknown",
       "stance": "asserts|attributes|denies", "polarity": "pos|neg", "certainty": "stated|possible|hypothetical",
       "attributed_to": "...", "evidence": "...", "loaded_words": ["..."],
       "frame": {{"who": "...", "action": "...", "what": "...", "value": "...", "where": "...", "negated": false}}}}
   ],
   "claims": [
-    {{"id": "c1", "text": "...", "quote": "...", "words": "...", "stance": "asserts|attributes|denies",
+    {{"id": "c1", "text": "...", "quote": "...", "src": [1], "words": "...", "stance": "asserts|attributes|denies",
       "polarity": "pos|neg", "certainty": "stated|possible|hypothetical", "attributed_to": "...",
       "evidence": "...", "loaded_words": ["..."], "frame": {{"who": "...", "action": "...", "what": "...", "value": "...", "where": "...", "negated": false}}}}
   ],
@@ -74,7 +75,7 @@ Return ONE JSON object with exactly these keys:
     {{"from": "e1", "to": "e2", "type": "before|caused", "stance": "asserts|attributes|denies", "attributed_to": "..."}}
   ],
   "context": [
-    {{"id": "x1", "type": "background|related|explanation|reaction|next", "text": "...", "quote": "...", "words": "...", "event": "...",
+    {{"id": "x1", "type": "background|related|explanation|reaction|next", "text": "...", "quote": "...", "src": [1], "words": "...", "event": "...",
       "when_text": "...", "start": "YYYY-MM-DDTHH:MM or null", "end": "YYYY-MM-DDTHH:MM or null",
       "precision": "exact|hour|part_of_day|day|week|month|unknown",
       "stance": "asserts|attributes|denies", "polarity": "pos|neg", "certainty": "stated|possible|hypothetical",
@@ -120,6 +121,8 @@ Rules:
    person as attributed_to, even when the article words it in its own voice (an article writing
    "the professor harassed the student" while reporting the family's complaint -> stance "attributes",
    attributed_to "the student's family"). Use "asserts" only for what the article itself establishes.
+4a. src: the numbers of the article's numbered sentences ([1], [2] ...) this item was read from, as a list, e.g. [3] or
+   [3, 4]. Only the sentences it really comes from; never a number that is not in the text.
 4b. polarity: "neg" when "text" says something did NOT happen or is NOT so, else "pos". certainty: "stated" = the
    source gives it as a fact (even when someone else says it); "possible" = it may / might / could / is likely / is
    feared / is expected; "hypothetical" = an if, a plan that is not done, a threat, a prediction. If unsure: "possible".
@@ -205,6 +208,7 @@ def normalize_extraction(data: dict) -> dict | None:
                 "id": local,
                 "text": str(it["text"]).strip()[:500],
                 "quote": str(it.get("quote") or "").strip()[:200],
+                "src": evidence.pointers(it.get("src")),
                 "words": str(it.get("words") or "").strip().strip('"“”\'‘’ ')[:400],
                 "stance": choice(it.get("stance"), STANCES, "stance", "attributes"),   # unknown: NOT the article's own voice
                 "attributed_to": str(it.get("attributed_to") or "article")[:200],
@@ -213,6 +217,7 @@ def normalize_extraction(data: dict) -> dict | None:
             }
             item["frame"] = normalize_frame(it.get("frame"))
             item.update(_factuality(item["text"], it))
+            item["stance_defaulted"] = kind != "context" and it.get("stance") not in STANCES          # E15: counted, and held back in verify
             if kind == "context":
                 item["context"] = it["type"]
                 item["event"] = str(it.get("event") or "").strip()[:160] if it["type"] == "related" else ""
@@ -294,6 +299,8 @@ def _factuality(text: str, it: dict) -> dict:
 
 def _rel(it: dict) -> dict | None:
     rel = {}
+    if it.get("stance_defaulted"):
+        rel["stance_defaulted"] = True
     if it.get("polarity") == "neg":
         rel["polarity"] = "neg"                 # only what differs from the plain reading is stored
     if it.get("certainty") in ("possible", "hypothetical"):
@@ -304,6 +311,8 @@ def _rel(it: dict) -> dict | None:
         rel["refs"] = it["refs"]
     if it.get("refs_open"):
         rel["refs_open"] = it["refs_open"]
+    if it.get("src_text"):
+        rel["span"] = it["src_text"][:600]          # the report's sentence the model pointed at (newsroom only)
     if it.get("quote"):
         rel["quote"] = it["quote"]          # the source sentence's first words (newsroom only): the audit's coverage
     if it.get("words"):
@@ -367,7 +376,7 @@ def _overlap(cur: list[str], max_back: int = 3) -> list[str]:
     return cur[-k:]
 
 
-def pieces(text: str, cap: int | None = None) -> list[str]:
+def pieces(text: str, cap: int | None = None, stats: dict | None = None) -> list[str]:
     """The report as one piece (it fits one reading) or as overlapping pieces split at paragraph breaks."""
     cap = cap or SETTINGS.max_article_chars
     t = text or ""
@@ -391,9 +400,15 @@ def pieces(text: str, cap: int | None = None) -> list[str]:
         cur.append(p)
     if cur:
         out.append("\n".join(cur))
+    total = len(out)
     if len(out) > MAX_PIECES:
         log.info("extract: a %d-character report read in %d pieces of %d", len(t), MAX_PIECES, len(out))
+        full = out
         out = _most_central(out, MAX_PIECES)
+        if stats is not None:
+            stats["skipped_chars"] = sum(len(x) for x in full if x not in out)      # E10: kept, not only logged
+    if stats is not None:
+        stats.update(pieces=total, read=len(out), chars=len(t))
     return out
 
 
@@ -512,10 +527,18 @@ def _merge_pieces(parts: list[dict]) -> dict:
     return out
 
 
+def resolve_spans(ex: dict, sents: list[str], lang: str, registry=None) -> None:
+    """B3: the sentence numbers the model gave become the report's own sentences (`src_text`); see evidence.py."""
+    for kind in ("events", "claims", "context"):
+        for it in ex.get(kind) or []:
+            it["src_text"] = evidence.span(it.get("src"), sents, it["text"], lang, registry) or ""
+
+
 def read_report(router: Router, a: dict, names: str = "") -> tuple[dict | None, str | None]:
     """(the reading of one report, the model) in one call, or in one call per piece for a long report. A later piece
     the model cannot read leaves the pieces already read (and is logged); the first piece failing fails the report."""
-    texts = pieces(a["text"] or "")
+    stats = a.setdefault("_read_stats", {})
+    texts = pieces(a["text"] or "", stats=stats)
     opening = (texts[0] if texts else "")[:400]
     parts, model = [], None
     for k, t in enumerate(texts):
@@ -523,8 +546,9 @@ def read_report(router: Router, a: dict, names: str = "") -> tuple[dict | None, 
             f"PART {k + 1} of {len(texts)} of a long article: read only the text below. "
             + (f"The article opened with: \"{opening}\" (people named there may be called by surname below).\n"
                if k else "\n") + (slots(a["text"] or "") if k else ""))
+        numbered, sents = evidence.number(t)
         prompt = EXTRACT_PROMPT.format(outlet=a["outlet"], published=_fmt_ist(a["published_at"]),
-                                       title=a["title"] or "", text=t, names=names, part=part)
+                                       title=a["title"] or "", text=numbered, names=names, part=part)
         try:
             res = router.call("bulk", prompt, json_out=True, max_output_tokens=6000)   # room for each item's frame
         except (QuotaExhausted, CallFailed):
@@ -537,6 +561,7 @@ def read_report(router: Router, a: dict, names: str = "") -> tuple[dict | None, 
             if not parts:
                 return None, res.model
             continue
+        resolve_spans(ex, sents, a.get("lang") or "en")
         parts.append(ex)
         model = model or res.model
     if not parts:
@@ -553,8 +578,9 @@ def second_pass(router: Router, a: dict, ex: dict, left: list[str], names: str =
     part = ("THE REST of an article already read once: below are ONLY its sentences that no item came from yet. "
             "Record every fact and every exact quote in them (same rules; \"quote\" is the start of the sentence below "
             "it comes from).\n" + slots(a.get("text") or ""))
+    numbered, sents = evidence.number("\n".join(left[:80]))
     prompt = EXTRACT_PROMPT.format(outlet=a["outlet"], published=_fmt_ist(a["published_at"]), title=a["title"] or "",
-                                   text="\n".join(left[:80]), names=names, part=part)
+                                   text=numbered, names=names, part=part)
     try:
         res = router.call("bulk", prompt, json_out=True, max_output_tokens=6000)
     except (QuotaExhausted, CallFailed) as e:
@@ -564,7 +590,18 @@ def second_pass(router: Router, a: dict, ex: dict, left: list[str], names: str =
     if more is None:
         return ex
     more["signature"] = ex["signature"]
+    resolve_spans(more, sents, a.get("lang") or "en")
     return _merge_pieces([ex, more])
+
+
+def _read_meta(a: dict, ex: dict) -> dict:
+    """E5 / E10: what reading did with this report, kept with the article: size, pieces read and the characters skipped,
+    items by kind, and how many fields the model left open or whose pointer to the report failed."""
+    items = [it for k in ("events", "claims", "context") for it in ex.get(k) or []]
+    return {**{k: v for k, v in (a.get("_read_stats") or {}).items()},
+            "items": {k: len(ex.get(k) or []) for k in ("events", "claims", "context", "relations")},
+            "open_fields": sum(1 for it in items if it.get("certainty") == "unknown" or it.get("polarity") == "unknown"),
+            "with_span": sum(1 for it in items if it.get("src_text")), "with_quote": sum(1 for it in items if it.get("quote"))}
 
 
 def _extract_one(store: Store, router: Router, a: dict, names: str = "", registry=None) -> str:
@@ -626,7 +663,7 @@ def _extract_one(store: Store, router: Router, a: dict, names: str = "", registr
                    .values(extract_failures=(a["extract_failures"] or 0) + 1))
         return "failed"
     store_extraction(store, a["id"], a.get("story_id"), ex)
-    meta = {"model": res.model}
+    meta = {"model": res.model, "read": _read_meta(a, ex)}
     if cov:
         meta["coverage"] = cov
     prev = store.one(select(articles.c.extraction).where(articles.c.id == a["id"]))
@@ -635,6 +672,8 @@ def _extract_one(store: Store, router: Router, a: dict, names: str = "", registr
     store.exec(update(articles).where(articles.c.id == a["id"]).values(
         extraction=meta, extracted_at=utcnow(), signature=ex["signature"]))
     if a.get("story_id"):
+        from . import dossier
+        dossier.append(store, a["story_id"], "read", {"article": a["id"], "outlet": a.get("outlet"), **meta["read"]})
         story = store.one(select(stories.c.signature).where(stories.c.id == a["story_id"]))
         values = {"dirty": True, "updated_at": utcnow()}
         if story and (not story["signature"] or story["signature"] == a["title"]):
@@ -903,6 +942,7 @@ def extract_pending(store: Store, router: Router, deadline: float, workers: int 
     if readcheck.STATS:
         log.info("readcheck: %s", dict(readcheck.STATS))
         log.info("reading schema: %s", dict(SCHEMA))
+        log.info("evidence spans: %s", dict(evidence.STATS))
     if COVERAGE_STATS:
         log.info("express coverage: %s", dict(COVERAGE_STATS))
     left = len(pending) - counts["done"] - counts["failed"]

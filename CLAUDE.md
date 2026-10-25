@@ -75,8 +75,36 @@ labelled model exists; `bands` = size of the middle band); `crosslingual.py` (De
 they enter `EntityTable`, exact lookup only; `compose` puts the registry in scope); `tools/evaluate.py` (THE single audit: claim matching
 recall at 99% precision for code / Fellegi-Sunter / logistic, NLI score distribution, inspector counts per article, all untuned thresholds;
 one `diagnostics` row kind 'evaluate'; workflow `audit`, tool `evaluate`). The conftest fake parser now builds speech structure.
-Nothing in this list is left unbuilt except: B25/B26/B28-B32 labelled-data evaluation (the harness measures with the newsroom's own answers,
-no owner labels), a coreference model for the writer, S9 soft time level in Fellegi-Sunter beyond the date field.
+Not built (the real list, corrected Oct 25): B25/B26/B28-B32 labelled-data evaluation (the harness measures with the newsroom's own answers,
+no owner labels), a coreference model for the writer, S9 soft time level inside Fellegi-Sunter beyond the date field, E1's "re-ask once" (an
+invalid closed value becomes "unknown"/"attributes" and is counted), E23's weight in `story_pairs` (the table cannot gain a column without a
+migration: the SHRUNK value is stored instead), E40's `stories.created_at` column (still written by `stories.py`; only the unused query went).
+**Rebuild 15-16 (Oct 25 2026, same branch; fakes only until the audit): the NOTES S- and E-lists.** S1 closed factuality fields (polarity,
+certainty; `extract._factuality`), S2 central pieces + entity slots for long reports, S3 repeated readings clustered (`_merge_pieces` via
+`redundancy`), S4/S6 greedy coverage selection (`selection.greedy`; Tavily failures backed off in `articles.extraction["tavily"]`), S7 blocking
+instead of all pairs (`relate.blocks`), S9 soft time (adjacent days: ask, not "different"), S11 NER names, S12 Dawid-Skene gate (`aggregate.py`,
+only turns yes into no), S13 QA consistency (`qa.py`), S14 learned contrast words (`contrast.py`), S24/S25 positions with outlet propensity and a
+curveball null, S28 themes by agglomerative clustering (`plan._theme_order`), B3 evidence spans (`evidence.py`, `"src"` sentence numbers), B7 places
+that differ, B8 text normalisation, B10 mojibake repair + per-sentence language (`hygiene.py`), B20 translation quality estimate (`fidelity.quality_low`).
+E-list: E5/E9/E10 dossier log (`dossier.append`: read, consolidate, split, belong), richer `tools/export_story.py`; E11 a verdict set by evidence is
+kept ("false" always; "confirmed" unless arithmetic says disputed); E12 the 6-hour clock survives one failing run; E13 no "?" in relation text, first word
+lower-cased unless the parse says it starts a name; E14 verify retries wait (`retry_after`) and rotate; E15 a defaulted stance holds "corroborated" at
+"developing"; E16 a split must keep every content word (`split._uncovered`), E17 outcomes "piece" / "whole:<rule>" stored and counted in the dossier,
+E18 pieces record inherited fields and the relation remap runs in one transaction; E19 "unique to one outlet" only when every same-fact ask was
+answered (`analysis.unanswered_asks`); E20 a dateline must name a gazetteer place (`places.is_place`, English and Devanagari), carry a date/agency
+tag, or be a capitalised town the report goes on to name; E21 `government` from a closed set (`places.government_name`; else pooled); E22 `checkable` is
+kept with the text hash it was judged for (`canonical.rel.checked`) and re-asked when the text changes; E23 pair agreement shrunk by `PRIOR_WEIGHT`;
+E24 perspectives use outlets with a fully READ article, and a story keeps `qualifies` for one failing run; E25/E31 the global clusters stay until 3
+failing runs (`perspectives._keep_or_clear`, record in `model_state` "global_clusters"); a stale (>48 h) or "why" positions report is unknown, not
+"no signal" (E29); positions run BEFORE `recompute_global` in `run.py`; E26 concept mapping remembers failed words (back-off), tries the least-tried
+first, compares by stem; E27 one `GENERIC_AUTHOR` (origins); E28 positions use explicit stances only, per (statement, article), denial wins;
+E30 positions report gains per-outlet answer rate and corr(theta, rate); E32-E34 belong: first listed tag word read, unparsed counted, answers kept
+as forward/reverse per (line, hash of the NEWS block), topics joined whole by union-find, order independent; E35 `dupes.topics` keeps every id
+(duplicate texts); E36 belong counts + `LEADUP_DAYS` as parameter in the dossier; E37 `find_parents` returns stored parents when scoring fails;
+E38 `save_links` keeps twins on other pages, one transaction; E39 thread check keyed by headline + candidate set; E41 `story_links.reason` is JSON with
+the edge type, `root_of` breaks ties by creation time. Test suite green except the known hash-seed flake in `test_end_to_end` (set order upstream).
+Untuned: `PRIOR_WEIGHT`, `positions.MAX_AGE_HOURS`, `perspectives.CLEAR_AFTER`, `fidelity.QE_MIN`, `qa.MIN_SCORE`, `contrast.MIN_PAIRS/RATIO`,
+`relate.BLOCK_*`, `aggregate.PRIOR/POSTERIOR_MIN`.
 **Next:** merge `rebuild` to main only when the owner agrees; run the single audit pass (stack_probe, audit, story_check), read the
 NLI thresholds (`nli.ENTAIL/CONTRA/UNSURE`, `fidelity.SUPPORT/CONTRA`), the clause splitter and the NER-based speaker keys on real
 stories, and tune settings then.

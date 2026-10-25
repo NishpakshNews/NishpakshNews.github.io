@@ -174,6 +174,8 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         elif sid in express_ids and _express.qualify(store, sid):     # one or two outlets, a named origin (express.py)
             pass
     analysed = _parallel(dirty, analyse, deadline - 12 * 60, workers)
+    from . import positions
+    pos = step("positions", lambda: positions.daily(store, until=deadline))   # E29: the test first, then the clusters read it
     stats["global_clusters"] = perspectives.recompute_global(store)
     # labels may have changed (or the clusters gone): re-label analysed stories (code only). A
     # published article keeps the perspectives it was written with.
@@ -249,8 +251,6 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         stats["when"] = dict(_when.STATS)
     from . import heavy
     stats["heavy_cache"] = dict(heavy.stats, active=heavy.active(store))   # egress: values served locally vs fetched
-    from . import positions
-    pos = step("positions", lambda: positions.daily(store, until=deadline))
     if pos is not None:
         stats["positions"] = {k: pos.get(k) for k in ("signal", "r", "separated", "null_r", "null_separated", "units", "items")}
     from . import retention

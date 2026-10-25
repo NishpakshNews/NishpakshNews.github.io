@@ -241,7 +241,7 @@ def link_candidate(store: Store, sid: int) -> None:
                                                            story_links.c.child_id == sid))
     if not have:
         store.exec(insert(story_links).values(parent_id=parent, child_id=sid, created_at=utcnow(),
-                                              reason=json.dumps(["later reports of the same event"])))
+                                              reason=json.dumps({"type": "follow_up", "why": "later reports of the same event"})))
 
 
 def _all_items(p: dict) -> list[dict]:

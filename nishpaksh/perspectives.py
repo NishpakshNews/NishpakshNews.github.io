@@ -29,7 +29,8 @@ from .wire import independence_groups, independent, is_state
 log = logging.getLogger(__name__)
 STANCE_VAL = {"asserts": 1.0, "attributes": 0.5, "denies": -1.0}
 LETTERS = "ABCDEFGH"
-GENERIC_AUTHOR = re.compile(r"(?i)\b(staff|desk|bureau|team|news|web|correspondent|reporter|online|editor|agencies)\b")
+from .origins import GENERIC_AUTHOR          # E27: one definition of "not a named reporter" for origins and perspectives
+PRIOR_WEIGHT = 1.0                           # E23: pseudo-evidence at agreement 0 (shrinks thin pairs; untuned, read in the audit)
 
 
 def author_key(a: dict) -> str | None:
@@ -105,7 +106,7 @@ def agreement(pa: dict, pb: dict, informative: set[int], notable: set[int], conf
     if not vals:
         return 0.0, 0.0, 0
     tw = sum(w for _, w in vals)
-    return sum(v * w for v, w in vals) / tw, tw, len(vals)
+    return sum(v * w for v, w in vals) / (tw + PRIOR_WEIGHT), tw, len(vals)
 
 
 def _split(W: np.ndarray) -> tuple[np.ndarray | None, float, float]:
@@ -158,7 +159,10 @@ def analyze_story(store: Store, story_id: int) -> dict:
     by_id = {a["id"]: a for a in arts}
     gmap = independence_groups(arts)
     # state media are a government speaking, not an outlet with a perspective: listed, never clustered
-    groups = sorted(independent(gmap))
+    # E24: a perspective is judged on what an outlet SAID, so only outlets with a fully read article here are units
+    read_aids = {a["id"] for a in arts if a.get("extracted_at") and a.get("text_source") != "summary"}
+    groups = sorted(independent(g for aid, g in gmap.items() if aid in read_aids))
+    listed = sorted(independent(gmap))                  # the page still lists every independent outlet (unread: no label)
     state_groups = sorted({g for g in gmap.values() if is_state(g)})
 
     old_analysis = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
@@ -294,6 +298,13 @@ def analyze_story(store: Store, story_id: int) -> dict:
     # outlets, any discrepancy (a different casualty count, say) would look like two "sides".
     # Stable cross-story perspectives (global mode) carry their own evidence, so 2 is enough there.
     qualifies = n >= 2 and (len(present_global) >= 2 or (side is not None and n >= 3))
+    # E31-style hysteresis for the story too: a story that qualified keeps it until it fails twice in a row
+    # (a single run with one outlet unread or a clustering wobble must not flip the page's perspectives)
+    miss = 0
+    if not qualifies and old_analysis.get("qualified_by") == "perspectives":
+        miss = int(old_analysis.get("qual_miss", 0)) + 1
+        if miss < 2:
+            qualifies = True
 
     # per-story pairwise agreement between sources, for the global matrix
     store.exec(delete(story_pairs).where(story_pairs.c.story_id == story_id))
@@ -326,6 +337,7 @@ def analyze_story(store: Store, story_id: int) -> dict:
         "departures": departures,
         "assessed": assessed,
         "qualified_by": "perspectives" if qualifies else None,
+        "qual_miss": miss,
         "mode": mode,
         "split": side is not None,
         "inter_agreement": round(inter, 3),
@@ -334,7 +346,7 @@ def analyze_story(store: Store, story_id: int) -> dict:
             g: {"articles": sorted(a for a, gg in gmap.items() if gg == g),
                 "outlets": sorted({by_id[a]["outlet"] for a, gg in gmap.items() if gg == g}),
                 "perspective": labels.get(g)}
-            for g in groups + state_groups
+            for g in listed + state_groups
         },
         "article_group": {str(a): g for a, g in gmap.items()},
     }
@@ -407,22 +419,24 @@ def recompute_global(store: Store) -> int:
         deg[b] += 1
     sources = sorted(s for s, d in deg.items() if d >= 3)
     if len(sources) < SETTINGS.global_min_sources:
-        return 0
+        return _keep_or_clear(store, "too few sources")
     # the daily positions test must have found real positions first (owner, Oct 2026: show sides
     # only when the data proves they exist; until then no perspectives at all)
     from . import positions
     pos = positions.latest(store)
     if SETTINGS.require_positions_signal and not (pos and pos.get("signal")):
-        store.exec(delete(source_clusters))
-        return 0
+        # E29/E31: a report that is stale or says "why" (too little data to test) is UNKNOWN, not "no signal": the clusters
+        # stay. Only a fresh, answered "no signal" counts as a failure, and the clusters go after 3 of them in a row.
+        if not positions.fresh(pos) or (pos or {}).get("why"):
+            return _keep_or_clear(store, "positions unknown", count=False)
+        return _keep_or_clear(store, "no signal")
     # the groups come from the fitted positions and their intervals (positions.groups, B30), not from clustering the
     # agreement matrix: two outlets share a perspective unless their whole intervals are apart
     grp = positions.groups(pos.get("positions") or []) if pos else {}
     sources = sorted(grp)
     if len(set(grp.values())) < 2:
         log.info("global perspectives: the position intervals form one group; none shown")
-        store.exec(delete(source_clusters))
-        return 0
+        return _keep_or_clear(store, "one group")
     labels = np.array([grp[s] for s in sources])
     # keep letters stable: match new clusters to previous ones by member overlap
     prev = {r["source"]: r["cluster"] for r in store.rows(select(source_clusters))}
@@ -449,8 +463,47 @@ def recompute_global(store: Store) -> int:
     with store.engine.begin() as c:
         c.execute(insert(source_clusters), [dict(source=s, cluster=mapping[int(l)], updated_at=now)
                                             for s, l in zip(sources, labels)])
+    _state(store, {"fails": 0, "k": k_new, "sources": len(sources), "r": pos.get("r"), "separated": pos.get("separated"),
+                   "reason": None})
     log.info("global perspectives: %d sources in %d groups (from position intervals)", len(sources), k_new)
     return k_new
+
+
+CLEAR_AFTER = 3          # E25: failing runs in a row before the last good perspective clusters are taken away
+STATE = "global_clusters"
+
+
+def _state(store: Store, data: dict | None = None) -> dict:
+    """The clusters' small record in model_state (read when data is None, written otherwise)."""
+    from .db import model_state
+    if data is None:
+        try:
+            row = store.one(select(model_state.c.data).where(model_state.c.name == STATE))
+        except Exception:  # noqa: BLE001
+            row = None
+        return dict((row or {}).get("data") or {})
+    try:
+        with store.route(insert(model_state)).engine.begin() as c:
+            c.execute(delete(model_state).where(model_state.c.name == STATE))
+            c.execute(insert(model_state).values(name=STATE, data=data, updated_at=utcnow()))
+    except Exception as e:  # noqa: BLE001
+        log.info("global clusters: state not saved (%s)", str(e)[:80])
+    return data
+
+
+def _keep_or_clear(store: Store, reason: str, count: bool = True) -> int:
+    """The global clusters could not be made this run (E25): the last good ones stay until CLEAR_AFTER failing runs in a
+    row, so one noisy hour does not flip every page's labels. Returns the number of groups now stored (0 = none)."""
+    st = _state(store)
+    fails = int(st.get("fails", 0)) + (1 if count else 0)
+    existing = store.rows(select(source_clusters.c.cluster))
+    if existing and fails < CLEAR_AFTER:
+        _state(store, {**st, "fails": fails, "reason": reason})
+        log.info("global perspectives: not made (%s); the last good ones stay (%d of %d)", reason, fails, CLEAR_AFTER)
+        return len({r["cluster"] for r in existing})
+    store.exec(delete(source_clusters))
+    _state(store, {**st, "fails": fails, "reason": reason, "k": 0})
+    return 0
 
 
 def refresh_units(store: Store) -> dict:

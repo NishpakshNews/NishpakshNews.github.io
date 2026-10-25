@@ -113,3 +113,53 @@ def article_text(payload: dict) -> str:
     for para in nar.get("paragraphs") or []:
         parts += [s.get("text") or "" for s in para or []]
     return "\n".join(parts)
+
+
+# E20: places a news dateline can name besides the states and their cities above: the capital, the metros and the world
+# capitals datelines carry. A gazetteer, not a judgement: it only decides whether capital letters before a colon are a place.
+DATELINE_PLACES = {
+    "delhi", "new delhi", "mumbai", "kolkata", "chennai", "bengaluru", "bangalore", "hyderabad", "pune", "ahmedabad",
+    "washington", "new york", "london", "beijing", "moscow", "tokyo", "paris", "berlin", "islamabad", "kabul", "dhaka",
+    "colombo", "kathmandu", "thimphu", "male", "tehran", "riyadh", "dubai", "abu dhabi", "doha", "kuwait city", "tel aviv",
+    "jerusalem", "gaza", "cairo", "ankara", "istanbul", "kyiv", "kiev", "brussels", "geneva", "rome", "madrid", "ottawa",
+    "canberra", "sydney", "singapore", "jakarta", "bangkok", "hanoi", "manila", "seoul", "pyongyang", "taipei", "nairobi",
+    "johannesburg", "pretoria", "brasilia", "mexico city", "united nations", "beirut", "damascus", "baghdad",
+    "नई दिल्ली", "दिल्ली", "मुंबई", "कोलकाता", "चेन्नई", "बेंगलुरु", "हैदराबाद", "पुणे", "वॉशिंगटन", "लंदन", "बीजिंग", "मॉस्को",
+    "इस्लामाबाद", "काबुल", "ढाका", "कोलंबो", "काठमांडू", "तेहरान", "दुबई", "तेल अवीव", "येरूशलम", "संयुक्त राष्ट्र",
+}
+
+
+def is_place(name: str) -> bool:
+    """True when `name` (any case, either script) is a state, a city in the table above or a dateline place."""
+    k = re.sub(r"[\s_.]+", " ", (name or "").strip().lower()).strip(" ,:")
+    if not k:
+        return False
+    return k in DATELINE_PLACES or _key(k) in BY_NAME
+
+
+# E21: the governments a source can speak for - the Union, an Indian state or a country. The reading model's "government"
+# answer is kept only when it names one of these (any case; "India"/"Centre"/"Government of India" are the Union).
+COUNTRIES = {
+    "united states", "usa", "us", "united kingdom", "uk", "china", "russia", "pakistan", "bangladesh", "nepal", "sri lanka",
+    "bhutan", "myanmar", "afghanistan", "iran", "iraq", "israel", "saudi arabia", "uae", "united arab emirates", "qatar",
+    "turkey", "egypt", "ukraine", "france", "germany", "italy", "spain", "canada", "australia", "new zealand", "japan",
+    "south korea", "north korea", "taiwan", "singapore", "malaysia", "indonesia", "thailand", "vietnam", "philippines",
+    "south africa", "nigeria", "kenya", "brazil", "mexico", "argentina", "maldives", "oman", "kuwait", "lebanon", "syria",
+    "palestine", "european union", "eu", "switzerland", "netherlands", "sweden", "norway", "poland", "belgium",
+}
+UNION_WORDS = {"union", "india", "centre", "center", "central", "government of india", "union government", "central government"}
+
+
+def government_name(x) -> str | None:
+    """The closed-set government for a model's answer: "Union", a state's English name, a country, else None (E21)."""
+    k = re.sub(r"\s+", " ", str(x or "").strip().lower())
+    if not k or k in ("null", "none"):
+        return None
+    if k in UNION_WORDS:
+        return "Union"
+    st = BY_NAME.get(_key(k))
+    if st:
+        return STATES[st][0]
+    if k in COUNTRIES:
+        return k.title() if len(k) > 3 else k.upper()
+    return None

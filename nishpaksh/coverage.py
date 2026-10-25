@@ -57,7 +57,7 @@ def report(ex_or_items, text: str, lang: str = "en", registry=None) -> tuple[int
         return 0, 0, []
     hit: set[int] = set()
     for it in _items(ex_or_items):
-        win = quoted_window(it.get("quote"), text) or source_window(it.get("text") or "", text, lang, registry)
+        win = it.get("src_text") or quoted_window(it.get("quote"), text) or source_window(it.get("text") or "", text, lang, registry)
         if not win:
             continue
         for k, s in enumerate(facts):

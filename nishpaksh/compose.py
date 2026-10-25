@@ -238,7 +238,8 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
             return None
         return max(got, key=lambda w: (got[w], len(w)))
 
-    all_items = {cid: item(cid) for cid in canon if members.get(cid)}
+    all_items = {cid: item(cid) for cid in canon if members.get(cid)
+                 and not (canon[cid]["kind"] == "relation" and not relation_text(canon[cid]["rel"] or {}, texts))}   # E13: no "?" endpoint
     # the story's own event drives the timeline, sections and headline; context (background, related
     # events, explanation, reactions, what next) is carried separately and written after it
     items = {cid: i for cid, i in all_items.items() if i["role"] == "core" or i["kind"] == "relation"}

@@ -53,6 +53,31 @@ def record(store, story_id: int, stage: str, data: dict) -> bool:
         return False
 
 
+LOG_MAX = 200
+
+
+def append(store, story_id: int, stage: str, entry: dict) -> bool:
+    """E5: an append-only event log beside the per-stage records: every drop, default and decision a stage wants kept is one
+    entry {stage, at, ...} in the story's `log` list (the newest LOG_MAX are kept). Never raises."""
+    try:
+        from sqlalchemy import delete, insert, select
+        from .db import dossiers
+        row = store.one(select(dossiers.c.data).where(dossiers.c.story_id == story_id))
+        cur = dict((row or {}).get("data") or {})
+        lines = list(cur.get("log") or [])
+        lines.append({"stage": stage, "at": _now().isoformat(timespec="seconds"), **_clip(entry)})
+        cur["log"] = lines[-LOG_MAX:]
+        if len(json.dumps(cur)) > MAX_BYTES:
+            cur["log"] = cur["log"][-LOG_MAX // 4:]
+        with store.route(insert(dossiers)).engine.begin() as c:
+            c.execute(delete(dossiers).where(dossiers.c.story_id == story_id))
+            c.execute(insert(dossiers).values(story_id=story_id, updated_at=_now(), data=cur))
+        return True
+    except Exception as e:  # noqa: BLE001
+        log.info("dossier log not appended (%s): %s", stage, str(e)[:100])
+        return False
+
+
 def prune(store) -> int:
     try:
         from .db import delete, dossiers

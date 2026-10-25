@@ -18,6 +18,8 @@ from .config import SETTINGS, load_yaml
 from .db import Store, articles, feeds, insert, select, update, utcnow
 from .wire import minhash
 
+from . import hygiene
+
 log = logging.getLogger(__name__)
 IMAGE_STATS = {"with": 0, "without": 0}   # new articles this run with / without a picture (run stats "images")
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -333,7 +335,7 @@ def ingest(store: Store) -> int:
 
     added = 0
     for (feed, en), page in zip(todo, pages):
-        text, source = (page or {}).get("text") or "", "full"
+        text, source = hygiene.repair((page or {}).get("text") or ""), "full"
         if len(text) < SETTINGS.min_full_text_chars:
             # page blocked or unreadable: fall back to what the feed itself says
             text, source = ". ".join(x for x in (en["title"], en["summary"]) if x), "summary"

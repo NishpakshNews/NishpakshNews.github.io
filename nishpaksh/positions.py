@@ -51,7 +51,7 @@ def build_items(store: Store) -> dict[int, list[tuple[str, dict[str, int]]]]:
                 per_story[sid].append(("omission", d))
     # stance, framing, voices (from the statements)
     rows = store.rows(select(claims.c.story_id, claims.c.article_id, claims.c.canonical_id, claims.c.stance,
-                             claims.c.attributed_to, claims.c.loaded_words).where(claims.c.canonical_id.is_not(None)))
+                             claims.c.attributed_to, claims.c.loaded_words, claims.c.rel).where(claims.c.canonical_id.is_not(None)))
     words = {w for r in rows for w in (r["loaded_words"] or [])}
     concept = concepts.lookup(store, words)
     by_story: dict[int, list] = defaultdict(list)
@@ -67,9 +67,21 @@ def build_items(store: Store) -> dict[int, list[tuple[str, dict[str, int]]]]:
         reporters: dict[int, set[str]] = defaultdict(set)
         framed: dict[int, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
         voice: dict[str, set[str]] = defaultdict(set)
+        # E28: one stance per (statement, article); only an EXPLICIT one counts ("attributes" says who said it, not whether
+        # the outlet holds it; a defaulted stance is a missing answer). The outlet denies a statement when any of its
+        # articles does (a denial is the rarer, more deliberate act); otherwise it asserts.
+        per_art: dict[tuple[int, int], int] = {}
+        for r in rs:
+            if r["stance"] not in ("asserts", "denies") or (r["rel"] or {}).get("stance_defaulted"):
+                continue
+            k = (r["canonical_id"], r["article_id"])
+            v = 0 if r["stance"] == "denies" else 1
+            per_art[k] = min(per_art.get(k, 1), v)
+        for (c, aid), v in per_art.items():
+            u = unit[aid]
+            stance[c][u] = min(stance[c].get(u, 1), v)
         for r in rs:
             u = unit[r["article_id"]]
-            stance[r["canonical_id"]][u] = 0 if r["stance"] == "denies" else 1
             reporters[r["canonical_id"]].add(u)
             for w in r["loaded_words"] or []:
                 if w in concept:
@@ -93,7 +105,16 @@ def build_items(store: Store) -> dict[int, list[tuple[str, dict[str, int]]]]:
     return dict(per_story)
 
 
-def fit(items: list[tuple[str, dict[str, int]]], units: list[str], iters: int = 400, seed: int = 0) -> np.ndarray:
+LAMBDA_C = 0.1          # shrinkage of an outlet's propensity
+LAMBDA_B = 0.3          # shrinkage of an item's discrimination towards the mean of its kind
+
+
+def fit(items: list[tuple[str, dict[str, int]]], units: list[str], iters: int = 400, seed: int = 0,
+        propensity: bool = True) -> np.ndarray:
+    """Positions of the outlets (S24). P(outlet o answers 1 on item i) = sigmoid(a_i + c_o + b_i * theta_o): a_i the item's
+    base rate, c_o the outlet's own PROPENSITY to report (a talkative outlet says more of everything; that is volume, not
+    a side), b_i the item's discrimination, shrunk towards the mean of its kind, theta_o the position. Only theta is returned;
+    a verbosity-only world is explained by c_o and leaves theta without structure."""
     rng = np.random.default_rng(seed)
     idx = {u: k for k, u in enumerate(units)}
     obs = [(i, idx[u], y) for i, (_, d) in enumerate(items) for u, y in d.items() if u in idx]
@@ -103,12 +124,19 @@ def fit(items: list[tuple[str, dict[str, int]]], units: list[str], iters: int = 
     oo = np.array([o[1] for o in obs], int)
     yy = np.array([o[2] for o in obs], float)
     n_i = len(items)
+    kinds = sorted({t for t, _ in items})
+    kind_of = np.array([kinds.index(t) for t, _ in items], int)
     th, a, b = rng.normal(0, .1, len(units)), np.zeros(n_i), rng.normal(0, .1, n_i)
+    c = np.zeros(len(units))
     for _ in range(iters):
-        p = 1 / (1 + np.exp(-(a[ii] + b[ii] * th[oo])))
+        p = 1 / (1 + np.exp(-(a[ii] + c[oo] + b[ii] * th[oo])))
         r = yy - p
         a += .05 * (np.bincount(ii, r, n_i) - .1 * a)
-        b += .05 * (np.bincount(ii, r * th[oo], n_i) - b)
+        if propensity:
+            c += .05 * (np.bincount(oo, r, len(units)) - LAMBDA_C * c)
+            c -= c.mean()
+        mean_b = np.array([b[kind_of == k].mean() if (kind_of == k).any() else 0.0 for k in range(len(kinds))])
+        b += .05 * (np.bincount(ii, r * th[oo], n_i) - LAMBDA_B * (b - mean_b[kind_of]) - .7 * b)
         th += .05 * (np.bincount(oo, r * b[ii], len(units)) - th)
         th = (th - th.mean()) / (th.std() + 1e-9)
     return th
@@ -137,18 +165,35 @@ def _measure(per_story: dict[int, list], units: list[str], rounds: int, seed: in
     return {"r": r, "separated": sep, "theta": th, "lo": lo, "hi": hi}
 
 
-def _shuffle(per_story: dict[int, list], rng: random.Random) -> dict[int, list]:
-    out = {}
-    for sid, items in per_story.items():
-        us = sorted({u for _, d in items for u in d})
-        perm = us[:]
-        rng.shuffle(perm)
-        m = dict(zip(us, perm))
-        out[sid] = [(t, {m[u]: y for u, y in d.items()}) for t, d in items]
+def _curveball(per_story: dict[int, list], rng: random.Random, trades: int = 0) -> dict[int, list]:
+    """S25: the fixed-margin null (Strona et al. 2014, curveball). Over ALL items of all stories, answers are traded between
+    pairs of outlets on items both were asked about, so that every outlet keeps its own number of 1s across the story set
+    (its verbosity) and every item keeps its own count (how widely it was reported), while WHO said it is randomised.
+    Sides do not survive; volume does. (The old null renamed the outlets inside a story, which kept nothing of either.)"""
+    flat = [(sid, k, dict(d)) for sid, items in per_story.items() for k, (_, d) in enumerate(items)]
+    units = sorted({u for _, _, d in flat for u in d})
+    n = trades or 40 * max(len(units), 2)
+    for _ in range(n):
+        if len(units) < 2:
+            break
+        u, v = rng.sample(units, 2)
+        ones_u = [d for _, _, d in flat if u in d and v in d and d[u] == 1 and d[v] == 0]
+        ones_v = [d for _, _, d in flat if u in d and v in d and d[u] == 0 and d[v] == 1]
+        k = min(len(ones_u), len(ones_v))
+        if k == 0:
+            continue
+        m = rng.randint(1, k)
+        for d in rng.sample(ones_u, m):
+            d[u], d[v] = 0, 1
+        for d in rng.sample(ones_v, m):
+            d[u], d[v] = 1, 0
+    out: dict[int, list] = {sid: [None] * len(items) for sid, items in per_story.items()}
+    for sid, k, d in flat:
+        out[sid][k] = (per_story[sid][k][0], d)
     return out
 
 
-def test_positions(store: Store, rounds: int = 20, shuffles: int = 3) -> dict:
+def test_positions(store: Store, rounds: int = 20, shuffles: int = 8) -> dict:
     per_story = build_items(store)
     counts = Counter(u for v in per_story.values() for _, d in v for u in d)
     units = sorted(u for u, c in counts.items() if c >= SETTINGS.positions_min_answers)
@@ -159,11 +204,18 @@ def test_positions(store: Store, rounds: int = 20, shuffles: int = 3) -> dict:
         return report
     real = _measure(per_story, units, rounds, 1)
     rng = random.Random(7)
-    null = [_measure(_shuffle(per_story, rng), units, max(5, rounds // 3), 2 + k) for k in range(shuffles)]
+    null = [_measure(_curveball(per_story, rng), units, max(5, rounds // 3), 2 + k) for k in range(shuffles)]
     null_r = float(np.mean([x["r"] for x in null]))
     null_sep = float(np.mean([x["separated"] for x in null]))
     report.update(r=round(real["r"], 3), separated=round(real["separated"], 3),
-                  null_r=round(null_r, 3), null_separated=round(null_sep, 3))
+                  null_r=round(null_r, 3), null_separated=round(null_sep, 3),
+                  null_separated_spread=round(float(np.std([x["separated"] for x in null])), 3),
+                  null_r_spread=round(float(np.std([x["r"] for x in null])), 3))
+    report["at_utc"] = utcnow().isoformat(timespec="minutes")             # E29: when it was measured, for freshness
+    report["window"] = {"stories": len(per_story), "answers": int(sum(counts.values()))}
+    rate = _answer_rates(per_story, units)                                  # E30: does position just mirror how often an outlet answers?
+    report["answer_rate"] = {u: round(v, 3) for u, v in rate.items()}
+    report["corr_theta_rate"] = _corr([float(real["theta"][k]) for k in range(len(units))], [rate[u] for u in units])
     report["signal"] = bool(real["r"] >= SETTINGS.positions_min_r and real["separated"] >= SETTINGS.positions_min_separated
                             and real["r"] >= null_r + SETTINGS.positions_beat_null_r
                             and real["separated"] >= 2 * null_sep)
@@ -172,6 +224,44 @@ def test_positions(store: Store, rounds: int = 20, shuffles: int = 3) -> dict:
                             "lo": round(float(real["lo"][k]), 3), "hi": round(float(real["hi"][k]), 3),
                             "answers": counts[units[k]]} for k in order]
     return report
+
+
+def _answer_rates(per_story: dict, units: list[str]) -> dict[str, float]:
+    """Per outlet, the share of its answers that are 1 (E30)."""
+    one, tot = Counter(), Counter()
+    for items in per_story.values():
+        for _, d in items:
+            for u, v in d.items():
+                if u in units:
+                    tot[u] += 1
+                    one[u] += int(v)
+    return {u: one[u] / tot[u] for u in units if tot[u]}
+
+
+def _corr(a: list[float], b: list[float]) -> float | None:
+    if len(a) < 3 or np.std(a) == 0 or np.std(b) == 0:
+        return None
+    return round(float(np.corrcoef(a, b)[0, 1]), 3)
+
+
+MAX_AGE_HOURS = 48          # E29: a positions report older than this is not evidence for today's perspectives
+
+
+def fresh(report: dict | None, now=None) -> bool:
+    if not report or not report.get("at"):
+        return False
+    try:
+        at = dt.datetime.fromisoformat(report["at"])
+    except ValueError:
+        return False
+    now = now or utcnow()
+    return (now - at.replace(tzinfo=None)) <= dt.timedelta(hours=MAX_AGE_HOURS)
+
+
+def recent_signals(store: Store, n: int = 3) -> list[dict]:
+    rows = store.rows(select(diagnostics.c.report).where(diagnostics.c.kind == "positions")
+                      .order_by(diagnostics.c.id.desc()).limit(n))
+    return [r["report"] or {} for r in rows]
 
 
 def groups(positions: list[dict]) -> dict[str, int]:

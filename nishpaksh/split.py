@@ -54,33 +54,34 @@ SPEECH = re.compile(r"(?i)\b(said|says|stated|told|claimed|claims|alleged|allege
                     r"announced|according to|warned|asserted|maintained)\b")
 
 
-def _pieces_ok(original: str, pieces: list[str]) -> bool:
+def why_not(original: str, pieces: list[str]) -> str | None:
+    """None when the pieces are a faithful split, else the rule that refused it (stored, E17)."""
     from .frames import numbers, words as roots
     if not (2 <= len(pieces) <= MAX_PIECES):
-        return False
+        return "count"
     nums = {round(x, 4) for x in numbers(original)}
     caps = _caps(original)
     orig_roots = set(roots(original))
     got_nums, got_names = set(), set()
     for p in pieces:
         if len(p.split()) < 3:
-            return False
+            return "short"
         pn = {round(x, 4) for x in numbers(p)}
         if not pn <= nums:
-            return False                               # a number the original does not have
+            return "number_added"                               # a number the original does not have
         if not _names(p) <= caps:
-            return False                               # a name the original does not have
+            return "name_added"                               # a name the original does not have
         pr = set(roots(p))
         if pr and len(pr - orig_roots) > max(1, len(pr) // 6):
-            return False                               # words the original does not have
+            return "words_added"                               # words the original does not have
         if NEG.search(p) and not NEG.search(original):
-            return False                               # a "not" added
+            return "negation_added"                               # a "not" added
         if SPEECH.search(original) and not SPEECH.search(p):
-            return False                               # a said thing turned into a fact
+            return "speech_lost"                               # a said thing turned into a fact
         got_nums |= pn
         got_names |= _names(p) | _caps(p)
     if got_nums != nums:
-        return False                                   # a number lost
+        return "number_lost"                                   # a number lost
     # a figure the original says ONCE may not be handed to two pieces: "about $700 million in its R&D centre,
     # expansion of production capacity and a dedicated entity" says $700 million of the first item only. Split
     # into "$700 million for R&D" / "$700 million for expansion", the same amount became two amounts
@@ -91,7 +92,7 @@ def _pieces_ok(original: str, pieces: list[str]) -> bool:
     for p in pieces:
         piece_count.update({round(x, 4) for x in numbers(p)})
     if any(piece_count[v] > orig_count[v] for v in piece_count):
-        return False
+        return "number_shared"
     # a list split into near-identical sentences ("higher EMIs for home loans" / "... for car loans" / "... for
     # personal loans", story 13970) is one fact with a list, not separate facts: pieces of a real compound say
     # different things, so two pieces sharing most of their words means the split is wrong
@@ -99,12 +100,42 @@ def _pieces_ok(original: str, pieces: list[str]) -> bool:
     for i in range(len(rs)):
         for j in range(i + 1, len(rs)):
             if rs[i] and rs[j] and len(rs[i] & rs[j]) / len(rs[i] | rs[j]) >= LIST_OVERLAP:
-                return False
+                return "list"
     if not _names(original) <= got_names:
-        return False                                   # a name lost
+        return "name_lost"                                   # a name lost
     if NEG.search(original) and not any(NEG.search(p) for p in pieces):
-        return False                                   # a "not" lost
-    return True
+        return "negation_lost"                                   # a "not" lost
+    missing = _uncovered(original, pieces)
+    if missing:
+        return "words_lost"                              # E16: a content word of the original in no piece
+    return None
+
+
+def _pieces_ok(original: str, pieces: list[str]) -> bool:
+    return why_not(original, pieces) is None
+
+
+JOIN = {"and", "but", "which", "who", "whom", "whose", "that", "while", "also", "as", "with", "after", "before", "when", "where",
+        "then", "however", "although", "though", "whereas", "because", "since", "so", "yet", "while"}
+
+
+def _uncovered(original: str, pieces: list[str]) -> set[str]:
+    """E16: root words of the original that are neither join words, stop words nor in any piece. The pieces' roots are the
+    evidence; a piece that dropped a content word of its source has lost part of the fact."""
+    from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+    from .frames import words as roots
+    have = set()
+    for p in pieces:
+        have |= set(roots(p))
+    out = set()
+    for tok in re.findall(r"[A-Za-z][A-Za-z'-]+", original):
+        t = tok.lower()
+        if t in JOIN or t in ENGLISH_STOP_WORDS or len(t) < 3:
+            continue
+        for r in roots(tok):
+            if r not in have:
+                out.add(r)
+    return out
 
 
 def split_story(store: Store, router: Router | None, story_id: int) -> dict:
@@ -114,6 +145,7 @@ def split_story(store: Store, router: Router | None, story_id: int) -> dict:
     looked at again on a later run."""
     from . import nli, nlp
     stats = {"asked": 0, "split": 0, "pieces": 0}
+    outcomes: dict[str, int] = {}                      # E17: why rows stayed whole, counted per story
     rows = store.rows(select(claims).where(claims.c.story_id == story_id, claims.c.kind.in_(("event", "claim"))))
     todo = [r for r in rows if not (r["rel"] or {}).get("split")]
     if not todo:
@@ -121,14 +153,18 @@ def split_story(store: Store, router: Router | None, story_id: int) -> dict:
     long_ = [r for r in todo if len((r["text"] or "").split()) >= MIN_WORDS]
     for r in todo:
         if r not in long_:
-            _mark(store, r, "whole")
+            _mark(store, r, "whole:single")
+            outcomes["whole:single"] = outcomes.get("whole:single", 0) + 1
     if not long_ or not nlp.available():
+        _dossier(store, story_id, outcomes)
         return stats
     for r in long_:
         stats["asked"] += 1
         facts = nlp.clauses(r["text"])
-        if not facts or not _pieces_ok(r["text"], facts):
-            _mark(store, r, "whole")
+        why = "no_clauses" if not facts else why_not(r["text"], facts)
+        if why:
+            _mark(store, r, "whole:" + why)
+            outcomes["whole:" + why] = outcomes.get("whole:" + why, 0) + 1
             continue
         sure = nli.covers([(r["text"], f) for f in facts])
         if any(x is None for x in sure):
@@ -138,10 +174,25 @@ def split_story(store: Store, router: Router | None, story_id: int) -> dict:
             stats["split"] += 1
             stats["pieces"] += len(facts)
         else:
-            _mark(store, r, "whole")
+            _mark(store, r, "whole:not_entailed")
+            outcomes["whole:not_entailed"] = outcomes.get("whole:not_entailed", 0) + 1
+    if stats["split"]:
+        outcomes["piece"] = stats["split"]
+    _dossier(store, story_id, outcomes)
     if stats["split"]:
         log.info("story %s: %d compound statements split into %d facts", story_id, stats["split"], stats["pieces"])
     return stats
+
+
+def _dossier(store: Store, story_id: int, outcomes: dict) -> None:
+    """E17: the story's split outcomes in its dossier (never raises)."""
+    if not outcomes:
+        return
+    try:
+        from . import dossier
+        dossier.append(store, story_id, "split", dict(outcomes))
+    except Exception as e:                              # noqa: BLE001
+        log.debug("split dossier: %s", e)
 
 
 def _mark(store: Store, r: dict, how: str) -> None:
@@ -156,16 +207,18 @@ def _replace(store: Store, r: dict, facts: list[str]) -> None:
     rows = [dict(story_id=r["story_id"], article_id=r["article_id"], local_id=f"{r['local_id']}.{k + 1}"[:20],
                  kind=r["kind"], text=f[:500], stance=r["stance"], attributed_to=r["attributed_to"],
                  evidence=r["evidence"], loaded_words=list(r["loaded_words"] or []) if k == 0 else [],
-                 time=r["time"], rel={**rel, "split": "piece"}) for k, f in enumerate(facts)]
-    with store.engine.begin() as c:
+                 time=r["time"], rel={**rel, "split": "piece", "inherited": ["stance", "attributed_to", "evidence", "time"],
+                                      "piece_of": r["local_id"]}) for k, f in enumerate(facts)]
+    with store.engine.begin() as c:                      # E18: the row, its pieces and the relation remap together
         c.execute(delete(claims).where(claims.c.id == r["id"]))
         c.execute(insert(claims), rows)
-    for x in store.rows(select(claims).where(claims.c.article_id == r["article_id"], claims.c.kind == "relation")):
-        xr = dict(x["rel"] or {})
-        changed = False
-        for end in ("from", "to"):
-            if xr.get(end) == r["local_id"]:
-                xr[end] = rows[0]["local_id"]
-                changed = True
-        if changed:
-            store.exec(update(claims).where(claims.c.id == x["id"]).values(rel=xr))
+        for x in c.execute(select(claims).where(claims.c.article_id == r["article_id"],
+                                                claims.c.kind == "relation")).mappings().all():
+            xr = dict(x["rel"] or {})
+            changed = False
+            for end in ("from", "to"):
+                if xr.get(end) == r["local_id"]:
+                    xr[end] = rows[0]["local_id"]
+                    changed = True
+            if changed:
+                c.execute(update(claims).where(claims.c.id == x["id"]).values(rel=xr))

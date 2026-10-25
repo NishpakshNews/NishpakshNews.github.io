@@ -1502,7 +1502,7 @@ def test_extraction_keeps_context_marked(store):
     store_extraction(store, aid, None, ex)
     rows = {r["text"]: r for r in store.rows(select(Cl))}
     assert rows["A Nestle sample was found unsafe"]["rel"] == {"context": "related", "event": "Nestle finding, 4 Oct"}
-    assert rows["A Nestle sample was found unsafe"]["kind"] == "event" and rows["FSSAI ordered a recall"]["rel"] is None
+    assert rows["A Nestle sample was found unsafe"]["kind"] == "event" and rows["FSSAI ordered a recall"]["rel"] in (None, {"stance_defaulted": True})
 
 
 def test_names_that_differ_keep_a_statement_from_green(store):

@@ -149,6 +149,13 @@ def values_agree(a: dict, b: dict) -> bool | None:
     return _overlap(wa, wb) >= 0.5
 
 
+def _where_apart(a: dict, b: dict) -> bool:
+    """B7, entity-valued slots: both statements say where, and the places share no word ("Pune" / "Mumbai"; "Delhi" and
+    "New Delhi" share one). Only a proposal: the same-question gate and the NLI contradiction decide whether it is a dispute."""
+    wa, wb = words(a.get("where")), words(b.get("where"))
+    return bool(wa and wb and not wa & wb)
+
+
 def _named_apart(x: str | None, y: str | None) -> bool:
     """One object's name has a capitalised word the other lacks: two named things ("Param Vishisht Seva
     Medal" / "Vishisht Seva Medal"), not one described more fully ("the site engineer" / "the engineer")."""
@@ -175,6 +182,8 @@ def compare(a: dict | None, b: dict | None, when_a: dict | None = None, when_b: 
         return "conflict"            # "arrested" vs "not arrested"; same question, two answers
     if _times_apart(when_a, when_b):
         return "unsure"              # maybe two events of the same kind: never a dispute, never merged
+    if _where_apart(a, b):
+        return "conflict"            # B7: same who / action / what, a different PLACE: proposed to the dispute gate, which decides
     # one fact only when both give the answer and it agrees; without values ("police said something
     # about the accused") two statements may still say different things: compatible, never a dispute,
     # and whether they are one fact is left to their wording

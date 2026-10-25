@@ -14,6 +14,9 @@ than call a true claim false.
 """
 from __future__ import annotations
 
+import collections
+import re
+
 import datetime as dt
 import logging
 from collections import defaultdict
@@ -58,10 +61,29 @@ Reply with JSON only:
   "evidence_urls": ["..."]}}"""
 
 
+RETRY_HOURS = 3
+STATS = collections.Counter()      # E15: statements held back by a defaulted stance
+
+
 def relation_text(rel: dict, texts: dict[int, str]) -> str:
-    a = texts.get(rel.get("from"), "?").rstrip(". ")
-    b = texts.get(rel.get("to"), "?").rstrip(". ")
-    lower = lambda x: x[:1].lower() + x[1:] if x and not x[:2].isupper() else x  # noqa: E731
+    """The two statements of a relation as one sentence, or "" when an endpoint is missing (E13: never a "?" in a page).
+    A clause's first word is lower-cased unless the parse says it starts a name; an acronym is never lower-cased."""
+    ta, tb = texts.get(rel.get("from")), texts.get(rel.get("to"))
+    if not ta or not tb:
+        return ""
+    a, b = ta.rstrip(". "), tb.rstrip(". ")
+
+    def lower(x: str) -> str:
+        """The clause's first word in lower case, unless it starts a name (NER) or is an acronym / has inner capitals."""
+        if not x or x[:2].isupper() or any(c.isupper() for c in x.split(" ")[0][1:]):
+            return x
+        try:
+            from . import nlp
+            if any(e.start == 0 for e in nlp.ents(x)):
+                return x
+        except Exception:  # noqa: BLE001
+            pass
+        return x[:1].lower() + x[1:]
     if rel.get("type") == "caused":
         return f"{b} because {lower(a)}."
     return f"{a}, and after that {lower(b)}."
@@ -171,7 +193,18 @@ def base_verdicts(store: Store, story_id: int) -> int:
         if meets and not o.get("met_at"):
             o["met_at"] = now.isoformat(timespec="minutes")
         elif not meets and o.get("met_at"):
-            o.pop("met_at")
+            # E12: one failing run is not enough to restart the 6-hour clock (a late denial, a flickering origin); the
+            # second in a row clears it, and the reason is kept
+            o["miss"] = int(o.get("miss") or 0) + 1
+            o["miss_reason"] = ("contested" if contested else "no support" if not s["support_groups"]
+                                else "name conflict" if str(cid) in name_conf else "belief" if belief.get(cid, 0.0) < truth.BELIEF_MIN
+                                else "rule")
+            if o["miss"] >= 2:
+                o.pop("met_at")
+                o.pop("miss")
+        elif meets and o.get("miss"):
+            o.pop("miss")
+            o.pop("miss_reason", None)
         if o != (c.get("origins") or {}) and c.get("origins") is not None:
             store.exec(update(canonical).where(canonical.c.id == cid).values(origins=o))
             c = dict(c, origins=o)
@@ -184,8 +217,14 @@ def base_verdicts(store: Store, story_id: int) -> int:
         else:
             v = established(dict(judged_c, origins=dict(judged_c.get("origins") or {}, met_at=o.get("met_at"))),
                             s, mode, now) or "unverified"
-        keep = (c["verdict"] in ("false", "confirmed")
-                and abs((c["checked_members"] or 0) - s["n_articles"]) <= 2)
+        # E15: a statement any member of which had its stance defaulted (the model's value was missing or invalid) is
+        # never "corroborated": it stays "developing" at most
+        if v == "corroborated" and any((r.get("rel") or {}).get("stance_defaulted") for r in members.get(cid, [])):
+            v = "developing"
+            STATS["held_defaulted_stance"] += 1
+        # E11: a verdict set by evidence ("false", "confirmed") is never overwritten by arithmetic; arithmetic may only
+        # make a "confirmed" statement "disputed" (more cautious); "false" by primary evidence stands. (Re-judging after the story grew is verify_story's job, which sets the verdict itself.)
+        keep = c["verdict"] == "false" or (c["verdict"] == "confirmed" and v != "disputed")
         if not keep and v != c["verdict"]:
             store.exec(update(canonical).where(canonical.c.id == cid).values(verdict=v))
             changed += 1
@@ -210,15 +249,25 @@ def verify_story(store: Store, router: Router, story_id: int, budget: dict) -> i
     texts = {cid: c["text"] for cid, c in canon.items()}
     cands = []
     for cid, c in canon.items():
-        if c["verdict"] not in ("disputed", "unverified"):
-            continue
         n = len({r["article_id"] for r in members.get(cid, [])})
+        checked_before = (c["detail"] or {}).get("checked")
+        if c["verdict"] in ("corroborated", "developing"):
+            # E11: a statement already judged is judged again once the story has grown by more than 2 articles
+            if not (checked_before and abs((c["checked_members"] or 0) - n) > 2):
+                continue
+        elif c["verdict"] not in ("disputed", "unverified"):
+            continue
         if n < SETTINGS.min_articles_to_verify:
             continue
-        if (c["detail"] or {}).get("checked") and abs((c["checked_members"] or 0) - n) <= 2:
+        if checked_before and abs((c["checked_members"] or 0) - n) <= 2:
+            continue
+        # E14: a statement tried without its second opinion waits (retry_after) and goes to the back of the line
+        retry = (c["detail"] or {}).get("retry_after")
+        if retry and retry > utcnow().isoformat(timespec="minutes"):
             continue
         cands.append((n, cid))
-    cands.sort(reverse=True)
+    # most-covered first, but the ones tried longest ago before the ones tried just now (rotation)
+    cands.sort(key=lambda t: (((canon[t[1]]["detail"] or {}).get("tried") or ""), -t[0], -t[1]))
     checked = 0
     for n, cid in cands:
         if budget.get("judge", 0) <= 0:
@@ -257,6 +306,11 @@ def verify_story(store: Store, router: Router, story_id: int, budget: dict) -> i
                 log.warning("%s opinion failed: %s", tier, e)
                 break
         if len(opinions) < 2:
+            now_ = utcnow()
+            store.exec(update(canonical).where(canonical.c.id == cid).values(detail={
+                **(c["detail"] or {}), "tried": now_.isoformat(timespec="minutes"),
+                "retry_after": (now_ + dt.timedelta(hours=RETRY_HOURS)).isoformat(timespec="minutes"),
+                "missing": "second opinion" if opinions else "both opinions"}))
             if budget.get("judge", 0) <= 0:
                 break
             continue
