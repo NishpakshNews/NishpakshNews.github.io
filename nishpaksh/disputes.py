@@ -27,13 +27,13 @@ import json
 import re
 
 from .frames import LOWER, UPPER, date_of
-from . import figures
+from . import embed, figures
 from .relate import NEGATION, Profile, numbers_close
 
 MONTH_DAY = re.compile(r"(?i)\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b|"
                        r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b")
 OF_TOTAL = re.compile(r"(?i)\b(\d+)\s+(?:out\s+)?of\s+(?:the\s+)?(?:total\s+|all\s+)?(\d+)\b")
-QUESTION_SAME = 0.75     # share of the remaining words: the same question
+QUESTION_SIM = {"bi-encoder": 0.72, "tfidf": 0.5}     # cosine of the two claims: the same question (embed.py)
 UPDATE_GAP = dt.timedelta(hours=1)
 
 
@@ -59,16 +59,21 @@ def claim_body(text: str) -> str:
     return t[m.end():] if m and len(t) - m.end() > 15 else t
 
 
-def candidate(a: str, b: str, pa: Profile | None = None, pb: Profile | None = None) -> str | None:
+def candidate(a: str, b: str, pa: Profile | None = None, pb: Profile | None = None, sim: float | None = None,
+              need: float | None = None) -> str | None:
     """'number', 'date' or 'negation' when a and b look like the same question answered differently;
-    None when code can tell they are not a dispute."""
+    None when code can tell they are not a dispute. `sim` is the claims' sentence similarity (computed here for one
+    pair when not given; judge() passes it from one matrix)."""
     a, b = claim_body(a), claim_body(b)
     pa, pb = Profile(a), Profile(b)
     qa, na = _question(pa, a)
     qb, nb = _question(pb, b)
     if na != nb or not (qa | qb):
         return None
-    if len(qa & qb) / len(qa | qb) < QUESTION_SAME:
+    if sim is None:
+        m, thr = embed.similarity([a, b])
+        sim, need = float(m[0, 1]), QUESTION_SIM[embed.vectors([a])[1]]
+    if sim < (need if need is not None else QUESTION_SIM["tfidf"]):
         return None
     if pa.neg != pb.neg:
         return "negation" if numbers_close(pa, pb) else None
@@ -119,17 +124,22 @@ def judge(router, texts: dict[int, str], times: dict[int, list], proposals: set[
     prof = {i: Profile(t) for i, t in texts.items()}
     ids = sorted(texts)
     cands: dict[tuple[int, int], str] = {}
-    for k, a in enumerate(ids):
-        for b in ids[k + 1:]:
-            kind = candidate(texts[a], texts[b], prof[a], prof[b])
-            if kind:
-                cands[(a, b)] = kind
-    for a, b in proposals:
-        p = (min(a, b), max(a, b))
-        if p not in cands and a in texts and b in texts:
-            kind = candidate(texts[p[0]], texts[p[1]], prof[p[0]], prof[p[1]])
-            if kind:
-                cands[p] = kind
+    if len(ids) >= 2:
+        bodies = [claim_body(texts[i]) for i in ids]
+        mat, _ = embed.similarity(bodies)
+        need = QUESTION_SIM[embed.vectors(bodies[:1])[1]]
+        row = {i: n for n, i in enumerate(ids)}
+        for k, a in enumerate(ids):
+            for b in ids[k + 1:]:
+                kind = candidate(texts[a], texts[b], prof[a], prof[b], float(mat[k, row[b]]), need)
+                if kind:
+                    cands[(a, b)] = kind
+        for a, b in proposals:                      # proposals from frames and earlier marks face the same gate
+            p = (min(a, b), max(a, b))
+            if p not in cands and a in texts and b in texts:
+                kind = candidate(texts[p[0]], texts[p[1]], prof[p[0]], prof[p[1]], float(mat[row[p[0]], row[p[1]]]), need)
+                if kind:
+                    cands[p] = kind
     cands = {p: k for p, k in cands.items() if p not in exclude}
     updates: dict[int, int] = {}
     ask = []

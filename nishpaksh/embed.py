@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from functools import lru_cache
 
 import numpy as np
 
@@ -38,10 +39,24 @@ def _load():
         return _model or None
 
 
+@lru_cache(maxsize=1)
+def _stemmer():
+    import snowballstemmer
+    return snowballstemmer.stemmer("english")
+
+
+def _analyzer(text: str) -> list[str]:
+    """Word stems, so "arrested" and "arrest" are one term (the bi-encoder does this by itself)."""
+    import re
+
+    from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+    return _stemmer().stemWords([w for w in re.findall(r"\w+", text.lower()) if w not in ENGLISH_STOP_WORDS and len(w) > 1])
+
+
 def _tfidf(texts: list[str]) -> np.ndarray:
     from sklearn.feature_extraction.text import TfidfVectorizer
     try:
-        m = TfidfVectorizer(sublinear_tf=True, stop_words="english").fit_transform(texts)
+        m = TfidfVectorizer(sublinear_tf=True, analyzer=_analyzer).fit_transform(texts)
     except ValueError:
         return np.zeros((len(texts), 1))
     return m.toarray()
