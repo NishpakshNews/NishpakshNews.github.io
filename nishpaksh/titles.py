@@ -12,7 +12,7 @@ is the single place they ask:
     strip(phrase)                a name without its titles
 
 Pure code, no model. The derived word sets (TITLE_WORDS, PERSON_TITLE_WORDS, ROLE_NOUNS, ROLE_ACRONYMS) are what the
-other modules union into their own lists, so adding a title is one line in titles.yaml (or, learned from the outlets by learn.py, in titles_learned.yaml).
+other modules union into their own lists, so adding a title is one line in titles.yaml.
 """
 from __future__ import annotations
 
@@ -22,46 +22,10 @@ import re
 from .config import load_yaml
 
 
-def _learned(have: dict) -> list[dict]:
-    """The learned entries that are well formed and not already in the hand-written registry (by id or by form)."""
-    try:
-        raw = load_yaml("titles_learned.yaml").get("roles") or []
-    except Exception:  # noqa: BLE001
-        return []
-    taken = {f.lower() for r in have.values() for f in r.get("forms") or []}
-    plain: set[str] = set()                  # forms of learned lines with no context (they apply everywhere)
-    ids: set[str] = set()
-    out = []
-    for r in raw:
-        if not (isinstance(r, dict) and isinstance(r.get("id"), str) and r["id"] not in have and r["id"] not in ids
-                and isinstance(r.get("forms"), list) and r["forms"] and all(isinstance(f, str) and f.strip() for f in r["forms"])
-                and not any(f.lower() in taken for f in r["forms"])):
-            continue
-        r = dict(r)
-        ctx = r.get("context")
-        if ctx and isinstance(ctx, list):
-            # one sense of a title (owner, Oct 16 2026): several senses may share a form ("Captain" in sports and in
-            # defence), each used only where its context fits (role_of)
-            r["context"] = [str(w) for w in ctx]
-            r["section"] = str(r.get("section") or "")
-        else:
-            r.pop("context", None)
-            if any(f.lower() in plain for f in r["forms"]):
-                continue
-            plain.update(f.lower() for f in r["forms"])
-        out.append(r)
-        ids.add(r["id"])
-    return out
-
-
 @functools.lru_cache(maxsize=1)
 def _data() -> dict:
     d = load_yaml("titles.yaml")
     roles = {r["id"]: r for r in d.get("roles") or []}
-    # titles learned from the outlets (learn.py appends them to config/titles_learned.yaml): added after the hand-written
-    # ones, which win; a missing or broken file adds nothing and never stops the job
-    for r in _learned(roles):
-        roles[r["id"]] = r
     # form (lower case) -> role ids, in file order
     forms: dict[str, list[str]] = {}
     for rid, r in roles.items():
@@ -137,32 +101,14 @@ def role_of(phrase: str, context: str = "") -> str | None:
     cands = _data()["forms"].get(_norm(phrase)) or []
     ctx = f"{context or ''} {phrase or ''}"      # the title itself counts as context (\"Chief Justice of India\")
     best = None
-    senses = {}
     for rid in cands:
         r = _data()["roles"][rid]
-        if r.get("context"):
-            senses[rid] = r
-            continue
         need = r.get("requires_any") or []
         if not need:
             best = best or rid
         elif any(re.search(rf"(?<!\w){re.escape(n)}(?!\w)", ctx) for n in need):
             return rid
-    if senses and context:
-        rid = _sense_for(senses, phrase, context)
-        if rid:
-            return rid
     return best
-
-
-def _sense_for(senses: dict, phrase: str, context: str) -> str | None:
-    """The learned sense of a title whose context words the text fits (context.best; the section is not known
-    here, so 3+ of its words, strictly more than any other sense). None: no learned sense is used (a new context
-    never borrows another context's title)."""
-    from . import context as C
-    ss = {rid: C.Sense(r.get("section", ""), C.YOUNG + 1, {w: C.SIGNATURE_MIN for w in r["context"]})
-          for rid, r in senses.items()}
-    return C.best(ss, "", C.words(context, "en", set(phrase.split())))
 
 
 def _ancestors(rid: str) -> list[str]:

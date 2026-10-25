@@ -4,8 +4,8 @@ Each statement the reading model wrote from an article (English or Hindi) is com
 it came from. EVERY statement (owner, Oct 16 2026: anchors found the sentence for about one in four Hindi statements):
 the reading model copies the first six words of that sentence (`quote`), code finds them word for word in the
 article (fidelity.quoted_window); only when the copy is not there does it fall back to numbers, dates, names and
-entities (fidelity.source_window). Qualifiers are compared in the statement's own scope. A statement that lost a small word the report has ("only 45 of 303 stations" read as "45 of
-303 stations") or added one it lacks ("the only authorized sites" where the report said designated) gets ONE repair:
+(fidelity.source_window). The report's sentence must entail the statement (the local NLI model, nli.py). A statement the
+report does not support ("the only authorized sites" where the report said designated) or contradicts gets ONE repair:
 all of an article's flagged statements in one call on the quality tier (the Translator key), each shown with its
 source sentence and its problem. The repaired text is taken only when the check then passes and it keeps the
 statement's numbers; otherwise the statement stays as read and is counted.
@@ -33,17 +33,13 @@ _lock = threading.Lock()
 _calls = 0
 
 REPAIR_PROMPT = """Each numbered line below is a statement written from a news report, the sentence of the report it
-comes from, and a PROBLEM: a small word that limits the claim was lost or added. Rewrite each statement so it says
-exactly what the report sentence says about the same thing: keep the report's limiting words (not, never, only, at
-least, up to, more than, directly, alleged, specific) and add none it lacks. Change nothing else: same facts, names
+comes from, and a PROBLEM: the report sentence does not support the statement as written. Rewrite each statement so it says
+exactly what the report sentence says about the same thing, no stronger and no weaker. Change nothing else: same facts, names
 and numbers, in plain English. If the statement is already faithful to the report, return it unchanged.
 
 {items}
 
 Answer as JSON: {{"statements": ["...", "..."]}} with exactly {n} entries, in the same order."""
-
-NEGATION = {"negation", "never"}
-
 
 def reset_run() -> None:
     global _calls
@@ -66,19 +62,14 @@ def _take_call() -> bool:
 
 
 def problems_of(item: dict, source: str, lang: str, registry=None) -> tuple[str | None, list[F.Problem]]:
-    """(the source sentence, the strict problems) of one statement; negation left out for a denial."""
-    win, probs = F.check_reading(item.get("text") or "", source, lang, registry, strict_only=True,
-                                 quote=item.get("quote"))
-    if item.get("stance") == "denies":
-        probs = [p for p in probs if p.what not in NEGATION]
-    return win, probs
+    """(the source sentence, the strict problems) of one statement; a denial is only checked for contradiction-free support."""
+    return F.check_reading(item.get("text") or "", source, lang, registry, strict_only=True,
+                           quote=item.get("quote"), stance=item.get("stance"))
 
 
 def _describe(p: F.Problem) -> str:
-    q = {q.id: q for q in F.glossary()["qualifiers"]}.get(p.what)
-    words = "/".join((q.en if q else (p.what,))[:3])
-    return (f"the report says '{words}' and the statement drops it" if p.kind == "lost"
-            else f"the statement adds '{words}', which the report does not say")
+    return ("the report says the opposite" if p.kind == "contradicted"
+            else "the report's sentence does not support the statement as written")
 
 
 def check(ex: dict, source: str, lang: str, router=None, registry=None) -> dict:

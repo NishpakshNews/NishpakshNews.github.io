@@ -112,31 +112,6 @@ jobs:
           GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}   # the Translator project's key: quality tier only (models.yaml keys)
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: python -m nishpaksh.desk --minutes 20
-      - name: Learn titles from the outlets
-        # titles seen before names build up evidence in the newsroom (learn_candidates); those past the bar and the
-        # devil's advocate are PROPOSED in config/titles_proposed.yaml for the owner (nishpaksh/learn.py). The
-        # quality-tier key is for the devil's advocate's look (once a day). Never stops the hour.
-        if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
-        continue-on-error: true
-        env:
-          GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
-        run: bash .github/scripts/learn.sh titles nishpaksh.learn config/titles_proposed.yaml config/titles_learned.yaml
-      - name: Learn synonyms from the outlets
-        # pairs of words the outlets use for one fact build up evidence in the newsroom; those past the bar and the
-        # devil's advocate are appended to config/synonyms_learned.yaml (nishpaksh/learn_synonyms.py); read by
-        # relate.py from the next run on. Never stops the hour.
-        if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
-        continue-on-error: true
-        env:
-          GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
-        run: bash .github/scripts/learn.sh synonyms nishpaksh.learn_synonyms config/synonyms_learned.yaml
-      - name: Learn English-Hindi terms from the outlets
-        # word pairs Hindi and English outlets use in the same stories build up evidence in the newsroom; those past
-        # the bar and the code-only devil's advocate bind our Hindi translations from the next run, the doubtful ones
-        # wait for the owner in config/glossary_learned.yaml (nishpaksh/learn_glossary.py). No model. Never stops the hour.
-        if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
-        continue-on-error: true
-        run: bash .github/scripts/learn.sh glossary nishpaksh.learn_glossary config/glossary_learned.yaml
       - name: Write the ledger
         # one record of this run (embedding use, outlet yield, the express lane's funnel) into ledger/, committed to
         # the branch (nishpaksh/ledger.py). Reads only; before the newsroom is saved so it sees this hour's data.

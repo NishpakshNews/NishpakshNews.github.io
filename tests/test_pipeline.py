@@ -3678,30 +3678,6 @@ def test_the_article_carries_the_flow_counts_and_the_links_reach_the_writer():
 # the title learner itself: tests/test_learn_titles.py (session 9, Oct 16 2026)
 
 
-def test_the_registry_reads_learned_titles_but_the_hand_written_ones_win():
-    from nishpaksh import titles
-    real = titles.load_yaml
-    hand = {"roles": [{"id": "minister", "forms": ["Minister"]}]}
-    learned = {"roles": [{"id": "learned_captain", "forms": ["Captain"], "ref": "the captain", "learned": "2026-10-10"},
-                         {"id": "learned_minister", "forms": ["Minister"]},          # already a hand-written form
-                         {"id": "bad", "forms": []}, "not a dict", {"forms": ["NoId"]}]}
-    titles.load_yaml = lambda name: hand if name == "titles.yaml" else learned
-    titles._data.cache_clear()
-    try:
-        d = titles._data()
-        assert set(d["roles"]) == {"minister", "learned_captain"}
-        assert titles.role_of("Captain") == "learned_captain" and titles.ref_for("learned_captain") == "the captain"
-        assert titles.role_of("Minister") == "minister"
-        assert titles.title_before("said Captain Rohit Sharma", "Rohit Sharma") == "Captain"
-        titles.load_yaml = lambda name: hand if name == "titles.yaml" else (_ for _ in ()).throw(FileNotFoundError(name))
-        titles._data.cache_clear()
-        assert set(titles._data()["roles"]) == {"minister"}                     # no learned file: nothing breaks
-    finally:
-        titles.load_yaml = real
-        for f in (titles._data, titles.title_words, titles.person_title_words, titles.role_nouns, titles.role_acronyms):
-            f.cache_clear()
-
-
 def test_a_speaker_and_a_speech_verb_are_not_a_detail_so_the_same_fact_is_not_written_twice():
     """Owner, Oct 11 2026: "J&K is an integral part of India, reiterating that J&K is an integral part of India,
     Bedi said." The long line only adds the speaker and "reiterated": it folds into nothing new, no two parts."""
@@ -3818,42 +3794,6 @@ def _syn_corpus(word_a="unprecedented", word_b="historic"):
             cl.append({"id": art, "article_id": art, "story_id": story, "text": frame.format(w=w), "time": None})
         by_canon[cid] = cl
     return by_canon, groups
-
-
-def test_a_swap_is_one_lower_case_word_in_otherwise_identical_lines():
-    from nishpaksh import learn_synonyms as ls
-    assert ls.swap("Opposition leaders called the budget unprecedented in scale",
-                   "Opposition leaders called the budget historic in scale") == ("unprecedented", "historic")
-    for a, b in [("Leaders called the budget unprecedented in scale", "Leaders called the budget historic in size"),   # two words
-                 ("Leaders called the budget unprecedented in scale", "Chiefs called the budget unprecedented in scale"),  # the first word
-                 ("Leaders called the budget unprecedented in scale", "Leaders called the Budget unprecedented in scale"),  # same words
-                 ("Police said 12 people were hurt in the blast", "Police said 14 people were hurt in the blast"),  # a number
-                 ("Leaders called the Delhi budget unprecedented in scale", "Leaders called the Mumbai budget unprecedented in scale"),  # a name
-                 ("Police said he was not hurt in the blast", "Police said he was also hurt in the blast"),          # a negation
-                 ("Police said he was able to leave the site", "Police said he was unable to leave the site"),       # opposite by prefix
-                 ("Police said the arrests came on the day", "Police said the arrested came on the day"),           # one stem
-                 ("It was historic", "It was unusual")]:                                                              # too short
-        assert ls.swap(a, b) is None, (a, b)
-
-
-def test_the_reader_adds_learned_groups_after_the_hand_written_ones_and_ignores_bad_lines():
-    from unittest import mock
-    from nishpaksh import relate
-    hand = {"groups": ["firm company"], "never": ["killed murdered"]}
-    learned = {"groups": [{"words": "historic unprecedented", "learned": "2026-10-11"},
-                          {"words": "killed murdered"},                         # joins two words of a `never:` line
-                          {"words": "one"}, {"nowords": 1}, "not a dict", None]}
-    with mock.patch("nishpaksh.config.load_yaml", side_effect=lambda n: hand if n == "synonyms.yaml" else learned):
-        assert relate.load_learned_groups() == ["historic unprecedented"]
-        groups = relate.load_synonym_groups()
-        assert groups == ["firm company", "historic unprecedented"]                  # hand-written first: they win
-        syn = relate.build_synonyms(groups)
-        assert syn[relate._stem("historic")] == syn[relate._stem("unprecedented")]
-    with mock.patch("nishpaksh.config.load_yaml",
-                    side_effect=lambda n: hand if n == "synonyms.yaml" else (_ for _ in ()).throw(FileNotFoundError(n))):
-        assert relate.load_synonym_groups() == ["firm company"]                      # no learned file: nothing breaks
-    with mock.patch("nishpaksh.config.load_yaml", return_value={"groups": "broken"}):
-        assert relate.load_learned_groups() == []
 
 
 # ---------------------------------------------------------------- no settling wait (owner, Oct 16 2026)

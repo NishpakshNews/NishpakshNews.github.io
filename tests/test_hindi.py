@@ -7,6 +7,7 @@ import types
 import pytest
 
 from nishpaksh import hindi as H
+from nishpaksh import nli
 from nishpaksh import names as N
 
 EN = "Amrit Vats and Muhammad Yahya won the boys' doubles title in Djibouti."
@@ -39,6 +40,25 @@ class Router:
         return types.SimpleNamespace(data=self.answer(prompt) if callable(self.answer) else self.answer, text="")
 
 
+@pytest.fixture(autouse=True)
+def scripted_nli():
+    """NLI stand-in keyed on the two things these tests turn on: "directly" must be carried (सीधे) and a "not" kept (नहीं)."""
+    def fn(pairs):
+        out = []
+        for a, b in pairs:
+            en, hi = (a, b) if a.isascii() else (b, a)
+            if "not" in en and "नहीं" not in hi:
+                out.append((0.02, 0.08, 0.90))
+            elif "directly" in en and "सीधे" not in hi:
+                out.append((0.20, 0.75, 0.05) if a.isascii() else (0.95, 0.04, 0.01))
+            else:
+                out.append((0.95, 0.04, 0.01))
+        return out
+    nli.set_backend(fn)
+    yield
+    nli.set_backend(None)
+
+
 def test_edit_fixes_a_lost_qualifier_and_names_and_is_told_the_problems():
     en = ["Gandhi said he did not directly name the BJP.", EN]
     drafts = {0: "गांधी ने कहा कि उन्होंने भाजपा का नाम नहीं लिया।", 1: DRAFT}
@@ -47,7 +67,7 @@ def test_edit_fixes_a_lost_qualifier_and_names_and_is_told_the_problems():
     r = Router(good)
     keep, why = H.finish(r, en, drafts, {})
     assert keep == {0: good["0"], 1: good["1"]} and why == {}
-    assert "drops 'directly" in r.prompts[0] and "'Amrit' is still in English letters" in r.prompts[0]
+    assert "leaves out part of what the English says" in r.prompts[0] and "'Amrit' is still in English letters" in r.prompts[0]
 
 
 def test_a_worse_edit_is_refused_and_no_quota_keeps_the_draft():

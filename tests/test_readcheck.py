@@ -32,6 +32,16 @@ class Router:
 
 
 @pytest.fixture(autouse=True)
+def scripted_nli():
+    """The report supports a statement that carries "only" or "directly", as the report's sentence does."""
+    from nishpaksh import nli
+    nli.set_backend(lambda pairs: [(0.95, 0.04, 0.01) if ("only" in b.lower() or "directly" in b.lower())
+                                   else (0.10, 0.85, 0.05) for _, b in pairs])
+    yield
+    nli.set_backend(None)
+
+
+@pytest.fixture(autouse=True)
 def fresh():
     R.reset_run()
     R.STATS.clear()
@@ -46,11 +56,12 @@ def ex(*texts, stance="asserts"):
 
 def test_a_lost_word_is_repaired_once_with_the_report_sentence_shown():
     e = ex("He did not name the BJP or any specific political party in his statement, Gandhi said.")
+    e["claims"][0]["quote"] = "राहुल गांधी ने कहा कि उन्होंने अपने"
     r = Router({"statements": ["He did not directly name the BJP or any political party in his statement, Gandhi said."]})
     got = R.check(e, SRC, "hi", r, reg())
     assert got["flagged"] == 1 and got["repaired"] == 1
     assert e["claims"][0]["text"].startswith("He did not directly name")
-    assert "सीधे" in r.prompts[0] and "drops it" in r.prompts[0] and "adds 'specific" in r.prompts[0]
+    assert "सीधे" in r.prompts[0] and "does not support" in r.prompts[0]
 
 
 def test_a_repair_that_changes_numbers_or_still_fails_is_refused():
@@ -65,7 +76,7 @@ def test_a_repair_that_changes_numbers_or_still_fails_is_refused():
     assert R.check(e, METRO, "hi", Router({"statements": [fixed]}))["repaired"] == 1 and e["claims"][0]["text"] == fixed
 
 
-def test_a_denial_is_not_checked_for_negation():
+def test_a_denial_is_found_a_sentence_but_not_asked_for_support():
     e = ex("Gandhi named the BJP or any political party directly in his statement.", stance="denies")
     r = Router({"statements": ["x"]})
     assert R.check(e, SRC, "hi", r, reg())["flagged"] == 0 and r.prompts == []
