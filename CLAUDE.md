@@ -41,6 +41,19 @@ the real models are first exercised by the end-of-build audit on the runner (`au
   dossier, B33 sidebar-block classifier, `voice.ALIASES` / `COUNTRY` body-alias lists, and the items that need owner-labelled data
   (B25, B26, B28-B32). The Oct 5-24 entries below describe behaviour that still holds unless they mention a learner, a qualifier list
   or a Gemini same / covers / conflict question: those are superseded by this section.
+**Rebuild 9-12 (Oct 25 2026, same branch; all real-model / Wikidata paths run only on fakes until the audit):**
+`agreement.py` (it/they by dependency parse + lemminflect), `refs.py` (definite phrases by spaCy noun chunks; `HEADS` gone),
+`langcheck.py` (LanguageTool, counted not enforced), `bodies.py` (body identity from Wikidata, table `body_links`; `voice.ALIASES` /
+`COUNTRY` gone), `blocks.py` (sidebar / link-list filter in ingest), `dossier.py` (per-story trace, table `dossiers`; only the
+"statements" and "writer" stages record so far), truth stack: `truth.py` (truth discovery, an extra AND gate in `verify.base_verdicts`),
+`groundjudge.py` (evidence gate for false / confirmed), `independence.py` (copy detection lowers outlet counts), `checkworthy.py`
+(NLI check-worthiness; None = characterisation), `positions.groups` (interval-based perspective groups), `concepts` by embedding,
+`belong._close_lines` prefilter, `threads.find_parents` by embedding + names + NLI (`LINK` thresholds), `events.py` (B15: verb ranks
+learned daily from dated claims into `event_ranks`, used by `order.py` for same-day ordering; `act_score` by zero-shot NLI replaces
+`news.DECISIVE/PROCESS/DEATHS`; `config/event_stages.yaml` deleted). Everything touching a colour can only make it MORE cautious.
+Untuned guesses to read in the audit: `nli.*`, `fidelity.SUPPORT/CONTRA`, `threads.LINK`, `belong.KEEP_SIMILARITY`, `truth.BELIEF_MIN`,
+`checkworthy.SURE`, `events.MARGIN/MIN_N/SURE`. The green-line rule (belief replacing the count conjunction) is to be discussed after the build.
+Still not built: B18 (referring expressions), B9 remainder, B16, B17, B22, B2, B23, evaluation harness (the single audit).
 **Next:** merge `rebuild` to main only when the owner agrees; run the single audit pass (stack_probe, audit, story_check), read the
 NLI thresholds (`nli.ENTAIL/CONTRA/UNSURE`, `fidelity.SUPPORT/CONTRA`), the clause splitter and the NER-based speaker keys on real
 stories, and tune settings then.

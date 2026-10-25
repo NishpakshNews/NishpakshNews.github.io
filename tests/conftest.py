@@ -112,13 +112,14 @@ def fake_chunker(text):
     import re
     return [(m.start(), m.end(), m.group(0), m.group(0).split()[-1].lower().rstrip("s"),
              "NNS" if m.group(0).endswith("s") else "NN", "")
-            for m in re.finditer(r"(?<![\w'’-])(?:[Tt]he|[Tt]his|[Tt]hat|[Tt]hese|[Tt]hose|[Ss]aid|[Ss]uch)(?:\s+[a-z][a-z-]*){1,3}", text)]
+            for m in re.finditer(r"(?<![\w'’-])(?:[Tt]he|[Tt]his|[Tt]hat|[Tt]hese|[Tt]hose|[Ss]aid|[Ss]uch)(?:\s+(?!(?:is|was|are|were|has|have|had|said|says|will|would|could|may|might|that|and|of|in|on|at|to|for|by|with)\b)[a-z][a-z-]*){1,3}", text)]
 
 
 _PLURAL_HEADS = {"was": ("be", "VBD"), "is": ("be", "VBZ"), "has": ("have", "VBZ"), "says": ("say", "VBZ"),
                  "said": ("say", "VBD"), "were": ("be", "VBD"), "are": ("be", "VBP"), "have": ("have", "VBP"),
                  "planning": ("plan", "VBG"), "examining": ("examine", "VBG"), "considering": ("consider", "VBG"),
-                 "reviewing": ("review", "VBG")}
+                 "reviewing": ("review", "VBG"), "believes": ("believe", "VBZ"), "checking": ("check", "VBG"),
+                 "fled": ("flee", "VBD")}
 
 
 def fake_parser(text):
@@ -136,7 +137,8 @@ def fake_parser(text):
         if t[1].lower() in ("it", "its", "itself"):
             nxt = next((j for j in range(i + 1, len(out)) if out[j][5] != "NN"), None)
             prev = out[i - 1][1].lower() if i else ""
-            expl = i + 2 < len(out) and out[i + 1][1].lower() in ("is", "was") and out[i + 2][1].lower() in (
+            k = i + 3 if i + 2 < len(out) and out[i + 2][1].lower() == "not" else i + 2
+            expl = k < len(out) and out[i + 1][1].lower() in ("is", "was") and out[k][1].lower() in (
                 "clear", "unclear", "likely", "raining", "known", "possible")
             if expl:
                 t[7] = "expl"

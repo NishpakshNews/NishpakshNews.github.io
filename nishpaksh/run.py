@@ -87,6 +87,9 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
             stats.setdefault("errors", []).append(f"{name}: {str(e)[:200]}")
             return None
 
+    from . import events
+    step("events", lambda: stats.__setitem__("events", events.refresh(store)))   # learned order of events, once a day
+    step("event ranks", lambda: events.load(store))
     if ingest_news:
         ingest.sync_feeds(store)
         stats["ingested"] = ingest.ingest(store)

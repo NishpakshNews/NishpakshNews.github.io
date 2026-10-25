@@ -4,42 +4,17 @@ Edges (an earlier statement points at a later one), strongest first:
   1. time: the first one's interval ends before the second's begins (days; a clock time is not required);
   2. a stated relation (extraction's "after" / "caused" between two statements);
   3. event type: on the SAME day, with no clock time to say, a statement whose event is earlier in the usual course
-     (config/event_stages.yaml: detained -> questioned -> charged -> remanded -> released -> sentenced) comes first.
+     (events.py: the average place of its verb in the dated stories we have stored; detained before released) comes first.
 Statements with no time and no edge keep the order they were given, after those that are placed. A cycle (two sources
 disagreeing on order) loses its weakest edge instead of failing. networkx does the sorting.
 """
 from __future__ import annotations
 
 import datetime as dt
-import re
-from functools import lru_cache
 
 import networkx as nx
 
-from .config import load_yaml
-
-
-@lru_cache(maxsize=1)
-def _stage_map() -> dict[str, int]:
-    out: dict[str, int] = {}
-    try:
-        data = load_yaml("event_stages.yaml") or {}
-    except Exception:  # noqa: BLE001
-        data = {}
-    for n, words in enumerate(data.get("stages") or []):
-        for w in words:
-            out.setdefault(str(w).lower(), n)
-    return out
-
-
-def stage_of(text: str) -> int | None:
-    """The event's stage from its first word that is a known stem (a prefix match on the word)."""
-    stages = _stage_map()
-    for w in re.findall(r"[a-z]+", (text or "").lower()):
-        for stem, n in stages.items():
-            if w.startswith(stem) and len(w) <= len(stem) + 4:
-                return n
-    return None
+from . import events
 
 
 def _iv(i: dict) -> tuple[dt.datetime, dt.datetime] | None:
@@ -65,7 +40,7 @@ def chronological(items: list[dict], relations: list[tuple[int, int]] | None = N
     pos = {i["id"]: n for n, i in enumerate(items)}
     by = {i["id"]: i for i in items}
     iv = {i["id"]: _iv(i) for i in items}
-    st = {i["id"]: stage_of(i.get("text") or "") for i in items}
+    st = {i["id"]: events.rank_of(i.get("text") or "") for i in items}
     G = nx.DiGraph()
     G.add_nodes_from(by)
     ids = list(by)
@@ -84,8 +59,9 @@ def chronological(items: list[dict], relations: list[tuple[int, int]] | None = N
             ia, ib = iv[a], iv[b]
             if not (ia and ib) or ia[0].date() != ib[0].date() or _clock(by[a]) or _clock(by[b]):
                 continue
-            if st[a] is not None and st[b] is not None and st[a] != st[b] and not G.has_edge(a, b) and not G.has_edge(b, a):
-                x, y = (a, b) if st[a] < st[b] else (b, a)
+            first = events.earlier(st[a], st[b])
+            if first is not None and not G.has_edge(a, b) and not G.has_edge(b, a):
+                x, y = (a, b) if first else (b, a)
                 G.add_edge(x, y, kind="stage")
     weight = {"time": 3, "relation": 2, "stage": 1}
     while True:                                          # a cycle loses its weakest edge

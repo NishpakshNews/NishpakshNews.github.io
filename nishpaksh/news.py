@@ -31,18 +31,6 @@ from .router import QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
 
-# decisive acts, as verbs only: "the 2023 murder case" or "Houthi attacks" is not an act today
-DECISIVE = re.compile(
-    r"(?i)\b(arrested|arrests|detained|detains|nabbed|killed|kills|died|dies|shot dead|murdered|ordered|orders|"
-    r"directed|directs|convicted|acquitted|sentenced|granted|grants|rejected|rejects|dismissed|dismisses|quashed|"
-    r"quashes|inaugurated|inaugurates|unveiled|unveils|issued|issues|banned|bans|resigned|resigns|sacked|sacks|suspended|suspends|removed|appointed|appoints|signed|"
-    r"signs|approved|approves|passed|announced|announces|launched|launches|declared|declares|won|wins|elected|"
-    r"collapsed|collapses|injured|registered|charged|booked|raided|seized|seizes|recovered|struck|attacked|"
-    r"condemned|condemns|accepted|accepts|fined|demolished|evacuated|rescued|crashed|caught|flooded|submerged|"
-    r"inundated|erupted|closed|shut|tested|test-fired|conducted|sought|seeks|filed|moved)\b")
-PROCESS = re.compile(r"(?i)\b(held|holds?|met|meets?|spoke|speaks?|addressed|addresses|attended|attends?|heard|"
-                     r"hears?|hearing|began|begins?|started|starts?|gathered|visited|visits?|discussed|"
-                     r"reviewed|chaired|took part|participated)\b")
 RECENT = dt.timedelta(days=1)
 
 
@@ -54,22 +42,14 @@ def _start(i: dict) -> dt.datetime | None:
         return None
 
 
-DEATHS = re.compile(r"(?i)\b(killed|kills|died|dies|shot dead|murdered)\b")
-PARTICIPLE = re.compile(r"(?i)\b\w+ed by\b")
 PAST = re.compile(r"(?i)\b(previously|earlier|formerly|last (?:year|month|week)|had \w+(?:ed|en)|in the past)\b")
 
 
 def act_score(text: str) -> int:
-    """3 for deaths, 2 for another decisive act, -1 for process or setting only or for what did NOT happen, else 0."""
-    from .relate import NEGATION
-    if NEGATION.search(text or ""):
-        return -1
-    t = PARTICIPLE.sub(" ", text or "")          # "the petition filed by X" is not an act of filing
-    if DEATHS.search(t):
-        return 3                                  # deaths lead, as in any newspaper
-    if DECISIVE.search(t):
-        return 2
-    return -1 if PROCESS.search(text or "") else 0
+    """3 for deaths, 2 for another decisive act, -1 for routine activity or what did NOT happen, else 0 (events.py: by
+    meaning, zero-shot NLI)."""
+    from . import events
+    return events.act_score(text)
 
 
 def _outlets(i: dict) -> set[str]:
@@ -109,14 +89,14 @@ def _pick(items: list[dict]) -> tuple[list[int], int | None]:
       central    how many of the story's statements share its subject (2+ root words)
       concrete   names and numbers in it
     """
-    from .frames import _stem
     from .relate import Profile
     core = [i for i in items if (i.get("role") or "core") == "core" and i.get("kind") in ("event", "claim")
             and i.get("verdict") != "false"]
     if not core:
         return [], None
     prof = {i["id"]: Profile(i["text"]) for i in core}
-    verbs = {i["id"]: {_stem(m.lower()) for m in DECISIVE.findall(i["text"])} for i in core}
+    from . import events
+    verbs = {i["id"]: ({events.verb_lemma(i["text"])} - {None}) for i in core}
     dates = [d for d in (_start(i) for i in core) if d]
     newest = max(dates).date() if dates else None
 
@@ -444,7 +424,7 @@ def headline_score(h: str, news: str, latest: str = "") -> float:
     nw = {_stem(w) for w in re.findall(r"[a-z]{4,}", news.lower())}
     hw = {_stem(w) for w in re.findall(r"[a-z]{4,}", h.lower())}
     score += 1 if nw and len(hw & nw) >= 0.5 * len(nw) else 0      # it is about the news
-    facts = len(DECISIVE.findall(h)) + len(re.findall(r"\d+|\b(?:two|three|four|five|six|seven|eight|nine|ten)\b", h))
+    facts = (1 if act_score(h) >= 2 else 0) + len(re.findall(r"\d+|\b(?:two|three|four|five|six|seven|eight|nine|ten)\b", h))
     score += min(1.0, 0.5 * max(0, facts - 1))                      # more of the news in the same words
     if latest:                                                      # about the newest development
         lw = {_stem(w) for w in re.findall(r"[a-z]{4,}", latest.lower())}

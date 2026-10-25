@@ -44,7 +44,17 @@ def test_teasers_questions_and_old_news_are_rejected():
     assert "past" in _problem("Supreme Court previously ordered actor Rajpal Yadav to pay")
 
 
-def test_a_headline_about_the_newest_development_scores_higher():
+def _acts_nli(pairs):
+    """Stand-in meaning model: a headline with an arrest is a decisive act."""
+    from nishpaksh import events
+    return [(0.9, 0.05, 0.05) if h == events.DECISIVE and "arrest" in t.lower()
+            else (0.1, 0.8, 0.1) for t, h in pairs]
+
+
+def test_a_headline_about_the_newest_development_scores_higher(monkeypatch):
+    from nishpaksh import events, nli
+    events._act_cache.clear()
+    nli.set_backend(_acts_nli)
     news = "ED registered a case against Bluestone Realty on Monday."
     latest = "ED arrested Bluestone Realty founder Arun Mehta on Wednesday."
     old = "ED registers case against Bluestone Realty over loan fraud"

@@ -2,11 +2,12 @@
 step in a case, a reaction to a decision) is linked to it: parent -> daughter. A story may have
 several parents (two probes merging) and several daughters.
 
-How a link is found, once per story (cached until its headline changes): the published stories
-that came before it are ranked by word overlap of their headlines and summaries; the top few go
-to a cheap model with one question: is the new story a later development of the SAME specific case
-or event? A wrong link would put one story's context into another, so the answer must be yes and
-the two must share a specific name (person, place, organisation or case).
+How a link is found, once per story (cached until its headline changes), with no model call (B34): the published
+stories that came before it are ranked by the meaning of their headlines and openings (the multilingual bi-encoder,
+embed.py; TF-IDF cosine when it is not available). An earlier story is the parent when it is close enough (LINK) AND the
+two share a specific name (person, place, organisation or case: a capitalised word the corpus does not use everywhere,
+idf.py) AND the NLI cross-encoder does not find the two reports contradicting each other as one event. A wrong link would
+put one story's context into another, so all three must hold; unsure = no link.
 """
 from __future__ import annotations
 
@@ -18,26 +19,21 @@ import re
 from sqlalchemy import func
 
 from .db import Store, published, select, stories, story_links, update, utcnow, insert, delete
-from .router import QuotaExhausted, Router
+from .router import Router
 
 log = logging.getLogger(__name__)
 
-PROMPT = """A news site has a NEW story and some EARLIER stories. For each earlier story, decide if the new
-story is a later development of the SAME specific case, incident or decision (for example: an arrest,
-a court hearing, an investigation step, a reaction or protest about that very incident). A different
-event that is only on the same broad topic is NOT a development.
+LINK = {"bi-encoder": 0.6, "tfidf": 0.3}      # similarity an earlier story needs to be a parent (untuned: read in the audit)
 
-NEW: {new}
 
-EARLIER:
-{earlier}
+def existing_parents(store: Store, story_id: int) -> set[int]:
+    return {r["parent_id"] for r in store.rows(select(story_links.c.parent_id).where(story_links.c.child_id == story_id))}
 
-Also say which earlier stories report the SAME news as the new story (the same event or decision,
-told again by other outlets, not a later step).
 
-Reply with JSON only: {{"developments": [2], "same": [3]}}  (numbers of earlier stories; [] if none)"""
-
-MIN_COSINE = 0.2      # TF-IDF cosine a summary needs to be asked about at all
+def _shared_names(a: str, b: str, weights) -> set[str]:
+    """Capitalised words (names, acronyms) both texts have that are not everywhere in the corpus: the specific case,
+    not "Delhi" or "India" alone (idf weight at least HALF of a word seen once)."""
+    return {w for w in _names(a) & _names(b) if weights.w(w) >= 0.25}
 
 
 def _words(s: str) -> set[str]:
@@ -69,7 +65,7 @@ def _slim(headline, s0, s1) -> dict:
 def find_parents(store: Store, router: Router | None, story_id: int, headline: str, summary: str,
                  max_candidates: int = 6, window_days: int = 60) -> list[int]:
     story = store.one(select(stories.c.analysis, stories.c.created_at).where(stories.c.id == story_id))
-    if not story or router is None:
+    if not story:
         return [r["parent_id"] for r in store.rows(select(story_links.c.parent_id).where(story_links.c.child_id == story_id))]
     analysis = dict(story["analysis"] or {})
     # checked once per headline, and again whenever an article was published since (Oct 7 2026: two
@@ -105,33 +101,31 @@ def find_parents(store: Store, router: Router | None, story_id: int, headline: s
                          "updated_at": None})
             created.setdefault(x["story_id"], _when(x.get("written_at")))
     daughters = {r["child_id"] for r in store.rows(select(story_links.c.child_id).where(story_links.c.parent_id == story_id))}
-    # candidate retrieval (B34): TF-IDF cosine over the summaries of the other stories, not a stop list plus an overlap count
-    from . import idf
+    # candidate retrieval and decision (B34): meaning similarity, a shared specific name, and no contradiction
+    from . import embed, idf, nli
     pool = [r for r in rows if r["story_id"] not in daughters]     # only a daughter of this story cannot be its parent
     texts = [_summary(r) for r in pool]
-    ranked = idf.rank(f"{headline}. {summary}", texts, k=max_candidates)
-    cands = [(round(sim * 100), pool[i]["story_id"], texts[i], set()) for i, sim in ranked if sim >= MIN_COSINE]
+    new_text = f"{headline}. {summary}"[:600]
     found: list[int] = []
-    if cands:
-        earlier = "\n".join(f"{k + 1}. {t}" for k, (_, _, t, _) in enumerate(cands))
-        try:
-            res = router.call("page", PROMPT.format(new=f"{headline}. {summary}"[:600], earlier=earlier),
-                              json_out=True, max_output_tokens=100)
-            data = res.data if isinstance(res.data, dict) else {}
-            # the same news told again is linked like a development: as a follow-up it must earn its
-            # place against the published article (editions.follow_up_ok), so it is never printed twice
-            for n in list(data.get("developments") or []) + list(data.get("same") or []):
-                try:
-                    n = int(n) - 1
-                except (TypeError, ValueError):
-                    continue
-                if 0 <= n < len(cands):
-                    found.append(cands[n][1])
-        except QuotaExhausted:
-            return []
-        except Exception as e:  # noqa: BLE001
-            log.warning("thread check failed for story %s: %s", story_id, str(e)[:200])
-            return []
+    cands: list[tuple] = []
+    if texts:
+        vecs, how = embed.vectors([new_text] + texts)
+        sims = vecs[1:] @ vecs[0]
+        order = sorted(range(len(texts)), key=lambda i: -sims[i])[:max_candidates]
+        need = LINK[how]
+        close = [i for i in order if float(sims[i]) >= need]
+        weights = idf.Weights([new_text] + texts)
+        for i in close:
+            shared = _shared_names(new_text, texts[i], weights)
+            if shared:
+                cands.append((round(float(sims[i]) * 100), pool[i]["story_id"], texts[i], shared))
+        if cands:
+            res = nli.predict([(c[2], new_text) for c in cands])
+            if any(r is None for r in res):
+                return sorted(existing_parents(store, story_id))          # could not ask: no new link, checked again next run
+            for c, r in zip(cands, res):
+                if r[2] < nli.UNSURE:
+                    found.append(c[1])
     existing = {r["parent_id"] for r in store.rows(select(story_links.c.parent_id).where(story_links.c.child_id == story_id))}
     for pid in found:
         if pid not in existing:

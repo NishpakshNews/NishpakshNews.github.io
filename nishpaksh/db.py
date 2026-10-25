@@ -157,6 +157,14 @@ name_pairs = Table(  # the name registry (names.py): one name part in English an
     Column("last_seen", DateTime),
 )
 
+event_ranks = Table(  # events.py: the average place of a verb in its story's dated course of events
+    "event_ranks", md,
+    Column("lemma", String(60), primary_key=True),
+    Column("rank", Float),
+    Column("n", Integer),
+    Column("updated_at", DateTime),
+)
+
 dossiers = Table(  # the story dossier (dossier.py): what each stage decided, for the audit; never published
     "dossiers", md,
     Column("story_id", Integer, primary_key=True),

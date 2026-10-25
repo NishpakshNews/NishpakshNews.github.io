@@ -1,4 +1,16 @@
-from nishpaksh import order
+import pytest
+
+from nishpaksh import events, order
+
+
+@pytest.fixture(autouse=True)
+def learned_course(monkeypatch):
+    """What events.refresh learns from dated stories: detained early, charged, then released. Verbs by a stand-in."""
+    events.set_ranks({"detain": 0.1, "charge": 0.4, "release": 0.8})
+    lem = {"detained": "detain", "released": "release", "charged": "charge"}
+    monkeypatch.setattr(events, "verb_lemma", lambda t: next((v for k, v in lem.items() if k in t), None))
+    yield
+    events.set_ranks({})
 
 
 def item(i, text, start=None, precision="day"):
@@ -29,3 +41,8 @@ def test_a_stated_relation_orders_undated_statements_and_a_cycle_does_not_fail()
     items = [item(1, "Background A"), item(2, "Background B")]
     assert [i["id"] for i in order.chronological(items, [(2, 1)])] == [2, 1]
     assert len(order.chronological(items, [(2, 1), (1, 2)])) == 2
+
+
+def test_close_ranks_and_unknown_verbs_make_no_order():
+    assert events.earlier(0.1, 0.8) is True and events.earlier(0.8, 0.1) is False
+    assert events.earlier(0.4, 0.45) is None and events.earlier(None, 0.5) is None
