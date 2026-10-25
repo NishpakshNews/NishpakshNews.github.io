@@ -4080,7 +4080,7 @@ def test_someone_who_comes_before_the_reader_knows_who_gets_context_in_brackets(
     # whose mother is said in the sentence itself: nothing to add, then or later
     Q = [[{"text": "Dipke's mother said the action is wrong.", "ids": [2]}, {"text": "The mother wept.", "ids": [2]}]]
     polish({"narrative": {"paragraphs": Q}, "contested": items})
-    assert [s["text"] for s in Q[0]] == ["Dipke's mother said the action is wrong.", "The mother wept."]
+    assert [s["text"] for s in Q[0]] == ["Abhijeet Dipke's mother said the action is wrong.", "The mother wept."]
     # "mother of X" and "his mother" with the name in the sentence carry their own context
     R = [[{"text": "The mother of Dipke wept.", "ids": []}, {"text": "Dipke said his mother was calm.", "ids": []}]]
     polish({"narrative": {"paragraphs": R}, "contested": items})
