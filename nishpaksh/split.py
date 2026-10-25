@@ -7,9 +7,9 @@ costs", B = "Repo rate is the rate at which the RBI provides loans to banks, whi
 lending". A and B share one fact and each adds another, so neither covers the other: they stayed two
 statements and the shared part was written twice. The unit of the article is the single fact.
 
-So, after reading and before matching, a fact row whose text looks compound is split into its single facts
-(at most 3, 4 allowed; more and it stays whole). One small question to the model for a batch of such rows
-("list the separate facts"), then code checks every piece (`_pieces_ok`): its numbers and names come from
+So, after reading and before matching, a fact row whose text is compound is split into its single facts
+(at most 3, 4 allowed; more and it stays whole). The clauses come from a dependency parse (nlp.clauses: coordinated
+verbs, a reported clause keeping its speaker, a relative clause), then code checks every piece (`_pieces_ok`): its numbers and names come from
 the original, nearly all its words do, the pieces together carry every number and name of the original, a
 speaker's statement keeps its speaker in every piece ("X said A and B" -> "X said A", "X said B"), a "not"
 is never lost or added. Anything that fails keeps the row whole. The pieces replace the row (same article,
@@ -25,7 +25,7 @@ import logging
 import re
 
 from .db import Store, claims, delete, insert, select, update
-from .router import QuotaExhausted, Router
+from .router import Router
 
 log = logging.getLogger(__name__)
 
@@ -33,46 +33,6 @@ MAX_PIECES = 4      # owner: up to three is good, four at most
 BATCH = 10
 MIN_WORDS = 14      # a short sentence is one fact
 LIST_OVERLAP = 0.6  # two pieces sharing this share of their root words: a list split apart, not two facts
-JOINS = re.compile(r"(?i)(,? and |, which |, while |; | but |, who |, as well as |, adding that | and that )")
-
-PROMPT = """Each numbered sentence comes from a news report. Some say one fact; some join two, three or four
-facts in one sentence. Split each sentence into its SEPARATE facts, each written as a full sentence a reader
-understands on its own.
-
-Rules:
-- Use the sentence's own words. Add nothing, drop nothing, never change a number or a name.
-- Repeat the subject instead of "which", "it", "they" ("Repo rate is the rate at which the RBI lends to
-  banks, which banks use as a basis for lending" -> "Repo rate is the rate at which the RBI lends to banks." /
-  "Banks use the repo rate as a basis for lending.").
-- If someone SAID it, every fact keeps who said it ("Police said two men were arrested and a car was
-  seized" -> "Police said two men were arrested." / "Police said a car was seized.").
-- Keep "allegedly", "not", "no" with the fact they belong to.
-- Do NOT split what is one fact: a change ("raised the rate from 5.25% to 5.50%"), a list of things that
-  share one action ("arrested Ram, Shyam and Mohan"), a cause the sentence states ("X died after Y").
-- A figure belongs to the fact it is written with. Never copy one figure into a second fact: "invest $700
-  million in its R&D centre, expansion of production capacity and a new entity" is ONE fact (the sentence does
-  not say how the $700 million is shared), and "$700 million in its R&D centre, including its vehicle testing
-  track" is ONE fact (the track is part of the $700 million, not an extra amount).
-- At most 4 facts. One fact: return it unchanged, as a list of one.
-
-Examples:
-1. "The RBI raised the repo rate by 25 basis points to 5.50 per cent and changed its stance to calibrated
-   tightening." -> ["The RBI raised the repo rate by 25 basis points to 5.50 per cent.", "The RBI changed its
-   stance to calibrated tightening."]
-2. "Governor Sanjay Malhotra said rate cuts were off the table and future actions may be limited to rate
-   increases." -> ["Governor Sanjay Malhotra said rate cuts were off the table.", "Governor Sanjay Malhotra
-   said future actions may be limited to rate increases."]
-3. "The Monetary Policy Committee unanimously increased the repo rate from 5.25% to 5.50%." -> [the same
-   sentence] (one fact)
-
-SENTENCES:
-{sentences}
-
-Reply with JSON only: {{"results": [{{"n": 1, "facts": ["...", "..."]}}, {{"n": 2, "facts": ["..."]}}]}}"""
-
-
-def _looks_compound(text: str) -> bool:
-    return len(text.split()) >= MIN_WORDS and bool(JOINS.search(text))
 
 
 def _names(text: str) -> set[str]:
@@ -148,49 +108,37 @@ def _pieces_ok(original: str, pieces: list[str]) -> bool:
 
 
 def split_story(store: Store, router: Router | None, story_id: int) -> dict:
-    """Compound fact rows of the story not yet looked at are split; {asked, split, pieces}."""
+    """Compound fact rows of the story not yet looked at are split; {asked, split, pieces}.
+    The clauses come from a dependency parse (nlp.clauses), not a model call; code checks every piece (_pieces_ok) and the
+    NLI model confirms the original entails each one (nli.covers). A row that could not be analysed is left unmarked and
+    looked at again on a later run."""
+    from . import nli, nlp
     stats = {"asked": 0, "split": 0, "pieces": 0}
     rows = store.rows(select(claims).where(claims.c.story_id == story_id, claims.c.kind.in_(("event", "claim"))))
     todo = [r for r in rows if not (r["rel"] or {}).get("split")]
     if not todo:
         return stats
-    compound = [r for r in todo if _looks_compound(r["text"] or "")]
-    simple = [r for r in todo if r not in compound]
-    for r in simple:
-        _mark(store, r, "whole")
-    if router is None:
+    long_ = [r for r in todo if len((r["text"] or "").split()) >= MIN_WORDS]
+    for r in todo:
+        if r not in long_:
+            _mark(store, r, "whole")
+    if not long_ or not nlp.available():
         return stats
-    for start in range(0, len(compound), BATCH):
-        chunk = compound[start:start + BATCH]
-        body = "\n".join(f'{k + 1}. "{r["text"]}"' for k, r in enumerate(chunk))
-        try:
-            # analysis tier: the reading tier refused most calls overnight (Oct 9 2026) and nothing was split
-            res = router.call("light", PROMPT.format(sentences=body), json_out=True, max_output_tokens=2500)
-        except QuotaExhausted:
-            break                                      # asked again on a later run
-        except Exception as e:  # noqa: BLE001
-            log.warning("split failed: %s", str(e)[:200])
+    for r in long_:
+        stats["asked"] += 1
+        facts = nlp.clauses(r["text"])
+        if not facts or not _pieces_ok(r["text"], facts):
+            _mark(store, r, "whole")
             continue
-        stats["asked"] += len(chunk)
-        answered = {}
-        for item in (res.data or {}).get("results", []) if isinstance(res.data, dict) else []:
-            try:
-                n = int(item["n"]) - 1
-            except (KeyError, TypeError, ValueError):
-                continue
-            facts = [str(f).strip() for f in item.get("facts") or [] if str(f).strip()]
-            if 0 <= n < len(chunk) and n not in answered:
-                answered[n] = facts
-        for n, r in enumerate(chunk):
-            facts = answered.get(n)
-            if facts is None:
-                continue                               # no answer: asked again on a later run
-            if len(facts) >= 2 and _pieces_ok(r["text"], facts):
-                _replace(store, r, facts)
-                stats["split"] += 1
-                stats["pieces"] += len(facts)
-            else:
-                _mark(store, r, "whole")
+        sure = nli.covers([(r["text"], f) for f in facts])
+        if any(x is None for x in sure):
+            continue                                   # the NLI model could not be read: look again later
+        if all(sure):
+            _replace(store, r, facts)
+            stats["split"] += 1
+            stats["pieces"] += len(facts)
+        else:
+            _mark(store, r, "whole")
     if stats["split"]:
         log.info("story %s: %d compound statements split into %d facts", story_id, stats["split"], stats["pieces"])
     return stats

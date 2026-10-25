@@ -2795,27 +2795,27 @@ def test_compound_statements_split_into_single_facts_story_13970(store):
              # drops the speaker from the second fact: code keeps the row whole
              S: ["Governor Sanjay Malhotra said rate cuts were off the table.", "Future actions may be limited to rate increases."]}
 
-    class Splitter:
-        def __init__(self):
-            self.calls = 0
+    from nishpaksh import nlp
+    calls = []
 
-        def call(self, tier, prompt, **kw):
-            self.calls += 1
-            res = [{"n": int(n), "facts": facts.get(t, [t])}
-                   for n, t in re.findall(r'^(\d+)\. "(.*)"$', prompt.split("SENTENCES:")[1], re.M)]
-            return LLMResult("", {"results": res}, "m", [], 1)
-    r = Splitter()
-    st = split.split_story(store, r, sid)
-    assert st == {"asked": 3, "split": 2, "pieces": 4} and r.calls == 1
-    rows = store.rows(select(claims).where(claims.c.story_id == sid, claims.c.kind != "relation"))
-    texts = sorted(x["text"] for x in rows)
-    assert S in texts and A not in texts and B not in texts
-    first = next(x for x in rows if x["article_id"] == aids[0] and x["local_id"] == "c1.1")
-    assert first["loaded_words"] == ["महंगा"]                       # counted once, on the first piece
-    rel = store.one(select(claims).where(claims.c.local_id == "r1"))["rel"]
-    assert rel["to"] == "c1.1"                                       # the relation follows the main fact
-    # asked once: nothing asked again
-    assert split.split_story(store, r, sid) == {"asked": 0, "split": 0, "pieces": 0} and r.calls == 1
+    def clauses(text):                      # stands in for the dependency parse (the real one runs in the audit)
+        calls.append(text)
+        return facts.get(text)
+    nlp.clauses = clauses
+    try:
+        st = split.split_story(store, None, sid)
+        assert st == {"asked": 3, "split": 2, "pieces": 4} and len(calls) == 3
+        rows = store.rows(select(claims).where(claims.c.story_id == sid, claims.c.kind != "relation"))
+        texts = sorted(x["text"] for x in rows)
+        assert S in texts and A not in texts and B not in texts
+        first = next(x for x in rows if x["article_id"] == aids[0] and x["local_id"] == "c1.1")
+        assert first["loaded_words"] == ["महंगा"]                       # counted once, on the first piece
+        rel = store.one(select(claims).where(claims.c.local_id == "r1"))["rel"]
+        assert rel["to"] == "c1.1"                                       # the relation follows the main fact
+        # asked once: nothing asked again
+        assert split.split_story(store, None, sid) == {"asked": 0, "split": 0, "pieces": 0} and len(calls) == 3
+    finally:
+        del nlp.clauses
     # matching: the shared fact is ONE statement, both outlets behind it
     match.match_story(store, None, sid)
     shared = [c for c in store.rows(select(canonical).where(canonical.c.story_id == sid))
