@@ -89,6 +89,7 @@ def test_a_page_lists_its_follow_ups_newest_last_and_only_changes_when_they_do(s
     row = store.one(select(published.c.payload_en, published.c.payload_hi).where(published.c.story_id == 1))
     assert [c["story_id"] for c in row["payload_en"]["children"]] == [3, 2]          # oldest first, the newest is last
     assert row["payload_en"]["children"][-1]["headline"] == "second"
+    assert row["payload_en"]["children"][-1]["at"] == "2026-10-22T00:00:00"          # when it came out, for "3 h ago"
     assert row["payload_hi"]["children"][-1]["headline"] == "second hi"               # the Hindi page names it in Hindi
     assert row["payload_en"]["narrative"]["paragraphs"][0][0]["text"] == "A line."    # the words never change
     assert editions.attach_children(store) == 0                                       # nothing new: nothing written

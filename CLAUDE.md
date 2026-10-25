@@ -1686,6 +1686,11 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   `children_attached`), so a missed or failed attach is repaired the next hour and existing articles get their link at the next run.
   Tests: `tests/test_threads_shared.py`. Colours were already live (`editions.mature`); few lines ever turn developing because a
   closed article takes in no new reports, so only lines that met the 3-outlet / 2-origin rule at writing time can ripen.
+- **"Latest in this story" as a thread rail (owner, Oct 25 2026, design "2e").** Each `children` entry now carries `at` (the follow-up's
+  publish time, ISO, for "3 h ago"). The site shows the newest child in `#latest` (`fillLatest`, called by the `fillSheet` wrapper), between
+  the colour key and the headline card: a node and a 2px rail that runs down to the card, kicker + age, the headline (2 lines), "Read the
+  latest →" (`latestGo`). Not inside `#rise` any more; it fades in with the article (`#sheet:not(.open) .latestin`), never animated by size.
+  Older pages get `at` at the next run (the list differs, so `attach_children` rewrites them once). `sw.js` np-main-68.
 - **Latest in this story; colour notifications (Oct 16 2026, owner; step 4).** Site: an article with later
   developments opens with a "Latest in this story" link to its newest child (`latestin`). Notifications: follows of
   kind "colour" (key established / developing / disputed / false; Supabase check constraint widened, migration

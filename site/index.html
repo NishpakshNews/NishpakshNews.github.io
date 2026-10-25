@@ -567,10 +567,23 @@
   .updates .uline { margin: 0 0 8px; }
   .essay .s.struck[data-struck] { cursor: pointer; }
   .updates .uline.flash .s { animation: npflash 1400ms ease; }
-  .latestin { display: block; margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; text-decoration: none;
-              background: color-mix(in srgb, var(--bar-v, #2a9d8f) 12%, transparent); color: inherit; }
-  .latestin span { display: block; font-size: 0.78em; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.75; }
-  .latestin b { font-weight: 600; }
+  /* "Latest in this story" (owner, Oct 25 2026, design "2e"): a thread rail between the colour key and the headline card.
+     A node and a line run from the newest follow-up down to this article's card; no box, the card is not split. */
+  .latestin { position: relative; display: block; margin: 12px 0 0; padding: 0 8px 0 36px; text-decoration: none; color: var(--ink); }
+  .latestin[hidden] { display: none; }
+  .latestin::before { content: ""; position: absolute; left: 13px; top: 20px; bottom: -12px; width: 2px; border-radius: 2px;
+                      background: linear-gradient(#2f3a72, color-mix(in srgb, #2f3a72 18%, transparent)); }
+  .latestin i { position: absolute; left: 7px; top: 2px; width: 14px; height: 14px; box-sizing: border-box; border-radius: 50%;
+                background: var(--ground); border: 3px solid #2f3a72; }
+  .latestin .lab { display: block; font: 700 11px/14px var(--body); letter-spacing: .14em; text-transform: uppercase; color: #2f3a72; }
+  .latestin .lab em { font-style: normal; letter-spacing: 0; text-transform: none; font-weight: 500; font-size: 12px; color: var(--muted); margin-left: 6px; }
+  .latestin .t { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 5px;
+                 font: 600 18px/1.27 var(--head); letter-spacing: -.003em; }
+  .latestin .go { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font: 600 13px/1 var(--body); color: #2f3a72; }
+  .latestin .go svg { width: 13px; height: 13px; }
+  .latestin:focus-visible { outline: 2px solid #2f3a72; outline-offset: 3px; border-radius: 6px; }
+  #sheet:not(.open) .latestin { opacity: 0; }
+  #sheet.anim.open .latestin { transition: opacity 260ms ease 200ms; }
   .updates .uwas { display: block; font-size: 0.85em; color: #8a8d91; margin-top: 2px; }
   .essay .s, .card .text .s { background: color-mix(in srgb, var(--sc) var(--tint), transparent); padding: 1px 3px; border-radius: 4px;
                               -webkit-box-decoration-break: clone; box-decoration-break: clone;
@@ -1393,7 +1406,7 @@ const T = {
     all: "All", nav: "Sections", secBack: (l) => `Back from ${l} to all sections`, secUp: (l, p) => `Back from ${l} to ${p}`,
     secEmpty: (l) => `Nothing in ${l} yet.`, secBody: "Articles get their sections when they are published, so this one will fill up as new stories come in.",
     showAll: "Show all news", photo: "Photo", share: "Share", copied: "Link copied", latest: "Go to the latest story",
-    updates: "Updates since published", latestIn: "Latest in this story",
+    updates: "Updates since published", latestIn: "Latest in this story", latestGo: "Read the latest",
   },
   hi: {
     wordmark: "निष्पक्ष", hello: "नमस्ते।", greet: ["सुप्रभात।", "नमस्कार।", "शुभ संध्या।"],
@@ -1417,7 +1430,7 @@ const T = {
     all: "सभी", nav: "खंड", secBack: (l) => `${l} से सभी खंडों पर लौटें`, secUp: (l, p) => `${l} से ${p} पर लौटें`,
     secEmpty: (l) => `${l} में अभी कोई ख़बर नहीं।`, secBody: "हर लेख को छपते समय उसका खंड मिलता है, इसलिए नई ख़बरों के साथ यह खंड भरता जाएगा।",
     showAll: "सारी ख़बरें देखें", photo: "फ़ोटो", share: "शेयर करें", copied: "लिंक कॉपी हो गया", latest: "सबसे ताज़ा ख़बर पर जाएँ",
-    updates: "प्रकाशन के बाद की नई जानकारी", latestIn: "इस ख़बर में सबसे ताज़ा",
+    updates: "प्रकाशन के बाद की नई जानकारी", latestIn: "इस ख़बर में सबसे ताज़ा", latestGo: "ताज़ा ख़बर पढ़ें",
   },
 };
 const KEYCOLOR = {established: "var(--est)", developing: "var(--dev)", unverified: "var(--unv)", partial: "var(--par)", single: "var(--one)", disputed: "var(--dis)", false: "var(--fal)"};
@@ -2042,12 +2055,7 @@ function articleHtml(row) {
     Object.entries(p.perspectives || {}).map(([k, v]) => `<b>${esc(k)}</b> ${esc((v || []).join(", "))}`).join("<br>");
   const thread = (title, list) => list && list.length ? `<div class="sec">${esc(title)}</div><div class="paper"><ul class="thread">${list.map(x =>
       `<li><a href="#/story/${encodeURIComponent(x.story_id)}" data-story="${esc(x.story_id)}">${esc(x.headline)}</a></li>`).join("")}</ul></div>` : "";
-  // "Latest in this story" (owner, Oct 16 2026): a page that later developments followed points to the newest one first
-  const kids = p.children || [];
-  const newest = kids.length ? kids[kids.length - 1] : null;
-  const latestBar = newest ? `<a class="latestin" href="#/story/${encodeURIComponent(newest.story_id)}" data-story="${esc(newest.story_id)}">` +
-    `<span>${esc(t.latestIn || "Latest in this story")}</span><b>${esc(newest.headline)}</b></a>` : "";
-  return `${latestBar}<div class="acts"><button type="button" data-act="audio" aria-label="${esc(t.listen)}">${ICON.audio}</button><button type="button" data-act="video" aria-label="${esc(t.videos)}">${ICON.video}</button>
+  return `<div class="acts"><button type="button" data-act="audio" aria-label="${esc(t.listen)}">${ICON.audio}</button><button type="button" data-act="video" aria-label="${esc(t.videos)}">${ICON.video}</button>
       <div class="talkpeek" data-act="talk" aria-hidden="true"><div class="tpin"><span>${esc(t.talkBanner)}</span></div></div><button type="button" class="talkbtn" data-act="talk" aria-label="${esc(t.talkName)}">${ICON.talk}</button></div>
     ${essayHtml(nar, t)}
     ${updatesHtml(p, t)}
@@ -4996,6 +5004,8 @@ placeOverCard = function (r, off = lastOff) {
   const hc = document.createElement("div"); hc.className = "hcard";
   const row = document.createElement("div"); row.className = "hrow"; row.innerHTML = '<div class="kk" id="hkick"></div>';
   hbox.insertBefore($("kcard"), h1);
+  const lt = document.createElement("a"); lt.id = "latest"; lt.className = "latestin"; lt.hidden = true;   // the thread rail (owner, Oct 25 2026)
+  $("kcard").after(lt);
   h1.before(hc); row.appendChild(share); hc.append(row, h1, meta);
 })();
 function leadFirst() {
@@ -5014,7 +5024,22 @@ fillSheet = function (row, card) {
   const b = row ? barCounts(((row.payload_en || {}).narrative || {}).paragraphs) : card && card.bar;
   const k = b ? kickerHtml(b) : "";
   $("hkick").innerHTML = k ? k.replace(/^<div class="kk">|<\/div>$/g, "") : "";
+  fillLatest(row);
 };
+// "Latest in this story": a node and a rail above the headline card, pointing to the newest follow-up
+function fillLatest(row) {
+  const el = $("latest"), t = T[lang];
+  const p = row ? ((lang === "hi" && row.payload_hi) || row.payload_en || {}) : {};
+  const kids = p.children || [], n = kids.length ? kids[kids.length - 1] : null;
+  if (!n || !n.story_id) { el.hidden = true; el.textContent = ""; el.removeAttribute("data-story"); return; }
+  el.href = `#/story/${encodeURIComponent(n.story_id)}`;
+  el.dataset.story = n.story_id;
+  const when = n.at ? `<em>${esc(ago(n.at))}</em>` : "";
+  el.innerHTML = `<i></i><span class="lab">${esc(t.latestIn || "Latest in this story")}${when}</span>` +
+    `<span class="t">${esc(n.headline)}</span><span class="go">${esc(t.latestGo || "Read the latest")}` +
+    `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg></span>`;
+  el.hidden = false;
+}
 
 // the kicker's place on the card, and its glide into (and back out of) the article, like the headline's
 const headOffsetKick = headOffset;

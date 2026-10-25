@@ -387,7 +387,8 @@ def attach_children(store: Store, only: list[int] | None = None) -> int:
             p = json.loads(json.dumps(row[col])) if row[col] else None
             if not p:
                 continue
-            want = [{"story_id": r["story_id"], "headline": r[head] or r["headline_en"] or ""} for r in mine]
+            want = [{"story_id": r["story_id"], "headline": r[head] or r["headline_en"] or "",
+                     "at": r["updated_at"].isoformat(timespec="seconds")} for r in mine]    # "at": for "3 h ago" on the site
             if want != (p.get("children") or []):
                 p["children"] = want
                 out[col] = p
