@@ -142,10 +142,12 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
         attrib.setdefault(c["canonical_id"], set()).add(c["attributed_to"] or "article")
         support[c["canonical_id"]] = support.get(c["canonical_id"], 0) + 1
     rows.sort(key=lambda r: -support.get(r["id"], 0))
-    rows = rows[:max_statements]
+    # S7: the model reads the best-supported `max_statements` lines (its prompt has a size); the pair finding below (code
+    # with blocking, then the NLI questions) covers EVERY statement of the story, not only those
     by_id = {r["id"]: r for r in rows}
+    prompt_ids = {r["id"] for r in rows[:max_statements]}
     lines = "\n".join(f'{r["id"]} | {r["text"]} | {", ".join(sorted(attrib.get(r["id"], {"article"})))[:120]}'
-                      for r in rows)
+                      for r in rows[:max_statements])
     try:
         res = router.call("light", PROMPT.format(lines=lines), json_out=True, max_output_tokens=3000)
         data = res.data if isinstance(res.data, dict) else {}
@@ -162,7 +164,7 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
                 x = int(x)
             except (TypeError, ValueError):
                 continue
-            if x in by_id:
+            if x in prompt_ids:
                 out.append(x)
         return out
 

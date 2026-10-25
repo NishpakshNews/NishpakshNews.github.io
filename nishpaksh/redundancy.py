@@ -72,9 +72,21 @@ def survivor(cluster: list[int], support: dict[int, int], texts: dict[int, str])
         if x == lead:
             continue
         px = Profile(texts[x])
-        if px.nums != pl.nums or px.names != pl.names:
+        if px.nums != pl.nums or px.names != pl.names or _label(texts[x]) != _label(texts[lead]):
             variants[x] = [texts[x]]
     return lead, variants
+
+
+def _label(text: str) -> tuple:
+    """S10: attribution is a LABEL on the proposition, not noise to strip: who says it and how hedged. Two lines that tell the
+    same thing, one flatly and one as someone's claim, are one fact with two labels; the difference is stored as a variant."""
+    try:
+        from . import attribution, factuality
+        sp = attribution.read(text)
+        who = (sp.speaker or "").lower() if sp else ""
+        return (who, factuality.read(text)["certainty"])
+    except Exception:  # noqa: BLE001
+        return ("", "unknown")
 
 
 def number_pairs(profiles: dict, min_overlap: float = 0.5) -> list[tuple[int, int]]:

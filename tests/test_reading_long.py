@@ -80,3 +80,69 @@ def test_a_piece_does_not_start_by_pointing_at_a_paragraph_it_was_not_given(monk
              "Police filed a second report."]
     out = extract.pieces("\n".join(paras), cap=10)
     assert out[1].split("\n")[0] == paras[0]          # the second piece starts back at the paragraph that names "He"
+
+
+def test_pieces_cluster_duplicates_and_remap_relations():
+    from nishpaksh.extract import _merge_pieces
+    a = {"signature": "s", "events": [{"id": "e1", "text": "Police arrested 5 men in Pune"}],
+         "claims": [{"id": "c1", "text": "The minister said the bridge is safe"}],
+         "relations": [{"from": "c1", "to": "e1", "type": "response"}], "context": []}
+    b = {"signature": "s", "events": [{"id": "e1", "text": "Police arrested 5 men in Pune"}],
+         "claims": [{"id": "c1", "text": "Traffic was diverted for two hours"}],
+         "relations": [{"from": "c1", "to": "e1", "type": "response"}], "context": []}
+    out = _merge_pieces([a, b])
+    assert [e["id"] for e in out["events"]] == ["e1"]            # the repeat is gone
+    assert {c["id"] for c in out["claims"]} == {"c1", "p2-c1"}
+    assert {"from": "p2-c1", "to": "e1", "type": "response"} in out["relations"]   # remapped onto the survivor
+    assert all(r["from"] != r["to"] for r in out["relations"])
+
+
+def test_schema_fields_are_closed_and_counted():
+    from nishpaksh import extract
+    extract.SCHEMA.clear()
+    ex = extract.normalize_extraction({"signature": "s", "events": [
+        {"id": "e1", "text": "Police arrested 5 men", "stance": "maybe", "polarity": "pos", "certainty": "stated"},
+        {"id": "e2", "text": "The bridge may collapse", "stance": "asserts", "polarity": "pos", "certainty": "possible"},
+        {"id": "e3", "text": "Talks will begin", "stance": "asserts"}]})
+    a, b, c = ex["events"]
+    assert a["stance"] == "attributes"                      # an unknown stance is never the article's own voice
+    assert b["certainty"] == "possible"                     # either reader saying possible makes it possible
+    assert c["polarity"] in ("pos", "unknown") and c["certainty"] in ("stated", "unknown")
+    assert extract.SCHEMA["stance_invalid"] == 1 and extract.SCHEMA["certainty_missing"] == 1
+
+
+def test_past_the_budget_the_central_pieces_are_kept_not_the_first_ones():
+    from nishpaksh import extract
+    parts = ["Opening paragraph about the flood in Assam and rescue teams."] + \
+            ["Cricket scores and film releases of the week."] + \
+            [f"Flood relief camps in Assam, rescue teams and the flood toll, part {i}." for i in range(4)] + \
+            ["Film releases and cricket scores again."]
+    kept = extract._most_central(parts, 3)
+    assert kept[0] == parts[0] and len(kept) == 3
+    assert not any("Cricket" in k or "cricket" in k for k in kept)
+
+
+def test_slots_is_empty_without_a_parse_and_never_raises():
+    from nishpaksh import extract
+    assert isinstance(extract.slots("Nobody here."), str)
+
+
+def test_tavily_failure_is_a_wait_not_a_verdict():
+    import datetime as dt
+    from nishpaksh import extract
+    now = dt.datetime(2026, 10, 26, 12, tzinfo=dt.timezone.utc)
+    a = {"extraction": None, "extract_failures": 0, "published_at": now}
+    assert extract._tavily_due(a, now)
+    a["extraction"] = {"tavily": {"fails": 1, "at": (now - dt.timedelta(hours=3)).isoformat()}}
+    assert not extract._tavily_due(a, now)
+    a["extraction"] = {"tavily": {"fails": 1, "at": (now - dt.timedelta(hours=13)).isoformat()}}
+    assert extract._tavily_due(a, now)
+    a["extraction"] = {"tavily": {"fails": 3, "at": (now - dt.timedelta(days=9)).isoformat()}}
+    assert not extract._tavily_due(a, now)
+
+
+def test_greedy_prefers_new_coverage_and_respects_the_budget():
+    from nishpaksh import selection
+    items = [("a", {1, 2}), ("b", {1, 2}), ("c", {3})]
+    got = selection.greedy(items, 2, lambda i: 1, lambda i, ch: len(i[1] - set().union(*[c[1] for c in ch]) if ch else i[1]))
+    assert [g[0] for g in got] == ["a", "c"]

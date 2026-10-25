@@ -6,6 +6,7 @@ relations and the emotive words the article used. Everything else is code.
 from __future__ import annotations
 
 import datetime as dt
+import collections
 import logging
 import re
 import threading
@@ -23,6 +24,18 @@ log = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 
 STANCES = {"asserts", "attributes", "denies"}
+POLARITIES = {"pos", "neg"}
+CERTAINTIES = {"stated", "possible", "hypothetical"}
+SCHEMA = collections.Counter()          # S1/E1: fields the model left out or got outside the allowed values, counted per run
+
+
+def choice(value, allowed: set, field: str, default: str) -> str:
+    """A closed-vocabulary field: the value if it is allowed, else `default` (counted, never silent)."""
+    v = str(value).strip().lower() if isinstance(value, str) else value
+    if v in allowed:
+        return v
+    SCHEMA[field + ("_missing" if value in (None, "") else "_invalid")] += 1
+    return default
 ROUNDUP = re.compile(r"(?i)\blive\b.*\bupdates?\b|\blive\s*(blog|updates?|news)\b|^live[:|\s]|\btop (news|headlines|stories)\b"
                      r"|\bnews (wrap|roundup|highlights|bulletin)\b|\bmorning brief\b|\bevening brief\b|\bnews live\b"
                      r"|लाइव|ताजा खबर|बड़ी खबरें|टॉप न्यूज|न्यूज़ अपडेट")
@@ -48,11 +61,13 @@ Return ONE JSON object with exactly these keys:
   "events": [
     {{"id": "e1", "text": "...", "quote": "...", "words": "...", "when_text": "...", "start": "YYYY-MM-DDTHH:MM or null",
       "end": "YYYY-MM-DDTHH:MM or null", "precision": "exact|hour|part_of_day|day|week|month|unknown",
-      "stance": "asserts|attributes|denies", "attributed_to": "...", "evidence": "...", "loaded_words": ["..."],
+      "stance": "asserts|attributes|denies", "polarity": "pos|neg", "certainty": "stated|possible|hypothetical",
+      "attributed_to": "...", "evidence": "...", "loaded_words": ["..."],
       "frame": {{"who": "...", "action": "...", "what": "...", "value": "...", "where": "...", "negated": false}}}}
   ],
   "claims": [
-    {{"id": "c1", "text": "...", "quote": "...", "words": "...", "stance": "asserts|attributes|denies", "attributed_to": "...",
+    {{"id": "c1", "text": "...", "quote": "...", "words": "...", "stance": "asserts|attributes|denies",
+      "polarity": "pos|neg", "certainty": "stated|possible|hypothetical", "attributed_to": "...",
       "evidence": "...", "loaded_words": ["..."], "frame": {{"who": "...", "action": "...", "what": "...", "value": "...", "where": "...", "negated": false}}}}
   ],
   "relations": [
@@ -62,7 +77,8 @@ Return ONE JSON object with exactly these keys:
     {{"id": "x1", "type": "background|related|explanation|reaction|next", "text": "...", "quote": "...", "words": "...", "event": "...",
       "when_text": "...", "start": "YYYY-MM-DDTHH:MM or null", "end": "YYYY-MM-DDTHH:MM or null",
       "precision": "exact|hour|part_of_day|day|week|month|unknown",
-      "stance": "asserts|attributes|denies", "attributed_to": "...", "evidence": "...", "loaded_words": ["..."],
+      "stance": "asserts|attributes|denies", "polarity": "pos|neg", "certainty": "stated|possible|hypothetical",
+      "attributed_to": "...", "evidence": "...", "loaded_words": ["..."],
       "frame": {{"who": "...", "action": "...", "what": "...", "value": "...", "where": "...", "negated": false}}}}
   ]
 }}
@@ -104,6 +120,9 @@ Rules:
    person as attributed_to, even when the article words it in its own voice (an article writing
    "the professor harassed the student" while reporting the family's complaint -> stance "attributes",
    attributed_to "the student's family"). Use "asserts" only for what the article itself establishes.
+4b. polarity: "neg" when "text" says something did NOT happen or is NOT so, else "pos". certainty: "stated" = the
+   source gives it as a fact (even when someone else says it); "possible" = it may / might / could / is likely / is
+   feared / is expected; "hypothetical" = an if, a plan that is not done, a threat, a prediction. If unsure: "possible".
 5. attributed_to: who the article gives as the source ("article", "police", "victim's family", "accused",
    "eyewitness", "minister", "unnamed source", ...). Write it in English.
 6. evidence: what the article cites: fir | court_record | official_data | video | official_statement |
@@ -187,12 +206,13 @@ def normalize_extraction(data: dict) -> dict | None:
                 "text": str(it["text"]).strip()[:500],
                 "quote": str(it.get("quote") or "").strip()[:200],
                 "words": str(it.get("words") or "").strip().strip('"“”\'‘’ ')[:400],
-                "stance": it.get("stance") if it.get("stance") in STANCES else "asserts",
+                "stance": choice(it.get("stance"), STANCES, "stance", "attributes"),   # unknown: NOT the article's own voice
                 "attributed_to": str(it.get("attributed_to") or "article")[:200],
                 "evidence": it.get("evidence") if it.get("evidence") in EVIDENCE else "none",
                 "loaded_words": _words(it.get("loaded_words")),
             }
             item["frame"] = normalize_frame(it.get("frame"))
+            item.update(_factuality(item["text"], it))
             if kind == "context":
                 item["context"] = it["type"]
                 item["event"] = str(it.get("event") or "").strip()[:160] if it["type"] == "related" else ""
@@ -215,7 +235,7 @@ def normalize_extraction(data: dict) -> dict | None:
                 and r.get("from") != r.get("to") and r.get("type") in REL_TYPES):
             out["relations"].append({
                 "from": r["from"], "to": r["to"], "type": r["type"],
-                "stance": r.get("stance") if r.get("stance") in STANCES else "asserts",
+                "stance": choice(r.get("stance"), STANCES, "stance", "attributes"),
                 "attributed_to": str(r.get("attributed_to") or "article")[:200],
             })
     if not out["signature"] and out["events"]:
@@ -251,8 +271,33 @@ def ground(ex: dict, source: str) -> int:
     return len(dropped)
 
 
+def _factuality(text: str, it: dict) -> dict:
+    """S1: polarity and certainty from BOTH readers, the model's closed answers and the sentence's parse
+    (`factuality.read`). Certainty is the more cautious of the two (a possible / hypothetical reading from either wins);
+    a polarity the two disagree on is "unknown". A field neither gives is "unknown", never a guess."""
+    from . import factuality
+    fp = factuality.read(text)
+    pol_m = choice(it.get("polarity"), POLARITIES, "polarity", "unknown")
+    cer_m = choice(it.get("certainty"), CERTAINTIES, "certainty", "unknown")
+    pol = fp["polarity"] if pol_m == "unknown" else pol_m if fp["polarity"] == "unknown" else (
+        pol_m if pol_m == fp["polarity"] else "unknown")
+    if cer_m in ("possible", "hypothetical"):
+        cer = cer_m
+    elif fp["certainty"] == "possible":
+        cer = "possible"
+    elif cer_m == "stated" and fp["certainty"] in ("stated", "unknown"):
+        cer = "stated"
+    else:
+        cer = "unknown" if cer_m == "unknown" else cer_m
+    return {"polarity": pol, "certainty": cer}
+
+
 def _rel(it: dict) -> dict | None:
     rel = {}
+    if it.get("polarity") == "neg":
+        rel["polarity"] = "neg"                 # only what differs from the plain reading is stored
+    if it.get("certainty") in ("possible", "hypothetical"):
+        rel["certainty"] = it["certainty"]
     if it.get("frame"):
         rel["frame"] = it["frame"]
     if it.get("refs"):
@@ -347,8 +392,41 @@ def pieces(text: str, cap: int | None = None) -> list[str]:
     if cur:
         out.append("\n".join(cur))
     if len(out) > MAX_PIECES:
-        log.info("extract: a %d-character report read in its first %d pieces of %d", len(t), MAX_PIECES, len(out))
-    return out[:MAX_PIECES]
+        log.info("extract: a %d-character report read in %d pieces of %d", len(t), MAX_PIECES, len(out))
+        out = _most_central(out, MAX_PIECES)
+    return out
+
+
+def _most_central(parts: list[str], k: int) -> list[str]:
+    """S2: past the reading budget the pieces kept are the first one (who and what) and those nearest the report's centre
+    (TextRank / centroid salience: cosine to the mean of all pieces), in their reading order, not simply the first ones."""
+    try:
+        import numpy as np
+        from . import embed
+        v, _ = embed.vectors(parts)
+        centre = v.mean(axis=0)
+        score = v @ centre
+        rest = sorted(range(1, len(parts)), key=lambda i: (-float(score[i]), i))[:k - 1]
+        return [parts[i] for i in sorted([0] + rest)]
+    except Exception:
+        return parts[:k]
+
+
+def slots(text: str, limit: int = 8) -> str:
+    """S2, carried entity slots: the people the whole report names (NER over the whole text, one identity each, most
+    mentioned first) as one line, given to every piece and to the second reading, so a "he" or a surname in a piece
+    that does not hold the introduction is read against the right person. Empty when the parse cannot run."""
+    try:
+        from .entities import EntityTable
+        t = EntityTable()
+        t.add_text(text or "")
+        people = t.persons()
+        people.sort(key=lambda e: -len(e.mentions))
+        names = [e.name for e in people[:limit] if e.name]
+        return ("People named in this article (a pronoun or surname below may mean one of them): "
+                + "; ".join(names) + ".\n") if names else ""
+    except Exception:
+        return ""
 
 
 def _norm_words(t: str) -> str:
@@ -370,24 +448,67 @@ def check_words(ex: dict, source: str, lang: str) -> int:
 
 
 def _merge_pieces(parts: list[dict]) -> dict:
-    """One reading from the readings of a report's pieces."""
+    """One reading from the readings of a report's pieces (S3, E3): the items of all pieces are CLUSTERED as one
+    entity-resolution problem. Pairs are code's "same" (`relate`), taken in the order they appear; a union that would
+    put a pair code calls "different" into one cluster is refused (`redundancy.constrained`), so A = B, B = C, A != C
+    is not settled by the order of the loop. One item stays per cluster (`redundancy.survivor`: the one read most often,
+    then the longer); a relation that pointed at a dropped item is pointed at the survivor, and a relation that then
+    joins an item to itself, or repeats another, is dropped."""
     from .relate import relate
+    from . import redundancy
     out = {"signature": parts[0]["signature"], "events": [], "claims": [], "relations": [], "context": []}
-    kept: list[str] = []
+    items: list[tuple[str, dict]] = []                 # (kind, item) in reading order
+    key: dict[tuple[int, str], int] = {}               # (piece, original id) -> index
     for k, ex in enumerate(parts):
-        pre = "" if k == 0 else f"p{k + 1}-"
-        ids = {}
         for kind in ("events", "claims", "context"):
             for it in ex.get(kind) or []:
-                t = it["text"]
-                if any(t.lower() == x.lower() or relate(t, x) == "same" for x in kept):
-                    continue                           # read twice in the overlap
-                kept.append(t)
-                ids[it["id"]] = pre + it["id"]
-                out[kind].append(dict(it, id=pre + it["id"]))
+                key[(k, it["id"])] = len(items)
+                items.append((kind, dict(it, _piece=k)))
+    texts = {i: it["text"] for i, (_, it) in enumerate(items)}
+    same, cannot = [], set()
+    for i in range(len(items)):
+        for j in range(i + 1, len(items)):
+            a, b = texts[i], texts[j]
+            if a.lower() == b.lower():
+                same.append((i, j))
+                continue
+            r = relate(a, b)
+            if r == "same":
+                same.append((i, j))
+            elif r == "different":
+                cannot.add((i, j))
+    groups, _ = redundancy.constrained(same, cannot)
+    rep = {i: i for i in texts}
+    support = {i: 1 for i in texts}
+    for g in groups:
+        for x in g:
+            support[x] = len(g)
+        lead, _v = redundancy.survivor(g, support, texts)
+        for x in g:
+            rep[x] = lead
+    for i, (kind, it) in enumerate(items):
+        if rep[i] != i:
+            continue
+        piece = it["_piece"]
+        out[kind].append({x: v for x, v in it.items() if x != "_piece"} | {"id": ("" if piece == 0 else f"p{piece + 1}-") + it["id"]})
+    def new_id(k: int, old: str) -> str | None:
+        i = key.get((k, old))
+        if i is None:
+            return None
+        _kind, it = items[rep[i]]
+        piece = it["_piece"]
+        return ("" if piece == 0 else f"p{piece + 1}-") + it["id"]
+    seen = set()
+    for k, ex in enumerate(parts):
         for r in ex.get("relations") or []:
-            if r["from"] in ids and r["to"] in ids:
-                out["relations"].append(dict(r, **{"from": ids[r["from"]], "to": ids[r["to"]]}))
+            f, t = new_id(k, r["from"]), new_id(k, r["to"])
+            if f is None or t is None or f == t:
+                continue
+            sig = (f, t, r.get("type"), r.get("kind"))
+            if sig in seen:
+                continue
+            seen.add(sig)
+            out["relations"].append(dict(r, **{"from": f, "to": t}))
     return out
 
 
@@ -401,7 +522,7 @@ def read_report(router: Router, a: dict, names: str = "") -> tuple[dict | None, 
         part = "" if len(texts) == 1 else (
             f"PART {k + 1} of {len(texts)} of a long article: read only the text below. "
             + (f"The article opened with: \"{opening}\" (people named there may be called by surname below).\n"
-               if k else "\n"))
+               if k else "\n") + (slots(a["text"] or "") if k else ""))
         prompt = EXTRACT_PROMPT.format(outlet=a["outlet"], published=_fmt_ist(a["published_at"]),
                                        title=a["title"] or "", text=t, names=names, part=part)
         try:
@@ -431,7 +552,7 @@ def second_pass(router: Router, a: dict, ex: dict, left: list[str], names: str =
     into the first reading. A failed call leaves the first reading as it was."""
     part = ("THE REST of an article already read once: below are ONLY its sentences that no item came from yet. "
             "Record every fact and every exact quote in them (same rules; \"quote\" is the start of the sentence below "
-            "it comes from).\n")
+            "it comes from).\n" + slots(a.get("text") or ""))
     prompt = EXTRACT_PROMPT.format(outlet=a["outlet"], published=_fmt_ist(a["published_at"]), title=a["title"] or "",
                                    text="\n".join(left[:80]), names=names, part=part)
     try:
@@ -522,6 +643,31 @@ def _extract_one(store: Store, router: Router, a: dict, names: str = "", registr
     return "done"
 
 
+def _diverse(todo: list[dict], arts: list[dict], done: list[dict], groups: dict, room: int) -> list[dict]:
+    """S4: of a story's readable, unread pages (one per independent group, newest first) the ones to read: greedy maximum
+    coverage (`selection.greedy`) of the story's headline words, weighted by how rare each word is in the story, given the
+    pages already read. A page whose headline adds nothing the chosen pages have is read last; the newest wins every tie."""
+    from . import idf, selection
+    w = idf.Weights([a["title"] or "" for a in arts])
+    covered0 = set()
+    for a in done:
+        covered0 |= idf.tokens(a["title"])
+
+    def gain(a, chosen):
+        have = set(covered0)
+        for c in chosen:
+            have |= idf.tokens(c["title"])
+        return 1.0 + sum(w.w(x) for x in idf.tokens(a["title"]) - have)
+
+    # one page per independent group: the first (newest) of a group is its candidate
+    cands, seen = [], set()
+    for a in todo:
+        if groups[a["id"]] not in seen:
+            seen.add(groups[a["id"]])
+            cands.append(a)
+    return selection.greedy(cands, room, lambda a: 1.0, gain)
+
+
 def select_for_extraction(store: Store, focus: set[int] | None = None, express: set[int] | None = None) -> list[dict]:
     """Which articles are worth an LLM call. A story only one source covers can never be
     published and teaches the perspective model nothing, so it waits until a second
@@ -575,14 +721,7 @@ def select_for_extraction(store: Store, focus: set[int] | None = None, express: 
         todo = [a for a in arts if not a["extracted_at"] and (a["extract_failures"] or 0) < 3
                 and groups[a["id"]] not in seen_groups and a["text_source"] != "summary"]
         todo.sort(key=lambda a: (-(a["published_at"].timestamp()), -(a["text_len"] or 0)))
-        picked = []
-        for a in todo:
-            if len(picked) >= room:
-                break
-            if groups[a["id"]] in seen_groups:
-                continue
-            picked.append(a)
-            seen_groups.add(groups[a["id"]])
+        picked = _diverse(todo, arts, done, groups, room)
         if picked:
             newest = max(a["published_at"] for a in arts)
             # finish stories already being read before starting new ones, then the most covered
@@ -617,6 +756,43 @@ def retract_unreadable(store: Store) -> int:
     return len(ids)
 
 
+TAVILY_BACKOFF_HOURS = 12      # after the first empty answer; doubled for each further one
+TAVILY_MAX_FAILS = 3
+
+
+def _tavily_state(a: dict) -> tuple[int, dt.datetime | None]:
+    t = (a.get("extraction") or {}).get("tavily") if isinstance(a.get("extraction"), dict) else None
+    if isinstance(t, dict):
+        try:
+            return int(t.get("fails") or 0), dt.datetime.fromisoformat(t["at"])
+        except Exception:
+            return int(t.get("fails") or 0), None
+    if (a.get("extract_failures") or 0):                  # an older permanent mark: one failure, dated by the article
+        return 1, a.get("published_at")
+    return 0, None
+
+
+def _tavily_due(a: dict, now: dt.datetime | None = None) -> bool:
+    """Is a blocked page worth another credit? Never tried: yes. Tried and empty: again after a growing wait, at most
+    TAVILY_MAX_FAILS times in all (a page Tavily cannot read for the third time is given up on)."""
+    fails, at = _tavily_state(a)
+    if fails == 0:
+        return True
+    if fails >= TAVILY_MAX_FAILS or at is None:
+        return fails < TAVILY_MAX_FAILS and at is None
+    now = now or utcnow()
+    if at.tzinfo is None and now.tzinfo is not None:
+        at = at.replace(tzinfo=now.tzinfo)
+    return now - at >= dt.timedelta(hours=TAVILY_BACKOFF_HOURS * 2 ** (fails - 1))
+
+
+def _tavily_failed(store: Store, a: dict) -> None:
+    fails, _ = _tavily_state(a)
+    ex = dict(a.get("extraction") or {}) if isinstance(a.get("extraction"), dict) else {}
+    ex["tavily"] = {"fails": fails + 1, "at": utcnow().isoformat()}
+    store.exec(update(articles).where(articles.c.id == a["id"]).values(extraction=ex))
+
+
 def read_blocked_pages(store: Store, tavily, max_pages: int = 5, focus: set[int] | None = None, bank=None) -> int:
     """Pages our fetcher could not read, in stories worth reading, fetched through Tavily: at most
     one per independent source per story, stories closest to publishable first. `bank` (carry.Bank): pages the
@@ -630,7 +806,7 @@ def read_blocked_pages(store: Store, tavily, max_pages: int = 5, focus: set[int]
     from .wire import independence_groups, independent
     rows = store.rows(select(articles.c.id, articles.c.outlet, articles.c.url, articles.c.agency, articles.c.wire_group,
                              articles.c.story_id, articles.c.text_source, articles.c.extracted_at, articles.c.published_at,
-                             articles.c.extract_failures, articles.c.author)
+                             articles.c.extract_failures, articles.c.author, articles.c.extraction)
                       .where(articles.c.story_id.is_not(None), articles.c.published_at >= utcnow() - dt.timedelta(hours=48)))
     from .editions import frozen_ids
     closed = frozen_ids(store)       # no credits on a published story (editions.py)
@@ -647,13 +823,15 @@ def read_blocked_pages(store: Store, tavily, max_pages: int = 5, focus: set[int]
         tried = set()
         for a in sorted(arts, key=lambda a: a["published_at"], reverse=True):
             g = groups[a["id"]]
-            # (extract_failures marks a page Tavily also failed on: not retried)
-            if a["text_source"] == "summary" and g not in readable and g not in tried and not (a["extract_failures"] or 0):
+            if a["text_source"] == "summary" and g not in readable and g not in tried and _tavily_due(a):
                 tried.add(g)
-                wanted.append((len(readable), max(x["published_at"] for x in arts), a))
-    # a story that already has readable sources gains most from one more
-    wanted.sort(key=lambda t: (t[0], t[1]), reverse=True)
-    pick = [a for _, _, a in wanted[:max_pages]]
+                wanted.append((sid, len(readable), a))
+    # S6: budgeted maximum coverage (selection.greedy), one credit a page: the value of a page is how near its story is to
+    # being readable (stories with sources already read first) and falls with every page of that story already chosen
+    from . import selection
+    pick = selection.greedy(wanted, max_pages, lambda t: 1.0,
+                            lambda t, chosen: (1 + t[1]) / (1 + 2 * sum(1 for c in chosen if c[0] == t[0])))
+    pick = [a for _, _, a in pick]
     if not pick:
         return 0
     before = tavily.spent_this_run
@@ -673,8 +851,8 @@ def read_blocked_pages(store: Store, tavily, max_pages: int = 5, focus: set[int]
                 text=text, text_source="tavily", agency=detect_agency(a.get("author"), text),
                 minhash=minhash(text), wire_group=None))
             n += 1
-        elif a["url"] not in tavily.unasked:     # Tavily answered and had nothing: a verdict. Not asked = try again next run
-            store.exec(update(articles).where(articles.c.id == a["id"]).values(extract_failures=1))
+        elif a["url"] not in tavily.unasked:     # Tavily answered and had nothing: not a permanent verdict (S6), tried again later
+            _tavily_failed(store, a)
     log.info("tavily: %d of %d blocked pages read", n, len(pick))
     return n
 
@@ -724,6 +902,7 @@ def extract_pending(store: Store, router: Router, deadline: float, workers: int 
         t.join()
     if readcheck.STATS:
         log.info("readcheck: %s", dict(readcheck.STATS))
+        log.info("reading schema: %s", dict(SCHEMA))
     if COVERAGE_STATS:
         log.info("express coverage: %s", dict(COVERAGE_STATS))
     left = len(pending) - counts["done"] - counts["failed"]

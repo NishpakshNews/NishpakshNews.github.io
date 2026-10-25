@@ -30,7 +30,8 @@ def same_facts(router, pairs: list[tuple[str, str]], firsts: dict | None = None)
     `firsts` records the forward reading for the writing layer's fact groups."""
     if not pairs:
         return []
-    res = nli.same(pairs)
+    from . import aggregate
+    res = aggregate.gate(pairs, nli.same(pairs))        # S12: the judges together, only ever more cautious
     if firsts is not None:
         firsts.update({i: ok for i, ok in enumerate(res) if ok is not None})
     return res

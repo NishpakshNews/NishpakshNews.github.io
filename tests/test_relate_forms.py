@@ -36,3 +36,27 @@ def test_one_result_however_it_is_worded():
     assert R.relate("India beat Pakistan by 19 runs in the final.", "On Saturday, India defeated Pakistan by 19 runs in the final.") == "same"
     assert R.relate("India beat Pakistan by 19 runs in the final.", "India beat Pakistan by 25 runs in the final.") != "same"
     assert R.relate("India beat Pakistan in the hockey semifinal.", "India beat Pakistan in the cricket final.") not in ("same", "a_covers_b", "b_covers_a")
+
+
+def test_blocking_keeps_a_story_of_any_size_close_pairs():
+    from nishpaksh import relate
+    texts = {i: f"Topic number {i} was discussed by the committee in district {i} on day {i}" for i in range(200)}
+    texts[500] = "Police arrested 17 men near the Kalka bridge"
+    texts[501] = "Police arrested 17 men near the Kalka bridge on Sunday"
+    prof = {i: relate.Profile(t) for i, t in texts.items()}
+    cand = relate.blocks(texts, prof)
+    assert (500, 501) in cand
+    assert len(cand) < 202 * 201 // 2                       # far fewer pairs than all of them
+    same, covered, ask, ask_cover = relate.group(texts)
+    assert (500, 501) in same or covered or ask or ask_cover
+
+
+def test_time_is_a_soft_level_for_identical_words():
+    from nishpaksh.relate import relate
+    t = "Five people died in the stampede at the Bharat temple"
+    sat = {"start": "2026-10-17", "end": "2026-10-17", "precision": "day"}
+    sun = {"start": "2026-10-18", "end": "2026-10-18", "precision": "day"}
+    mon = {"start": "2026-10-24", "end": "2026-10-24", "precision": "day"}
+    assert relate(t, t, sat, sun) == "ask"            # one day apart, same words: the question decides, never code
+    assert relate(t, t, sat, mon) == "different"       # a week apart: another event
+    assert relate(t, t, sat, sat) == "same"

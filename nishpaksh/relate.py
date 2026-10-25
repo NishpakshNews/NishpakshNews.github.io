@@ -24,6 +24,8 @@ reported, and could turn them green): it is kept, marked covered, and not writte
 """
 from __future__ import annotations
 
+import datetime as dt
+
 import re
 
 from . import figures
@@ -97,8 +99,7 @@ ASK_WORDS = 0.4         # below this, two lines with the same numbers and names 
 
 
 # words that can turn the detailed line into a different event ("arrested him in another case")
-CONTRAST = re.compile(r"(?i)\b(another|other|earlier|previous|previously|former|formerly|last year|last month|"
-                      r"separate|different|second|again|also|before|after)\b")
+# "another event" cues: contrast.py (a closed-class seed plus the words the newsroom's own answers show to tell pairs apart)
 
 
 _DATE_WORDS = {_stem(w) for w in """monday tuesday wednesday thursday friday saturday sunday january february
@@ -107,6 +108,20 @@ nov dec""".split()}
 
 
 _MONTHS = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?"
+
+
+def _ner_names(text: str) -> set[str]:
+    try:
+        from . import nlp
+        out = set()
+        for e in nlp.ents(text):
+            if e.label == nlp.PERSON or e.label in nlp.NOT_PERSON_LABELS:
+                for w in re.findall(r"[A-Za-z][\w'-]*", e.text):
+                    if len(w) > 1:
+                        out.add(_stem(w.lower()))
+        return out
+    except Exception:  # noqa: BLE001
+        return set()
 
 
 class Profile:
@@ -136,6 +151,9 @@ class Profile:
             names.add(_stem(toks[0].lower()))
         # days and months are dates, compared as dates (times), not names: "on Thursday" kept two
         # tellings of one call apart (Oct 8 2026, story 14231)
+        # S11: the names a named-entity model finds join the capitalisation rule's (a name that opens the sentence, or that
+        # Hindi-sourced text writes in lower case); a missing model adds nothing
+        names |= _ner_names(t)
         self.names = frozenset(names - _DATE_WORDS - _CURRENCY)
         tp = t
         self.roots = frozenset(SYNONYM.get(r, r) for r in _roots(tp)
@@ -144,7 +162,8 @@ class Profile:
         from .frames import date_of
         self.date = date_of(t)
         self.years = frozenset(re.findall(r"\b(?:19|20)\d\d\b", t))
-        self.contrast = bool(CONTRAST.search(t))
+        from . import contrast as _c
+        self.contrast = _c.has(t)
 
 
 # the currency is said by the number's own word: "Rs 375" = "375 rupees" = "₹375" (Oct 16 2026 audit, story 26318)
@@ -304,9 +323,41 @@ def _result_relation(a: str, b: str, time_a, time_b, pa: "Profile", pb: "Profile
     return None
 
 
+def time_gap_days(x: dict | None, y: dict | None) -> int | None:
+    """S9: the whole days between two statements' time ranges (0 = they overlap or touch, None = not both dated)."""
+    try:
+        if not x or not y or not (x.get("start") and y.get("start")):
+            return None
+        d = lambda t: dt.date.fromisoformat(str(t)[:10])  # noqa: E731
+        xs, xe = d(x["start"]), d(x.get("end") or x["start"])
+        ys, ye = d(y["start"]), d(y.get("end") or y["start"])
+        return max((ys - xe).days, (xs - ye).days, 0)
+    except (TypeError, ValueError):
+        return None
+
+
+ADJACENT_DAYS = 1       # two lines whose days are this close and whose words are the same are ASKED about, not vetoed
+
+
 def _relate(a: str, b: str, time_a, time_b, pa: Profile, pb: Profile) -> str:
-    if pa.neg != pb.neg or _times_apart(time_a, time_b):
+    if pa.neg != pb.neg:
         return "different"
+    if not _times_apart(time_a, time_b):
+        return _relate_core(a, b, pa, pb)
+    # S9: time is a soft level, not a veto over identical text. Days that are one apart for the same words (a stampede
+    # "on Saturday" in one report, "on Sunday" in another) go to the twice-asked question, never to a merge by code;
+    # anything further apart, or worded differently, is a different event, as before.
+    gap = time_gap_days(time_a, time_b)
+    shared = pa.names & pb.names
+    alike = pa.nums == pb.nums and pa.names == pb.names and (
+        pa.norm == pb.norm or _share(pa.roots - shared, pb.roots - shared) >= SAME_WORDS)
+    if gap is None or gap > ADJACENT_DAYS or not alike:
+        return "different"
+    r = _relate_core(a, b, pa, pb)
+    return {"same": "ask", "a_covers_b": "ask_a_covers_b", "b_covers_a": "ask_b_covers_a"}.get(r, r)
+
+
+def _relate_core(a: str, b: str, pa: Profile, pb: Profile) -> str:
     # dates in the words: two lines with different dates are never one fact (arrested in 2019 / 2024)
     if pa.years and pb.years and not pa.years & pb.years:
         return "different"
@@ -346,6 +397,41 @@ def _relate(a: str, b: str, time_a, time_b, pa: Profile, pb: Profile) -> str:
     return "different"
 
 
+BLOCK_MIN = 120          # a story with fewer statements than this is compared exhaustively
+BLOCK_K = 12             # nearest neighbours by sentence embedding
+RARE_NAME = 6            # a name or figure shared by at most this many statements links them
+
+
+def blocks(texts: dict[int, str], prof: dict) -> set[tuple[int, int]]:
+    """S7, BLOCKING: the pairs worth comparing, instead of every pair. A pair is a candidate when either is among the other's
+    BLOCK_K nearest by multilingual sentence embedding (TF-IDF when no model is loaded), or they share a figure or a
+    name few statements have. All pairs when the story is small. Everything outside the blocks was never close to anything
+    the comparison could call the same: it is skipped, not judged different."""
+    ids = sorted(texts)
+    if len(ids) <= BLOCK_MIN:
+        return {(a, b) for k, a in enumerate(ids) for b in ids[k + 1:]}
+    out: set[tuple[int, int]] = set()
+    try:
+        from . import embed
+        v, _how = embed.vectors([texts[i] for i in ids])
+        sim = v @ v.T
+        for r, a in enumerate(ids):
+            sim[r, r] = -1.0
+            for c in sim[r].argsort()[::-1][:BLOCK_K]:
+                b = ids[int(c)]
+                out.add((a, b) if a < b else (b, a))
+    except Exception:
+        pass
+    index: dict = {}
+    for i in ids:
+        for key in {("n", x) for x in prof[i].nums} | {("w", x) for x in prof[i].names}:
+            index.setdefault(key, []).append(i)
+    for members in index.values():
+        if len(members) <= RARE_NAME:
+            out |= {(a, b) for k, a in enumerate(members) for b in members[k + 1:]}
+    return out
+
+
 def group(texts: dict[int, str], times: dict[int, dict | None] | None = None, asked: dict | None = None
           ) -> tuple[list[tuple[int, int]], dict[int, int], list[tuple[int, int]], list[tuple[int, int]]]:
     """For a story's statements {id: text}: (pairs that are the same, {covered id: covering id}, pairs
@@ -354,8 +440,11 @@ def group(texts: dict[int, str], times: dict[int, dict | None] | None = None, as
     prof = {i: Profile(t) for i, t in texts.items()}
     ids = sorted(texts)
     same, covered, ask, ask_cover = [], {}, [], []
+    cand = blocks(texts, prof)
     for k, a in enumerate(ids):
         for b in ids[k + 1:]:
+            if (a, b) not in cand:
+                continue
             r = relate(texts[a], texts[b], times.get(a), times.get(b), prof[a], prof[b])
             if r == "same":
                 same.append((a, b))

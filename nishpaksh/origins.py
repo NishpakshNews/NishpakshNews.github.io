@@ -272,6 +272,14 @@ def compute_origins(store: Store, router: Router | None, story_id: int) -> dict[
     return out
 
 
+def _hedged_ids(store: Store, ids: list[int]) -> set[int]:
+    out = set()
+    for r in store.rows(select(claims.c.canonical_id, claims.c.rel).where(claims.c.canonical_id.in_(ids))):
+        if (r["rel"] or {}).get("certainty") in ("possible", "hypothetical"):
+            out.add(r["canonical_id"])
+    return out
+
+
 def classify_checkable(store: Store, router: Router | None, story_id: int, only: set[int] | None = None) -> None:
     """Fact vs characterisation, once per statement. Unclassified statements are treated as
     characterisations (never green), so a missing answer can only make the page more cautious.
@@ -283,7 +291,10 @@ def classify_checkable(store: Store, router: Router | None, story_id: int, only:
     from . import checkworthy
     for i in range(0, len(todo), 50):
         chunk = todo[i:i + 50]
+        hedged = _hedged_ids(store, [c["id"] for c in chunk])
         for c, fact in zip(chunk, checkworthy.classify([c["text"] for c in chunk])):
+            if c["id"] in hedged:
+                fact = False                    # S1: a reading marked possible / hypothetical is never a fact to establish
             if fact is not None:                # None = could not tell: stays unclassified, i.e. a characterisation
                 store.exec(update(canonical).where(canonical.c.id == c["id"]).values(checkable=fact))
 

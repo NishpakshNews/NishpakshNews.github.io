@@ -99,6 +99,12 @@ def load(store) -> bool:
     except Exception:  # noqa: BLE001
         row = None
     set_model(row["data"] if row and row.get("data") else None)
+    try:
+        from . import contrast
+        c = store.one(select(model_state.c.data).where(model_state.c.name == contrast.NAME))
+        contrast.set_learned((c or {}).get("data") or [])
+    except Exception:  # noqa: BLE001
+        pass
     return _model is not None
 
 
@@ -111,7 +117,17 @@ def refresh(store) -> dict | None:
     if last and last["updated_at"] and now - last["updated_at"] < dt.timedelta(hours=REFRESH_HOURS):
         return None
     store.exec(delete(pair_labels).where(pair_labels.c.created_at < now - dt.timedelta(days=KEEP_DAYS)))
-    m = fit(store.rows(select(pair_labels.c.a, pair_labels.c.b, pair_labels.c.label)))
+    kept = store.rows(select(pair_labels.c.a, pair_labels.c.b, pair_labels.c.label))
+    m = fit(kept)
+    try:
+        from . import contrast
+        words = contrast.learn(kept)
+        with store.route(insert(model_state)).engine.begin() as c:
+            c.execute(delete(model_state).where(model_state.c.name == contrast.NAME))
+            c.execute(insert(model_state).values(name=contrast.NAME, data=words, updated_at=now))
+        contrast.set_learned(words)
+    except Exception as e:  # noqa: BLE001
+        log.info("contrast: not learned (%s)", str(e)[:80])
     with store.route(insert(model_state)).engine.begin() as c:
         c.execute(delete(model_state).where(model_state.c.name == NAME))
         c.execute(insert(model_state).values(name=NAME, data=m, updated_at=now))
