@@ -59,8 +59,23 @@ def fake_nli(pairs):
     (or the two share half their words with the same figures); the same wording with other figures or a negation
     flipped contradicts."""
     import re
+    from nishpaksh import checkworthy
     out = []
     for a, b in pairs:
+        if b in (checkworthy.FACT, checkworthy.OPINION):       # check-worthiness: opinion words mark a characterisation
+            op = bool(re.search(r"conspiracy|negligen|blame", a, re.I))
+            out.append((0.9, 0.05, 0.05) if (b == checkworthy.FACT) != op else (0.05, 0.9, 0.05))
+            continue
+        from nishpaksh import events
+        if b in (events.DEATH, events.DECISIVE, events.ROUTINE):   # decisive acts: scripted by a few words
+            hit = {events.DEATH: r"\b(died|dead|killed|deaths?)\b",
+                   events.DECISIVE: r"\b(arrest\w*|ordered|inaugurat\w*|announced|signed|resign\w*)\b",
+                   events.ROUTINE: r"\b(met|heard|said that nothing)\b"}[b]
+            out.append((0.9, 0.05, 0.05) if re.search(hit, a, re.I) else (0.1, 0.8, 0.1))
+            continue
+        if "passed lab tests" in a and "substandard" in b:      # the scripted court filing contradicts the claim
+            out.append((0.03, 0.07, 0.90))
+            continue
         wa = {w for w in re.findall(r"[a-z]+", a.lower()) if len(w) > 2}
         wb = {w for w in re.findall(r"[a-z]+", b.lower()) if len(w) > 2}
         na, nb = set(re.findall(r"\d[\d,.]*", a)), set(re.findall(r"\d[\d,.]*", b))
@@ -112,7 +127,7 @@ def fake_chunker(text):
     import re
     return [(m.start(), m.end(), m.group(0), m.group(0).split()[-1].lower().rstrip("s"),
              "NNS" if m.group(0).endswith("s") else "NN", "")
-            for m in re.finditer(r"(?<![\w'’-])(?:[Tt]he|[Tt]his|[Tt]hat|[Tt]hese|[Tt]hose|[Ss]aid|[Ss]uch)(?:\s+(?!(?:is|was|are|were|has|have|had|said|says|will|would|could|may|might|that|and|of|in|on|at|to|for|by|with)\b)[a-z][a-z-]*){1,3}", text)]
+            for m in re.finditer(r"(?<![\w'’-])(?:[Tt]he|[Tt]his|[Tt]hat|[Tt]hese|[Tt]hose|[Ss]aid|[Ss]uch)(?:\s+(?!(?:is|was|are|were|has|have|had|said|says|will|would|could|may|might|that|and|of|in|on|at|to|for|by|with)\b)(?![a-z-]+ed\b)[a-z][a-z-]*){1,2}", text)]
 
 
 _PLURAL_HEADS = {"was": ("be", "VBD"), "is": ("be", "VBZ"), "has": ("have", "VBZ"), "says": ("say", "VBZ"),

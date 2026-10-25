@@ -106,6 +106,13 @@ def test_slot_waits_for_token_window():
     assert s.wait_time(20000, now) is None                           # can never fit
 
 
+def _fitted(camp1, camp2, signal=True):
+    """The daily test's report: two camps whose position intervals are far apart (positions.groups reads this)."""
+    pos = [dict(unit=o, theta=-1.0 + 0.05 * i, lo=-1.2, hi=-0.8) for i, o in enumerate(camp1)]
+    pos += [dict(unit=o, theta=1.0 + 0.05 * i, lo=0.8, hi=1.2) for i, o in enumerate(camp2)]
+    return {"signal": signal, "positions": pos}
+
+
 def test_global_clusters_emerge_from_roll_call(store, monkeypatch):
     import dataclasses
     import nishpaksh.perspectives as P
@@ -121,6 +128,8 @@ def test_global_clusters_emerge_from_roll_call(store, monkeypatch):
                 rows.append(dict(story_id=sid, a=a, b=b, value=0.9 if same else -0.6))
     with store.engine.begin() as c:
         c.execute(insert(story_pairs), rows)
+    from nishpaksh.db import diagnostics
+    store.exec(insert(diagnostics).values(kind="positions", report=_fitted(camp1, camp2)))
     assert recompute_global(store) == 2
     cl = {r["source"]: r["cluster"] for r in store.rows(select(source_clusters))}
     assert len({cl[s] for s in camp1}) == 1 and len({cl[s] for s in camp2}) == 1
@@ -1328,7 +1337,7 @@ def test_no_perspectives_until_the_positions_test_finds_a_signal(store):
     assert recompute_global(store) == 0                       # no test run yet
     store.exec(insert(diagnostics).values(kind="positions", report={"signal": False}))
     assert recompute_global(store) == 0
-    store.exec(insert(diagnostics).values(kind="positions", report={"signal": True}))
+    store.exec(insert(diagnostics).values(kind="positions", report=_fitted(camp1, camp2)))
     assert recompute_global(store) == 2
 
 
@@ -2487,7 +2496,9 @@ def test_feed_writes_the_reading_site_files(store, tmp_path):
     nar = page["payload_en"]["narrative"]
     assert nar["paragraphs"] == row["payload_en"]["narrative"]["paragraphs"] and nar["sources"]
     # "who": the speaker of each "What they say" card (feed._speakers, Oct 9 2026), English page only
-    assert set(page["payload_en"]["narrative"]) == {"paragraphs", "section_keys", "sources", "who"}
+    keys = row["payload_en"]["narrative"]["section_keys"]       # a card per speaker only where the article has "What they say"
+    expect = {"paragraphs", "section_keys", "sources"} | ({"who"} if {"say", "words"} & set(keys) else set())
+    assert set(page["payload_en"]["narrative"]) == expect
     assert page["headline_hi"] == row["headline_hi"]
     # the next export reads nothing it already has (egress): unchanged articles come from the manifest
     reads = []
@@ -3013,7 +3024,11 @@ def test_separate_is_written_only_when_the_statements_say_it():
 def test_one_outlet_line_never_leads_over_a_fact_more_outlets_tell():
     """Story 13058 (Oct 9 2026): "Nana Patekar ... won millions of hearts" (one outlet, "won" read as an act)
     led a story whose inauguration three outlets told."""
+    from nishpaksh import events, nli
     from nishpaksh.news import pick_news
+    events._act_cache.clear()
+    nli.set_backend(lambda pairs: [(0.9, 0.05, 0.05) if h == events.DECISIVE and "inaugurated" in t
+                                   else (0.1, 0.8, 0.1) for t, h in pairs])      # meaning model stand-in
     src = lambda *o: [{"outlet": x, "url": x} for x in o]
     items = [
         {"id": 1, "kind": "event", "text": "Nana Patekar was an extraordinary artist who won millions of hearts.",
@@ -3275,7 +3290,16 @@ def test_validator_refuses_a_wrong_or_doubled_speaker():
 
 def test_one_speakers_argument_is_told_together():
     """Story 16197 (Oct 9 2026): the Centre's two lines sat in two paragraphs with other speakers between."""
+    from nishpaksh import bodies
     from nishpaksh.narrative import group_speakers
+    bodies.reset()
+    # Wikidata says the Centre and the Central government are one body (scripted: no network in tests)
+    gov = {"id": "Q7188", "label": "Government of India", "aliases": ["Centre", "Central government"],
+           "countries": ["Q668"], "gov": True, "court": False}
+    bodies.set_backend(lambda n, c: {"found": True, "candidates": [gov]} if bodies.norm(n) in ("centre", "central government")
+                       else {"found": False})
+    for name in ("Centre", "Central government"):
+        bodies.resolve(name)
     by_id = {1: {"speaker": "Centre"}, 2: {"speaker": "Centre"}, 3: {"speaker": "petitioner"},
              4: {"speaker": "Central government"}, 5: {"speaker": "Kapil Sibal"}, 6: {}}
     for k, v in by_id.items():
@@ -3286,12 +3310,24 @@ def test_one_speakers_argument_is_told_together():
     assert [[x["ids"][0] for x in p] for p in out] == [[5], [1, 2], [3, 4, 6]] or \
         [[x["ids"][0] for x in p] for p in out] == [[5], [1, 4, 6, 2], [3]]
     assert keys == ["say"] * len(out)
+    bodies.set_backend(None)
+    bodies.reset()
 
 
 def test_a_bodys_run_of_lines_reads_like_a_newspaper():
     """Story 16708 (Oct 9 2026): "The US Department of State said that ..." three times in a row."""
     from nishpaksh.style import Refs, vary_attribution
+    from nishpaksh import bodies
     from nishpaksh.voice import speaker_key
+    # the premise of the story: the department, "US officials" and "the United States government" speak as one
+    # body (scripted; Wikidata alone would not join a department to "officials")
+    bodies.reset()
+    us = {"id": "Q30gov", "label": "Federal government of the United States", "aliases": [], "countries": ["Q30"],
+          "gov": True, "court": False}
+    names = ("us department of state", "us officials", "united states government")
+    bodies.set_backend(lambda n, c: {"found": True, "candidates": [us]} if bodies.norm(n) in names else {"found": False})
+    for n in ("US Department of State", "US officials", "United States government"):
+        bodies.resolve(n)
     assert speaker_key("US Department of State") == speaker_key("US officials") == speaker_key("United States government")
     sp = {1: "US Department of State", 2: "US Department of State", 3: "US Department of State",
           4: "US Department of State", 5: "US officials", 6: "US officials", 7: "Union Minister Jyotiraditya Scindia",
@@ -3307,11 +3343,13 @@ def test_a_bodys_run_of_lines_reads_like_a_newspaper():
     vary_attribution(P, Refs({}, {}, {}), lambda s: [sp[i] for i in s["ids"]])
     t = [s["text"] for p in P for s in p]
     assert t[0].startswith("The US Department of State said")
-    assert t[1].endswith(", the department said.")
-    assert t[2].startswith("The department identified")
+    assert t[1].endswith(", the government said.")
+    assert t[2].startswith("The government identified")
     assert t[3].endswith(", it said.")
     assert t[5].endswith(", they said.")
     assert "the union" not in t[7].lower() and "it said" not in t[7]
+    bodies.set_backend(None)
+    bodies.reset()
 
 
 # ------------------------------------------------------------------ grammar by status (phase 2, Oct 10 2026)

@@ -151,7 +151,8 @@ class Refs:
     def __init__(self, names: dict[str, str], pronouns: dict[str, str], roles: dict[str, str]):
         self.by_surname = {short: full for full, short in names.items()}
         self.pron, self.roles = pronouns, roles
-        self.used: dict[str, int] = {}
+        self.last_form: dict[str, str] = {}
+        self.last_person: str | None = None
 
     def person(self, text: str) -> str | None:
         """The last person a text names (full name or surname)."""
@@ -162,12 +163,20 @@ class Refs:
                     best, at = full, m.start()
         return best
 
-    def next(self, full: str) -> str:
-        options = ([self.pron[full]] if full in self.pron else []) + ([self.roles[full]] if full in self.roles else [])
-        options.append(full.split()[-1])
-        n = self.used.get(full, 0)
-        self.used[full] = n + 1
-        return options[n % len(options)]
+    def next(self, full: str, topic: bool = True) -> str:
+        """The form for the next mention of a person, chosen by centering (Grosz, Joshi & Weinstein) and the
+        incremental algorithm (Dale & Reiter), not rotated: a person who is still the topic (mentioned in the
+        sentence before) is a pronoun when the outlets' evidence allows one; otherwise the role when it is theirs
+        alone; otherwise the surname. The form just used for this person is not used twice in a row."""
+        short = full.split()[-1]
+        topic = topic or self.last_person == full           # the caller is continuing this person's run: still the topic
+        ranked = ([self.pron[full]] if topic and full in self.pron else []) + \
+                 ([self.roles[full]] if full in self.roles else []) + [short]
+        prev = self.last_form.get(full)
+        choice = next((o for o in ranked if o != prev), ranked[-1])
+        self.last_form[full] = choice
+        self.last_person = full
+        return choice
 
     def allowed(self, full: str | None, pronoun: str) -> bool:
         return bool(full) and self.pron.get(full) == pronoun.lower()

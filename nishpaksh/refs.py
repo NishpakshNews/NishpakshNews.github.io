@@ -319,7 +319,14 @@ def ask_model(router, open_refs: list[tuple[dict, dict]], source: str, max_chars
     [(item resolution, open entry)]. An answer is kept only through `usable_gloss`: its words must stand in the
     source. Returns how many were resolved. A failed call resolves nothing (the references stay open and are
     counted)."""
-    todo = [(res, o) for res, o in open_refs if o.get("kind") == "definite"][:8]
+    text = _norm(source)
+    # a phrase is asked about only when the source writes its head noun right next to a capitalised word (a name the
+    # code's patterns may have missed): "the collapse" with no name beside "collapse" anywhere is not worth a call
+    # (with noun chunks nearly every "the X" is a candidate; one call per article was too much of the free quota)
+    def named(head: str) -> bool:
+        h = re.escape((head or "")[:max(4, len(head or "") - 1)])
+        return bool(re.search(rf"(?i:\b{h}\w*)\s+[A-Z]|[A-Z][\w-]*\s+(?i:{h}\w*\b)", text))
+    todo = [(res, o) for res, o in open_refs if o.get("kind") == "definite" and named(o.get("head") or "")][:8]
     if not todo:
         return 0
     prompt = (ASK_PROMPT_HI if is_hindi(source) else ASK_PROMPT).format(article=_norm(source)[:max_chars],
