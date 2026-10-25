@@ -215,7 +215,7 @@ def build(items: list[dict], sec: dict[int, str]) -> list[Para]:
     """The paragraph plan for these statements (`sec`: statement id -> section, from narrative.assign_sections),
     in page order."""
     global _W
-    from . import idf, narrative
+    from . import idf, narrative, order
     words = _words_fn()
     _W = idf.Weights([set(words(i)) for i in items])
     plan: list[Para] = []
@@ -230,7 +230,7 @@ def build(items: list[dict], sec: dict[int, str]) -> list[Para]:
         elif rule.order == "speaker":
             made = _say(mine, words, key)
         else:
-            ordered = sorted(mine, key=_start) if rule.order == "time" else list(mine)
+            ordered = order.chronological(mine) if rule.order == "time" else list(mine)
             if rule.group == "event":
                 labels: dict = {}
                 for i in ordered:
