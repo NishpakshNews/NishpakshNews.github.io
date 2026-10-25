@@ -655,7 +655,7 @@ def read_blocked_pages(store: Store, tavily, max_pages: int = 5, focus: set[int]
                 text=text, text_source="tavily", agency=detect_agency(a.get("author"), text),
                 minhash=minhash(text), wire_group=None))
             n += 1
-        else:
+        elif a["url"] not in tavily.unasked:     # Tavily answered and had nothing: a verdict. Not asked = try again next run
             store.exec(update(articles).where(articles.c.id == a["id"]).values(extract_failures=1))
     log.info("tavily: %d of %d blocked pages read", n, len(pick))
     return n

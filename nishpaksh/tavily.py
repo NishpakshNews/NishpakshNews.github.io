@@ -20,6 +20,7 @@ import threading
 
 import requests
 
+from . import reliable
 from .config import tavily_api_key
 
 log = logging.getLogger(__name__)
@@ -55,6 +56,7 @@ class Tavily:
         self.http = session or requests
         self._lock = threading.Lock()
         self.spent_this_run = 0
+        self.unasked: set[str] = set()      # urls Tavily could not be asked about (error, budget): not a verdict on the page
 
     @property
     def enabled(self) -> bool:
@@ -100,7 +102,7 @@ class Tavily:
         r = self.http.post(f"https://api.tavily.com/{path}", json=body, timeout=90,
                            headers={"Authorization": f"Bearer {self.key}"})
         if r.status_code != 200:
-            raise RuntimeError(f"tavily {path} HTTP {r.status_code}: {r.text[:200]}")
+            raise reliable.HttpFailure(r.status_code, r.text)
         return r.json()
 
     # calls -------------------------------------------------------------------------------
@@ -115,13 +117,17 @@ class Tavily:
             booked = math.ceil(len(chunk) / 5)
             if not self._book(booked):
                 log.info("tavily: extract budget for today is spent; %d pages left unread", len(urls) - i)
+                self.unasked.update(urls[i:])
                 break
-            try:
-                data = self._post("extract", {"urls": chunk, "extract_depth": "basic", "format": "text"})
-            except Exception as e:  # noqa: BLE001
-                log.warning("tavily extract failed: %s", str(e)[:200])
+            res = reliable.call("tavily", lambda: self._post("extract", {"urls": chunk, "extract_depth": "basic",
+                                                                         "format": "text"}))
+            if not res.ok:
+                log.warning("tavily extract failed (%s): %s", res.kind, res.error)
                 self._refund(booked)
+                if res.could_not_ask:                  # not the pages' fault: the caller must not mark them failed
+                    self.unasked.update(chunk)
                 continue
+            data = res.value
             by_norm = {_norm_url(u): u for u in chunk}
             for r in data.get("results") or []:
                 text = clean_page_text(r.get("raw_content") or "")
@@ -142,11 +148,11 @@ class Tavily:
                 "start_date": (self._today() - dt.timedelta(days=days)).isoformat()}
         if domains:
             body["include_domains"] = domains
-        try:
-            data = self._post("search", body)
-        except Exception as e:  # noqa: BLE001
-            log.warning("tavily search failed: %s", str(e)[:200])
+        res = reliable.call("tavily", lambda: self._post("search", body))
+        if not res.ok:
+            log.warning("tavily search failed (%s): %s", res.kind, res.error)
             self._refund(1)
             return []
+        data = res.value
         return [{"url": r.get("url"), "title": r.get("title") or "", "published_date": r.get("published_date")}
                 for r in data.get("results") or [] if r.get("url")]

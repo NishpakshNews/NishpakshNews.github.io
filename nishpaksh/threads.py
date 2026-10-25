@@ -37,18 +37,18 @@ told again by other outlets, not a later step).
 
 Reply with JSON only: {{"developments": [2], "same": [3]}}  (numbers of earlier stories; [] if none)"""
 
-STOP = set("""the a an of in on at to for from by with and or after over amid as is are was were be has have had
-its his her their this that new says said police govt government india indian state minister chief
-reports report day two three four five protest case court""".split())
+MIN_COSINE = 0.2      # TF-IDF cosine a summary needs to be asked about at all
 
 
 def _words(s: str) -> set[str]:
-    return {w for w in re.findall(r"[a-z0-9]{3,}", (s or "").lower()) if w not in STOP}
+    from .idf import tokens
+    return tokens(s)
 
 
 def _names(s: str) -> set[str]:
     """Capitalised words and acronyms: the specific names a real link must share."""
-    return {w.lower() for w in re.findall(r"\b(?:[A-Z][a-z]{2,}|[A-Z]{2,})\b", s or "") if w.lower() not in STOP}
+    from .idf import ENGLISH_STOP_WORDS
+    return {w.lower() for w in re.findall(r"\b(?:[A-Z][a-z]{2,}|[A-Z]{2,})\b", s or "") if w.lower() not in ENGLISH_STOP_WORDS}
 
 
 def _summary(row: dict) -> str:
@@ -105,21 +105,12 @@ def find_parents(store: Store, router: Router | None, story_id: int, headline: s
                          "updated_at": None})
             created.setdefault(x["story_id"], _when(x.get("written_at")))
     daughters = {r["child_id"] for r in store.rows(select(story_links.c.child_id).where(story_links.c.parent_id == story_id))}
-    mine = _words(headline + " " + summary)
-    my_names = _names(headline + " " + summary)
-    cands = []
-    for r in rows:
-        # an article already published came first, whichever story was opened first; only a story
-        # that is itself a daughter of this one cannot be its parent
-        if r["story_id"] in daughters:
-            continue
-        text = _summary(r)
-        overlap = len(mine & _words(text))
-        shared = my_names & _names(text)
-        if overlap >= 3 and shared:
-            cands.append((overlap, r["story_id"], text, shared))
-    cands.sort(reverse=True)
-    cands = cands[:max_candidates]
+    # candidate retrieval (B34): TF-IDF cosine over the summaries of the other stories, not a stop list plus an overlap count
+    from . import idf
+    pool = [r for r in rows if r["story_id"] not in daughters]     # only a daughter of this story cannot be its parent
+    texts = [_summary(r) for r in pool]
+    ranked = idf.rank(f"{headline}. {summary}", texts, k=max_candidates)
+    cands = [(round(sim * 100), pool[i]["story_id"], texts[i], set()) for i, sim in ranked if sim >= MIN_COSINE]
     found: list[int] = []
     if cands:
         earlier = "\n".join(f"{k + 1}. {t}" for k, (_, _, t, _) in enumerate(cands))

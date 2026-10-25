@@ -109,17 +109,15 @@ def _units(ordered: list[dict]) -> list[list[dict]]:
     return sorted(units.values(), key=lambda u: pos[u[0]["id"]])
 
 
-# words every Indian story has: sharing only these does not make two statements one subject (\"Delhi Police\" is in a
-# complaint and in a protest)
-COMMON = {"delhi", "police", "government", "minister", "court", "india", "indian", "party", "leader", "leaders",
-          "state", "election", "commission", "chief", "union", "supreme", "monday", "tuesday", "wednesday",
-          "thursday", "friday", "saturday", "sunday", "october", "september", "november", "official", "officials"}
+_W = None   # idf.Weights of the statements being planned (set by build); None = every word weighs 1
 
 
 def _related(a: set, b: set) -> bool:
-    """Do two statements share a subject? A shared name or key word counts 1, a shared everyday word a third."""
-    shared = a & b
-    return sum(1 / 3 if w in COMMON else 1 for w in shared) >= 1
+    """Do two statements share a subject? Shared weight counts: a name or rare word is worth 1, a word nearly every
+    statement of the story has (learned from the statements, idf.py) close to nothing."""
+    if _W is None:
+        return bool(a & b)
+    return _W.related(a, b)
 
 
 def _lean(u: list[dict]) -> bool:
@@ -216,8 +214,10 @@ def _words_fn():
 def build(items: list[dict], sec: dict[int, str]) -> list[Para]:
     """The paragraph plan for these statements (`sec`: statement id -> section, from narrative.assign_sections),
     in page order."""
-    from . import narrative
+    global _W
+    from . import idf, narrative
     words = _words_fn()
+    _W = idf.Weights([set(words(i)) for i in items])
     plan: list[Para] = []
     for key in narrative._keys():
         mine = [i for i in items if sec.get(i["id"]) == key]

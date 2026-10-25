@@ -3515,7 +3515,8 @@ def test_a_response_and_what_it_answers_are_one_unit_whatever_the_speakers():
 def test_a_lone_statement_is_not_left_as_its_own_paragraph():
     """Story 13792: seven one-sentence paragraphs in "Explained". A paragraph of one statement takes the next."""
     from nishpaksh import plan
-    items = [dict(_item(n, f"Term{n} means something about topic{n}"), role="explanation") for n in range(1, 8)]
+    # each statement shares a rare word with the next one (a word in every statement would carry no subject: idf.py)
+    items = [dict(_item(n, f"Term{n} means link{n} and link{n + 1}"), role="explanation") for n in range(1, 8)]
     pl = plan.build(items, {n: "explained" for n in range(1, 8)})
     assert all(len(p.ids) >= 2 for p in pl) and sum(len(p.ids) for p in pl) == 7
 

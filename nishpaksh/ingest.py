@@ -13,6 +13,7 @@ import feedparser
 import requests
 import trafilatura
 
+from . import reliable
 from .config import SETTINGS, load_yaml
 from .db import Store, articles, feeds, insert, select, update, utcnow
 from .wire import minhash
@@ -29,11 +30,36 @@ BOT_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; NishpakshBot/0.2; +https:
                "Accept": "application/rss+xml,application/xml;q=0.9,*/*;q=0.8"}
 
 
+def page_text(r: requests.Response) -> str:
+    """The page as text (B10). requests decodes a page with no charset in its header as ISO-8859-1, which turned UTF-8
+    Hindi into mojibake; trafilatura's decoder reads the page's own declaration or detects the charset."""
+    if "charset" in (r.headers.get("content-type") or "").lower():
+        return r.text
+    try:
+        from trafilatura.utils import decode_file
+        return decode_file(r.content) or r.text
+    except Exception:  # noqa: BLE001
+        return r.text
+
+
+def _fetch(url: str, headers: dict, timeout: int) -> requests.Response:
+    """One GET with the reliable layer: a timeout or a 5xx / 429 is retried with backoff, per host circuit breaker."""
+    def once():
+        r = requests.get(url, headers=headers, timeout=timeout)
+        if r.status_code in reliable.RETRY_STATUS and r.status_code != 429:
+            raise reliable.HttpFailure(r.status_code)
+        return r
+    out = reliable.call("fetch:" + (urlsplit(url).hostname or ""), once, attempts=2, base=0.4)
+    if out.ok:
+        return out.value
+    raise requests.RequestException(out.error or out.kind)
+
+
 def _get(url: str, timeout: int) -> requests.Response:
-    r = requests.get(url, headers=HEADERS, timeout=timeout)
+    r = _fetch(url, HEADERS, timeout)
     if r.status_code in (401, 403, 429) or (r.ok and r.text.lstrip()[:15].lower().startswith(("<!doctype html", "<html"))
                                             and url.endswith((".xml", "/feed/", "/feed", "/rss", ".rss", ".cms"))):
-        r2 = requests.get(url, headers=BOT_HEADERS, timeout=timeout)
+        r2 = _fetch(url, BOT_HEADERS, timeout)
         if r2.ok:
             return r2
     return r
@@ -185,16 +211,17 @@ def fetch_feed(feed: dict) -> list[dict]:
 def fetch_article(url: str) -> dict | None:
     try:
         r = _get(url, timeout=25)
-        if r.status_code != 200 or not r.text:
+        html = page_text(r)
+        if r.status_code != 200 or not html:
             return None
-        doc = trafilatura.bare_extraction(r.text, url=url, with_metadata=True, include_comments=False)
+        doc = trafilatura.bare_extraction(html, url=url, with_metadata=True, include_comments=False)
     except Exception as e:  # noqa: BLE001
         log.debug("fetch failed %s: %s", url, e)
         return None
     if doc is None:
         return None
     d = doc.as_dict() if hasattr(doc, "as_dict") else dict(doc)
-    image = page_image(r.text, url) or clean_image(d.get("image"), url)
+    image = page_image(html, url) or clean_image(d.get("image"), url)
     return {"text": d.get("text") or "", "author": d.get("author"), "title": d.get("title"), "image": image}
 
 
@@ -202,7 +229,7 @@ def fetch_image(url: str) -> str:
     """Only the picture of a page already read ("" when it has none or cannot be read)."""
     try:
         r = _get(url, timeout=15)
-        return (page_image(r.text, url) or "") if r.status_code == 200 and r.text else ""
+        return (page_image(page_text(r), url) or "") if r.status_code == 200 and r.content else ""
     except Exception:  # noqa: BLE001
         return ""
 

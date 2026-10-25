@@ -690,18 +690,13 @@ def _norm_q(t: str) -> str:
     return re.sub(r"[^\w']+", " ", t.lower()).strip()
 
 
-SUBJECT_STOP = {"which", "their", "there", "these", "those", "about", "after", "before", "while", "would",
-                "could", "should", "other", "under", "against", "between", "during", "where", "being",
-                "since", "added", "stated", "according", "reports", "report", "people"}
-
-
 PRONOUN_START = re.compile(r"^(he|she|they|it|his|her|their|its|this|these|those)\b", re.I)
 
 
 def _subject_words(text: str) -> set[str]:
     from .textmatch import key_tokens
-    words = {w.lower() for w in re.findall(r"[A-Za-z]{4,}", text)} - SUBJECT_STOP
-    return words | {t.lower() for t in key_tokens(text)}
+    from .idf import tokens
+    return {w for w in tokens(text) if len(w) >= 4} | {t.lower() for t in key_tokens(text)}
 
 
 def _connected(stmts: list[dict]) -> bool:
