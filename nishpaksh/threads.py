@@ -95,7 +95,9 @@ def find_parents(store: Store, router: Router | None, story_id: int, headline: s
     # parents that already moved to the archive branch (pagearchive.py) are candidates too
     from . import pagearchive
     have = {r["story_id"] for r in rows}
-    for x in pagearchive.recent_index(window_days):
+    # strict: an archive that cannot be asked raises Unreachable BEFORE the check is marked done below, so the story
+    # is checked again against the archived articles next run (it used to be marked checked with none of them seen)
+    for x in pagearchive.recent_index(window_days, strict=True):
         if x.get("story_id") not in have and x.get("story_id") != story_id:
             rows.append({"story_id": x["story_id"], "headline_en": x.get("headline_en"),
                          "payload_en": {"headline": x.get("headline_en"),

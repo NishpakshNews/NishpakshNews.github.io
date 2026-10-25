@@ -212,9 +212,11 @@ def settled(store: Store, sid: int, now: dt.datetime | None = None) -> bool:
 
 # ---------------------------------------------------------------------------- follow-ups
 
-def parent_pages(store: Store, ids: list[int]) -> dict[int, dict]:
+def parent_pages(store: Store, ids: list[int], strict: bool = False) -> dict[int, dict]:
     """{story_id: {"headline_en", "payload_en", "written_at"}} for live parents, and for parents already
-    moved to the archive branch."""
+    moved to the archive branch. `strict`: when the archive cannot be asked for a parent that is not live,
+    raise pagearchive.Unreachable (a missing page and an unanswered question are different things: the caller
+    waits instead of treating the parent as gone)."""
     from . import pagearchive
     out = {r["story_id"]: {"headline_en": r["headline_en"], "payload_en": r["payload_en"] or {},
                            "written_at": (r["payload_en"] or {}).get("written_at") or r["updated_at"].isoformat()}
@@ -222,7 +224,7 @@ def parent_pages(store: Store, ids: list[int]) -> dict[int, dict]:
                                       published.c.updated_at).where(published.c.story_id.in_(ids or [-1])))}
     for sid in ids:
         if sid not in out:
-            page = pagearchive.fetch_page(sid)
+            page = pagearchive.fetch_page(sid, strict=strict)
             if page:
                 out[sid] = {"headline_en": page.get("headline_en"), "payload_en": page.get("payload_en") or {},
                             "written_at": page.get("written_at")}
@@ -311,9 +313,9 @@ def follow_up_ok(store: Store, router: Router | None, sid: int, payload: dict, p
     call per change in the story, not one per run."""
     from .verify import _story_context, support_summary
     now = now or utcnow()
-    parents = parent_pages(store, parent_ids)
+    parents = parent_pages(store, parent_ids, strict=True)   # raises Unreachable: the caller waits, never "no parents"
     if not parents:
-        return True     # the parents are gone from everywhere: judged as a story of its own
+        return True     # the archive answered "no such page" for every parent: judged as a story of its own
     pid, parent = max(parents.items(), key=lambda kv: str(kv[1].get("written_at") or ""))
     items = _core_major(payload)
     an, ed = _edition(store, sid)

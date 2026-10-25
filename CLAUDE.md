@@ -1288,6 +1288,23 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
 - Tests: `python -m pytest -q` (fake backend in `tests/fixtures.py`; add fakes for any new prompt).
 
 ## Open items
+- **"Could not ask" is not "no" (Oct 25 2026; the engineering track of the Notes, shadow-mode rule: a new system replaces code only
+  after it beats it on stored data).** (1) `match.same_facts` / `covers_facts` return `bool | None`, `check_conflicts` `str | None`:
+  None = the model could not be asked (quota, error, missing item, second asking failed); `consolidate` and `disputes.judge` cache only
+  real answers and ask the rest again next run; old "unsure" conflict answers were purged once (`analysis.conflict_checks_v` 2).
+  (2) Archive unreachable (Group A, H95: 1 of 7 follow-ups lost its parent): `pagearchive.fetch_page` / `recent_index` no longer cache a
+  failure (it hid the page for the whole run and marked the thread check "done" with no archived candidate seen); `strict=True` raises
+  `pagearchive.Unreachable` for a network error or non-404 status (a 404 = "no such page", still an answer); `compose.build_payload`
+  and `threads.find_parents` use it and `publish_story` answers "parent unreachable" (a skip: no try, no refusal), so a follow-up is
+  never closed without its thread or without the follow-up check. After one failed request the archive counts as down for 120 s
+  (`DOWN_SECONDS`), so a run pays one 15 s wait, not one per story. Tests: `tests/test_unanswered.py`, `tests/test_archive_unreachable.py`.
+  **Group A numbers (14 days, 65 stories, `ledger`-style audit, Oct 18):** 98% of statements "unverified" (37 corroborated, 3
+  developing); half the stories have 1-2 independent sources (express); perspectives never qualified (positions test false on all 16
+  days); full name written 3+ times in 49% of articles (no person evidence 29, shared surname 22: the entity table's evidence);
+  speaker key = surname collides for different people in ~4 of 42 stories (Banerjee, Singh, Yadav; the other 10 flagged are one person
+  under two spellings of the title); the person detector rejects real speakers whose name carries a title ("Canadian Prime Minister
+  Mark Carney", "MK Stalin"); repeated sentences are about 6 of 65 articles (the detector's 11 includes different-subject pairs such as
+  India's and Pakistan's scores); a stampede dated Saturday 17 and Sunday 18 October stood as two plain facts (no dispute, no merge).
 - **The test suite is green again (Oct 16 2026, session 1 of the translation/learning plan).** It had failed on every one of the last
   60 runs: 17 Python tests and 4 Node files lagged behind the owner's own later commits (section order, intro words and live-intro
   keys, grammar wording, two beat seats, `who` on pages, the guide saying the intro itself, `playbackRate`). They were updated to

@@ -281,7 +281,7 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
     from .editions import link_candidate, parent_pages
     link_candidate(store, story_id)      # later reports of a published story develop it
     parent_ids = threads.find_parents(store, router, story_id, story["signature"] or "", " ".join(summary[:4]))
-    live = parent_pages(store, parent_ids)   # live, or already on the archive branch
+    live = parent_pages(store, parent_ids, strict=True)   # live, or already on the archive branch; Unreachable = wait
     thread_ctx = "; ".join(live[p]["headline_en"] for p in parent_ids if p in live)
 
     analysis = story["analysis"] or {}
@@ -797,7 +797,14 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
                             write_narrative)
     if store.one(select(published.c.story_id).where(published.c.story_id == story_id)):
         return _outcome(story_id, "already published")
-    payload = build_payload(store, router, story_id)
+    from . import pagearchive
+    try:
+        payload = build_payload(store, router, story_id)
+    except pagearchive.Unreachable as e:
+        # the story's parent is on the archive branch and the branch could not be asked: written without the thread,
+        # the article would be closed with no parent and would skip the follow-up check. It waits for the next run.
+        log.warning("story %s waits: its parent page could not be fetched (%s)", story_id, e)
+        return _outcome(story_id, "parent unreachable")
     store.exec(update(stories).where(stories.c.id == story_id).values(dirty=False))
     if payload is None:
         log.info("story %s waits: no longer qualifies", story_id)

@@ -25,6 +25,7 @@ import logging
 import os
 import pathlib
 import subprocess
+import time
 
 from .config import SETTINGS, database_url
 from .db import Store, published, select, utcnow
@@ -39,7 +40,18 @@ def base_url() -> str:
     return os.environ.get("NISHPAKSH_ARCHIVE_URL", DEFAULT_URL).rstrip("/")
 
 
-def _read(rel: str) -> bytes | None:
+DOWN_SECONDS = 120.0     # after a failed request the archive is treated as down for this long
+_down_until = 0.0
+
+
+class Unreachable(Exception):
+    """The archive could not be asked (network error, timeout, a server error): NOT the same as "no such page".
+    Found by Group A (Oct 18 2026, H95): one blip made a follow-up lose its parent for good and skip the follow-up check."""
+
+
+def _read(rel: str, strict: bool = False) -> bytes | None:
+    """The file's bytes, or None when the archive says there is no such file (or none is configured).
+    A failure to ask is None too unless `strict`, which raises Unreachable so a caller can tell the two apart."""
     base = base_url()
     if not base:
         return None
@@ -47,37 +59,60 @@ def _read(rel: str) -> bytes | None:
         p = pathlib.Path(base) / rel
         return p.read_bytes() if p.exists() else None
     import requests
+    global _down_until
+    if time.monotonic() < _down_until:       # it just failed: do not wait 15 s again for every story of the run
+        if strict:
+            raise Unreachable(rel)
+        return None
     try:
         r = requests.get(f"{base}/{rel}", timeout=15)
     except requests.RequestException as e:
         log.warning("archive: %s not fetched: %s", rel, e)
+        _down_until = time.monotonic() + DOWN_SECONDS
+        if strict:
+            raise Unreachable(rel) from e
         return None
-    return r.content if r.status_code == 200 else None
+    if r.status_code == 200:
+        return r.content
+    if r.status_code != 404:
+        _down_until = time.monotonic() + DOWN_SECONDS
+        if strict:
+            raise Unreachable(f"{rel}: HTTP {r.status_code}")
+    return None
 
 
 _page_cache: dict[int, dict | None] = {}
 _index_cache: dict[str, list[dict]] = {}
 
 
-def fetch_page(story_id: int) -> dict | None:
-    if story_id not in _page_cache:
-        raw = _read(f"pages/{int(story_id)}.json.gz")
-        try:
-            _page_cache[story_id] = json.loads(gzip.decompress(raw)) if raw else None
-        except (OSError, ValueError):
-            _page_cache[story_id] = None
-    return _page_cache[story_id]
+def fetch_page(story_id: int, strict: bool = False) -> dict | None:
+    """The archived page, None when there is none. Only a page that was read is remembered for the run: a failure
+    is never cached (it used to be: one blip hid the page from every later call of the run). `strict`: a failure
+    to ask raises Unreachable instead of looking like "no such page"."""
+    if story_id in _page_cache:
+        return _page_cache[story_id]
+    raw = _read(f"pages/{int(story_id)}.json.gz", strict=strict)
+    try:
+        page = json.loads(gzip.decompress(raw)) if raw else None
+    except (OSError, ValueError):
+        page = None
+    if page is not None:
+        _page_cache[story_id] = page
+    return page
 
 
-def recent_index(days: int = 60, now: dt.datetime | None = None) -> list[dict]:
-    """Index lines of archived articles from the last `days` (the months they fall in)."""
+def recent_index(days: int = 60, now: dt.datetime | None = None, strict: bool = False) -> list[dict]:
+    """Index lines of archived articles from the last `days` (the months they fall in). `strict`: a month that
+    could not be asked for raises Unreachable (a month with no index file is simply empty)."""
     now = now or utcnow()
     months = sorted({(now - dt.timedelta(days=d)).strftime("%Y-%m") for d in range(0, days + 1, 15)} | {now.strftime("%Y-%m")})
     out: list[dict] = []
     for m in months:
         if m not in _index_cache:
-            raw = _read(f"index/{m}.jsonl")
-            lines = raw.decode("utf-8").splitlines() if raw else []
+            raw = _read(f"index/{m}.jsonl", strict=strict)
+            if raw is None:          # no index for the month, or it could not be read: not remembered, asked again
+                continue
+            lines = raw.decode("utf-8").splitlines()
             _index_cache[m] = [json.loads(x) for x in lines if x.strip()]
         out += _index_cache[m]
     since = (now - dt.timedelta(days=days)).isoformat()
