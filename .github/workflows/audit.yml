@@ -8,7 +8,7 @@ on:
       tool:
         description: "Which read-only report"
         type: choice
-        options: [audit, express_review, story_check]
+        options: [audit, express_review, story_check, entities_shadow]
         default: audit
       args:
         description: "Arguments for the tool (story_check: story ids)"

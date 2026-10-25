@@ -1305,6 +1305,18 @@ statements. NOT RUN ON REAL DATA: `essay_shortfall` is tested against `essay_ok`
   under two spellings of the title); the person detector rejects real speakers whose name carries a title ("Canadian Prime Minister
   Mark Carney", "MK Stalin"); repeated sentences are about 6 of 65 articles (the detector's 11 includes different-subject pairs such as
   India's and Pakistan's scores); a stampede dated Saturday 17 and Sunday 18 October stood as two plain facts (no dispute, no merge).
+- **Entity table, SHADOW (Oct 25 2026; `entities.py`, `tools/entities_shadow.py`, workflow `audit` tool `entities_shadow`; Notes B1/B2/B18).**
+  One identity per person in a story, by code: `parse` splits a mention into title and name (name = trailing capitalised words, stopped by a
+  title word); same name through `spelling.key` = one; a longer name absorbs a shorter one that is an ordered part of it (initials fit
+  words that start with them); two written-out first names that differ are never linked (Bhim vs Harjit Singh); a lone surname that fits
+  two people stays ambiguous. Person evidence is per ENTITY, not per string: a title, a speech verb, being a quoted speaker, an age, a
+  passive only a person can be ("was arrested", "died"), or an occupation apposition; countries, teams, films and schemes get none and are
+  never shortened (teams "scored / won" are deliberately NOT evidence). `EntityTable.speaker_key` (entity key for a person, the old key
+  for bodies) and `.shortenable()` (a surname no other name in the story has as ANY word) are what would replace `voice.speaker_key` and
+  `style.people`. NOTHING CALLS IT YET: run the audit workflow with tool `entities_shadow` and read `diagnostics` kind 'entities_shadow':
+  `split` (one old key, several people), `merged`, `gained` / `lost` shortened names (every `lost` is a possible regression), `weak`
+  (gained names with only age / passive / apposition evidence: are they people?). Adopt only if `lost` is empty or explained and `gained`
+  names are people. Tests (real Group A names): `tests/test_entities.py`.
 - **The test suite is green again (Oct 16 2026, session 1 of the translation/learning plan).** It had failed on every one of the last
   60 runs: 17 Python tests and 4 Node files lagged behind the owner's own later commits (section order, intro words and live-intro
   keys, grammar wording, two beat seats, `who` on pages, the guide saying the intro itself, `playbackRate`). They were updated to
