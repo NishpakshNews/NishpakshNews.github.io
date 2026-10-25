@@ -15,100 +15,39 @@ from __future__ import annotations
 
 import re
 
-TITLES = set("""Mr Mrs Ms Dr Shri Smt Sri Justice Judge Captain Capt Colonel Col General Gen Lieutenant Lt Major
-Brigadier Admiral Marshal Air Chief Vice Deputy Minister Prime President Governor Commissioner Secretary
-Inspector Sub-Inspector Superintendent Constable Officer Director Chairman Chairperson Speaker Leader
-Union Home Finance Defence External Affairs MLA MP CM DGP SP IG DIG ACP DCP SHO Advocate Senior Retired
-Professor Prof Senator Ambassador Mayor Councillor Sheikh Pope Saint Sardar Pandit Swami Maulana
-Lieutenant-General Major-General Wing Commander Squadron Group Flight Sergeant Havildar Naik Sepoy""".split())
-# titles that mark a PERSON (evidence); the wider TITLES above are only stripped from a name. "Air",
-# "Chief", "Union" or "Deputy" alone are no evidence: Oct 7 2026, "Commission for Air Quality
-# Management" became "Commission for Management" (the "Air" before "Quality Management" read as a title)
-PERSON_TITLES = set("""Mr Mrs Ms Dr Shri Smt Sri Justice Judge Captain Capt Colonel Col General Gen Lieutenant Lt
-Major Brigadier Admiral Marshal Minister President Governor Inspector Sub-Inspector Constable Professor Prof
-Senator Ambassador Mayor MLA MP CM DGP SP IG DIG ACP DCP SHO Advocate Sheikh Swami Maulana Pandit Sardar
-Sergeant Havildar Naik Sepoy""".split())
-ROLES_LOWER = set("""minister leader chief jawan officer judge actor actress activist journalist accused
-constable inspector spokesperson president secretary mla mp cricketer player coach captain businessman
-student doctor lawyer advocate teacher farmer driver engineer pilot co-pilot director founder ceo chairman
-wife husband son daughter father mother brother sister priest councillor sarpanch commissioner
-collector magistrate superintendent""".split())
-NOT_PERSON = set("""Police Court Ministry Party Force Forces Government Department Commission Bank Limited Ltd
-India Indian Pradesh University Committee Council Board Army Navy Congress BJP Airport Station Hospital
-Nagar City District Road Street Bridge Lok Sabha Rajya State States Union Territory East West North South
-Assembly Corporation Authority Agency Bureau Office Times News Express Today Airlines Air Team Club
-Group Company Trust Foundation Institute School College Temple Mosque Church Market Railway Railways
-Highway Dam River Lake Sea Ocean Bay Island Hills Valley Village Town Pakistan China America Bihar Assam
-Delhi Mumbai Kerala Gujarat Punjab Haryana Rajasthan Tamil Nadu Bengal Karnataka Maharashtra Odisha
-Management Quality Control Pollution Environment Health Development Welfare Services Security Intelligence
-Investigation Centre Center National Central Federal Regional International Supreme High Society Association
-Federation Mission Scheme Yojana Programme Program Act Bill Code Policy Fund Industries Energy Power Water
-Commission Council Agency Ministry Department Squad Squads Task Cell Unit Division Zone Circle Range""".split())
-# words that open a sentence and are never part of a name (Oct 8 2026, story 13107: "While Humayun Kabir
-# had been criticising ..." read as the name "While Humayun Kabir"; two names ending in Kabir then meant
-# the surname was never used)
-LEAD = set("""While Meanwhile When Whereas After Before On In At By For From According Earlier Later However But
-And Also During Since As If Though Although Then Yesterday Today Tomorrow Besides Following Speaking
-Addressing Reacting Under With Without Among Amid Despite Unlike Like Both Several Some Other Reports
-Monday Tuesday Wednesday Thursday Friday Saturday Sunday January February March April May June July
-August September October November December Once Now Here There This That These Those It Its""".split())
-# one registry for titles (config/titles.yaml, titles.py): the lists above are only what was here before it
+# one registry for titles (config/titles.yaml, titles.py); no list of titles, places or bodies lives here any more
 from . import titles as _titles  # noqa: E402
-TITLES |= set(_titles.person_title_words())     # not the bare qualifiers ("Law", "Health": "Law Commission" is no person)
-PERSON_TITLES |= set(_titles.person_title_words())
-ROLES_LOWER |= set(_titles.role_nouns())
+TITLES = set(_titles.person_title_words())      # not the bare qualifiers ("Law", "Health": "Law Commission" is no person)
+PERSON_TITLES = set(TITLES)
+KIN = {"wife", "husband", "son", "daughter", "father", "mother", "brother", "sister"}     # relationships, not titles
+ROLES_LOWER = set(_titles.role_nouns()) | KIN
 SPEECH = r"(?:said|says|told|added|stated|alleged|claimed|denied|announced|noted|asked|urged|wrote)"
 NAME = r"[A-Z][a-z]+(?:-[A-Z]?[a-z]+)?|al-[A-Z][a-z]+"
 
 
 def _candidates(text: str) -> set[str]:
+    """The names of the persons the analyser finds in a text (spaCy PERSON entities, titles taken off, 2-4 words)."""
+    from . import nlp
     out = set()
-    for m in re.finditer(rf"(?<![\w-])((?:{NAME})(?:\s+(?:{NAME})){{1,7}})(?![\w-])", text):
-        words = m.group(1).split()
-        # "Assam Chief Minister Himanta Biswa Sarma" -> "Himanta Biswa Sarma"
-        while words and (words[0] in TITLES or words[0] in NOT_PERSON or words[0] in LEAD or words[0] in ("The", "A", "An")):
-            words = words[1:]
-        if 2 <= len(words) <= 4 and not any(w in NOT_PERSON or w in TITLES for w in words):
-            out.add(" ".join(words))
+    for e in nlp.ents(text):
+        if e.label != nlp.PERSON:
+            continue
+        name = _titles.strip(e.text).strip()
+        if 2 <= len(name.split()) <= 4:
+            out.add(name)
     return out
 
 
-USE_ENTITIES = True      # the entity table (entities.py) decides who is a person and who may be shortened
-
-
 def people(text: str, speakers: list[str] | tuple = ()) -> dict[str, str]:
-    """{full name: surname} for the persons in a text, shortenable without confusion. Adopted Oct 25 2026 after two shadow
-    runs on the live articles (tools/entities_shadow.py): one identity per person, so "Parvinder Singh" and "Parvinder
-    Singh Jhota" are one man; a body, event or government ("Modi Sarkar") is never a person. Any failure of the table
-    falls back to the old rule, so a story is never held back."""
-    if USE_ENTITIES:
-        try:
-            from .entities import EntityTable
-            t = EntityTable()
-            for sp in speakers or ():
-                if sp:
-                    t.add(sp, "speaker", text)
-            t.add_text(text)
-            return t.shortenable()
-        except Exception:  # noqa: BLE001
-            pass
-    return _people_old(text, speakers)
-
-
-def _people_old(text: str, speakers: list[str] | tuple = ()) -> dict[str, str]:
-    found = {}
-    spoken = " ".join(speakers or ())
-    cands = _candidates(text)
-    for name in cands:
-        e = re.escape(name)
-        titled = re.search(rf"(?:\b(?:{'|'.join(map(re.escape, PERSON_TITLES))})|\b(?:{'|'.join(ROLES_LOWER)}))\s+{e}\b", text)
-        speaks = re.search(rf"\b{e}\s+(?:has\s+|had\s+)?{SPEECH}\b", text)
-        if titled or speaks or name in spoken:
-            found[name] = name.split()[-1]
-    # a surname shared by two people, or also someone's first name, is no short form
-    last = [n.split()[-1].lower() for n in cands]          # every name, person or not
-    firsts = {n.split()[0].lower() for n in cands}
-    return {n: s for n, s in found.items() if last.count(s.lower()) == 1 and s.lower() not in firsts}
+    """{full name: surname} for the persons in a text, shortenable without confusion: one identity per person
+    (entities.py: NER votes, title and speech evidence, nesting of names), a body, event or government never a person."""
+    from .entities import EntityTable
+    t = EntityTable()
+    for sp in speakers or ():
+        if sp:
+            t.add(sp, "speaker", text)
+    t.add_text(text)
+    return t.shortenable()
 
 
 def intro_forms(names: dict[str, str], texts: list[str]) -> dict[str, str]:

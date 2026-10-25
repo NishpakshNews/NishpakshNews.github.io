@@ -17,6 +17,34 @@ every outlet that covered it, and colours every sentence by how well it is suppo
 - Overriding product rule: **minimise false positives.** Never show something as established
   (green) or false (red) when it is not; when unsure, be more cautious.
 
+## The rebuild (Oct 25 2026, branch `rebuild`; owner: "build the technical systems first, delete what they replace, audit once at the end")
+**Working agreement:** build every system first, delete the hand-made code it replaces, and only then run ONE audit / hypothesis-test
+pass and tune settings. No audit after each build, no hand-tweaking, no word lists, no fixes for single cases.
+**Built on established libraries** (`requirements-nlp.txt`, installed by `.github/actions/nlp-setup`; HF models cached by actions/cache;
+`murmurhash<1.0.14` is pinned because spaCy 3.8 overflows on newer ones): spaCy `en_core_web_lg` (NER + dependency parse), a local
+multilingual NLI cross-encoder (mDeBERTa-v3 XNLI) via transformers, sentence-transformers `paraphrase-multilingual-MiniLM-L12-v2`
+(stemming TF-IDF fallback), scikit-learn (TF-IDF, agglomerative clustering), networkx, rapidfuzz. All have test backends
+(`nli.set_backend`, `nlp.set_backend`, `embed.set_backend`; conftest installs fakes). They cannot run in the sandbox (no Hugging Face):
+the real models are first exercised by the end-of-build audit on the runner (`audit` workflow, tool `stack_probe`).
+- `idf.py` replaces every stop-word / common-word list (plan, threads, narrative). `reliable.py`: one call layer (failure taxonomy,
+  jittered backoff, circuit breaker) under ingest and Tavily; tri-state results (None = could not ask, never cached, never "no").
+- `nli.py` replaces the Gemini same / covers / conflict questions (`match.same_facts`, `covers_facts`, `check_conflicts`) and the
+  qualifier word lists of `fidelity.py` (a reading must be ENTAILED by its report sentence; a translation is read both ways; polarity.py
+  and negation.yaml are gone). `embed.py` + `dupes.py` (topics by clustering, duplicate proposals by similarity) and `disputes.py`
+  (same-question gate by similarity, NLI as judge). `split.py` splits compound statements by the dependency parse (`nlp.clauses`) and
+  confirms with NLI. `entities.py` + `style.py`: persons come from NER votes, one identity per person; `style.py` holds no list of titles,
+  places or bodies (titles come from `config/titles.yaml`). `order.py` + `config/event_stages.yaml`: chronological order by graph.
+- **Deleted:** the titles / synonyms / glossary learners, `learning.py`, `context.py`, their `*_learned.yaml` / `devils_advocate.yaml`
+  files, the `learn_candidates` table, `learn.sh` and the hourly steps, the entity shadow tool. `relate.py` / `titles.py` / `hindi.py`
+  read hand-written files only. Hand-written `synonyms.yaml`, `titles.yaml`, `glossary.yaml` `terms:` stay.
+- **Not built / still hand-made (be honest about it):** B9 dangling references by noun chunks (`refs.HEADS` list remains), B11 story
+  dossier, B33 sidebar-block classifier, `voice.ALIASES` / `COUNTRY` body-alias lists, and the items that need owner-labelled data
+  (B25, B26, B28-B32). The Oct 5-24 entries below describe behaviour that still holds unless they mention a learner, a qualifier list
+  or a Gemini same / covers / conflict question: those are superseded by this section.
+**Next:** merge `rebuild` to main only when the owner agrees; run the single audit pass (stack_probe, audit, story_check), read the
+NLI thresholds (`nli.ENTAIL/CONTRA/UNSURE`, `fidelity.SUPPORT/CONTRA`), the clause splitter and the NER-based speaker keys on real
+stories, and tune settings then.
+
 ## Hard constraints
 - Free tiers only. **No billing**, ever. Gemini free API (3 keys: `GEMINI_API_KEY`, `_2`, `_3`,
   separate projects; the owner decided this), Tavily free (1,000 credits/month, ≤31/day), Supabase free

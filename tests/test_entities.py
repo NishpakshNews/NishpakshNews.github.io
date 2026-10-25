@@ -124,23 +124,6 @@ def test_a_surname_that_is_also_someones_first_name_is_not_a_short_form():
     assert "Rajesh Mohan" not in t.shortenable()
 
 
-def test_the_shadow_comparison_on_one_article():
-    """tools/entities_shadow.compare: the Singh story (26428) as a payload; read-only and pure."""
-    from nishpaksh.tools.entities_shadow import compare
-    para = [[{"text": "Chief Minister Mohan Yadav said the case was serious."},
-             {"text": "Parvinder Singh Jhota was shot dead on Friday, police said."},
-             {"text": "Parvinder Singh Jhota, 41, was a trader and Parvinder Singh Jhota had no enemies, relatives said."},
-             {"text": "DIG Harjit Singh said four teams were formed, and Bhim Singh said nothing."}]]
-    payload = {"narrative": {"paragraphs": para},
-               "established": [{"id": 1, "text": "x", "speaker": "Bathinda DIG Harjit Singh"},
-                               {"id": 2, "text": "y", "speaker": "Bhim Singh"},
-                               {"id": 3, "text": "z", "speaker": "Chief Minister Mohan Yadav"}]}
-    c = compare(payload)
-    assert c["split"] and c["split"][0]["old_key"] == "singh"        # one old key, two people
-    assert "Parvinder Singh Jhota" in c["gained"]                    # the victim's name is no longer repeated
-    assert c["repeats_gained"] >= 2
-
-
 def test_first_shadow_run_fixes():
     """The first live run (66 articles, Oct 25 2026) found these."""
     for raw, name in [("Capt Gurudeep Bala", "Gurudeep Bala"),
