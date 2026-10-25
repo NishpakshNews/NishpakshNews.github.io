@@ -27,7 +27,7 @@ BRANCH="newsroom"
 PART_MB="${NEWSROOM_PART_MB:-40}"   # GitHub warns on files over 50 MB and refuses over 100 MB
 REMOTE="${NEWSROOM_REMOTE:-https://x-access-token:${GH_TOKEN:-}@github.com/${GITHUB_REPOSITORY:-}.git}"
 # the newsroom tables (everything in public except READER_TABLES in nishpaksh/db.py)
-TABLES=(feeds articles stories claims canonical story_pairs source_clusters published translations story_links quota_usage name_pairs body_links dossiers event_ranks)
+TABLES=(feeds articles stories claims canonical story_pairs source_clusters published translations story_links quota_usage name_pairs body_links dossiers event_ranks pair_labels model_state)
 READERS=(profiles follows push_subscriptions notifications audio_requests audio_files recaps videos saved notify_state
          account_events runs diagnostics)
 

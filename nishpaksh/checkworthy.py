@@ -22,6 +22,14 @@ def classify(texts: list[str]) -> list[bool | None]:
     """True = checkable fact, False = characterisation, None = could not tell."""
     if not texts:
         return []
+    from . import factuality
+    sure = [i for i, t in enumerate(texts) if not factuality.possible(t)]    # "may have", "could be": not a fact to establish
+    if len(sure) < len(texts):
+        sub = classify([texts[i] for i in sure])
+        out = [False] * len(texts)
+        for i, v in zip(sure, sub):
+            out[i] = v
+        return out
     res = nli.predict([(t, h) for t in texts for h in (FACT, OPINION)])
     out: list[bool | None] = []
     for k in range(len(texts)):

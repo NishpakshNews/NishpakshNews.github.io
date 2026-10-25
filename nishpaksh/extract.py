@@ -304,6 +304,24 @@ MAX_PIECES = 4
 _QUOTE_FOLD = str.maketrans({"“": '"', "”": '"', "‘": "'", "’": "'", "\u00a0": " "})
 
 
+def _dangling(par: str) -> bool:
+    """Does the paragraph open with a word that points back (he, she, it, they, this, these ...)? By the parse: the first
+    token is a pronoun, or a demonstrative determiner. No parse: no."""
+    from . import nlp
+    toks = nlp.parse((par or "").strip()[:200])
+    return bool(toks) and toks[0].pos in ("PRON",) or bool(toks) and toks[0].lemma.lower() in ("this", "that", "these", "those")
+
+
+def _overlap(cur: list[str], max_back: int = 3) -> list[str]:
+    """The paragraphs a new piece starts with (B23, coreference-first chunking): the last one of the piece before, and
+    further back while the earliest of them opens with a pointer to an earlier paragraph, so no piece begins by pointing
+    at something it was not given."""
+    k = 1
+    while k < len(cur) and k < max_back and _dangling(cur[-k]):
+        k += 1
+    return cur[-k:]
+
+
 def pieces(text: str, cap: int | None = None) -> list[str]:
     """The report as one piece (it fits one reading) or as overlapping pieces split at paragraph breaks."""
     cap = cap or SETTINGS.max_article_chars
@@ -320,11 +338,11 @@ def pieces(text: str, cap: int | None = None) -> list[str]:
             paras_head, p = p[:cut], p[cut:].lstrip()
             if cur:
                 out.append("\n".join(cur))
-                cur = [cur[-1]]
+                cur = _overlap(cur)
             out.append(paras_head)
         if cur and sum(len(x) + 1 for x in cur) + len(p) > PIECE_CHARS:
             out.append("\n".join(cur))
-            cur = [cur[-1]]                            # the overlap: the piece before's last paragraph
+            cur = _overlap(cur)                        # the overlap: the piece before's last paragraph(s), coreference first
         cur.append(p)
     if cur:
         out.append("\n".join(cur))

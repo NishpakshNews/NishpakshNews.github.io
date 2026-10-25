@@ -90,6 +90,9 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     from . import events
     step("events", lambda: stats.__setitem__("events", events.refresh(store)))   # learned order of events, once a day
     step("event ranks", lambda: events.load(store))
+    from . import dupescore
+    step("dupescore", lambda: stats.__setitem__("dupescore", dupescore.refresh(store)))
+    step("dupescore load", lambda: dupescore.load(store))
     if ingest_news:
         ingest.sync_feeds(store)
         stats["ingested"] = ingest.ingest(store)

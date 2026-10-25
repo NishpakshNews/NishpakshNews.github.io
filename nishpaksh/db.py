@@ -172,6 +172,22 @@ dossiers = Table(  # the story dossier (dossier.py): what each stage decided, fo
     Column("data", JSON),
 )
 
+pair_labels = Table(  # decisions on "same fact?" pairs (dupescore.py): the training data of the pair-ranking model
+    "pair_labels", md,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("a", Text),
+    Column("b", Text),
+    Column("label", Boolean),            # the twice-asked question's final answer
+    Column("created_at", DateTime, index=True),
+)
+
+model_state = Table(  # small fitted models kept between runs (dupescore.py)
+    "model_state", md,
+    Column("name", String(40), primary_key=True),
+    Column("data", JSON),
+    Column("updated_at", DateTime),
+)
+
 body_links = Table(  # which body a speaker name is (bodies.py): Wikidata's answer, asked once per name
     "body_links", md,
     Column("name", String(160), primary_key=True),

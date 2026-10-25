@@ -96,20 +96,8 @@ ALIAS = re.compile(r"(?i)\b(?:alias|urf|also known as|a\.?k\.?a\.?|also called|k
 
 
 def named_together(names: list[str], texts: list[str | None]) -> bool:
-    """Two of the names appear in one sentence of a statement or report, not joined as aliases ("X
-    alias Y", "X (Y)"): they are two people. Code's check on the model's "reports name different
-    people for one fact"."""
-    low = [n.lower() for n in names if n and len(n) >= 4]
-    for text in texts:
-        for sent in re.split(r"(?<=[.!?।])\s+", text or ""):
-            s = sent.lower()
-            found = sorted((s.find(n), n) for n in low if n in s)
-            for (i, a), (j, b) in zip(found, found[1:]):
-                if a == b or a in b or b in a:
-                    continue
-                if not ALIAS.search(sent[i + len(a):j]):
-                    return True
-    return False
+    from .nameconflict import named_together as nt
+    return nt(names, texts)
 
 
 def _apply_names(text: str, names: dict[str, str]) -> str:
@@ -239,15 +227,19 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
             ask_pairs.append((a, b))
     ask_pairs = list(dict.fromkeys(tuple(sorted(p)) for p in ask_pairs if tuple(sorted(p)) not in code_same_set))
     same_checks = dict(analysis.get("same_checks") or {})
-    todo = [p for p in ask_pairs if key(p) not in same_checks][:SAME_ASK_MAX]
+    from . import dupescore
+    todo = dupescore.order([p for p in ask_pairs if key(p) not in same_checks], prof, texts)[:SAME_ASK_MAX]
     firsts: dict[int, bool] = {}
     unanswered = 0
+    labelled: list[tuple[str, str, bool]] = []
     for n, (p, ok) in enumerate(zip(todo, same_facts(router, [(texts[a], texts[b]) for a, b in todo], firsts))):
         if ok is None:                    # not answered (quota, error): remember nothing, ask again next time (F123)
             unanswered += 1
             continue
+        labelled.append((texts[p[0]], texts[p[1]], bool(ok)))
         same_checks[key(p)] = ok
         same_checks["f" + key(p)] = bool(firsts.get(n))
+    dupescore.record(store, labelled)
     ckey = lambda p: "c" + key(p)  # noqa: E731
     todo = [p for p in ask_cover if ckey(p) not in same_checks][:SAME_ASK_MAX]
     firsts = {}
@@ -374,7 +366,8 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
         texts = [r["text"] for r in store.rows(select(canonical.c.text).where(canonical.c.story_id == story_id))]
         texts += [r["text"] for r in heavy.fill(store, store.rows(select(articles.c.id, *heavy.columns(store, "text"))
                                                                    .where(articles.c.story_id == story_id)), "text")]
-        name_conf = {k: v for k, v in name_conf.items() if not named_together(v, texts)}
+        from .nameconflict import classify
+        name_conf = {k: v for k, v in name_conf.items() if classify(v, texts) == "disagreement"}
     after = [r for r in store.rows(select(canonical.c.id, canonical.c.text, canonical.c.kind)
                                    .where(canonical.c.story_id == story_id)) if r["kind"] != "relation" and r["text"]]
     analysis.update(consolidated=_hash(after), speakers=speakers,

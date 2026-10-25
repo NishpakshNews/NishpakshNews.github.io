@@ -53,7 +53,19 @@ learned daily from dated claims into `event_ranks`, used by `order.py` for same-
 `news.DECISIVE/PROCESS/DEATHS`; `config/event_stages.yaml` deleted). Everything touching a colour can only make it MORE cautious.
 Untuned guesses to read in the audit: `nli.*`, `fidelity.SUPPORT/CONTRA`, `threads.LINK`, `belong.KEEP_SIMILARITY`, `truth.BELIEF_MIN`,
 `checkworthy.SURE`, `events.MARGIN/MIN_N/SURE`. The green-line rule (belief replacing the count conjunction) is to be discussed after the build.
-Still not built: B18 (referring expressions), B9 remainder, B16, B17, B22, B2, B23, evaluation harness (the single audit).
+Rebuild 12b-13 (same day): `style.Refs.next` chooses pronoun / role / surname by centering (the person still the topic, evidence
+for a pronoun, never the same form twice) instead of rotating (B18, partial: the CHAIN / BODY_LEAD regexes remain);
+`refs.ask_model` asks only for phrases whose head noun the source writes beside a capitalised word (noun chunks flagged nearly every
+"the X": one call per article was too much quota); `dupescore.py` (B16 step 3: logistic regression on the newsroom's own
+same-fact answers, tables `pair_labels` + `model_state`, fitted daily, ONLY orders the questions, never merges or skips);
+`nameconflict.py` (B17: alias / distinct / disagreement; only structural evidence removes a flag); `factuality.py` (B22: polarity and
+certainty from the parse; a "may / might / could" statement is a characterisation in `checkworthy`, never green); `extract._overlap`
+(B23: a piece never opens pointing at a paragraph it was not given); `aliases.py` + `EntityTable.link` (B2: "X alias Y" unifies
+identities); `inspector.py` (B9: one counted look over the finished text, `narrative.flow.inspector`). Perspectives now need a stored
+positions report (`positions.groups`); old tests were updated to feed one. Test stand-ins in `tests/conftest.py` script the NLI
+(check-worthiness, decisive acts, one court filing). All paths with real models still untested until the audit.
+Still not built: B18 remainder (the attribution regexes), B9's discourse model for the writer, B16 steps 5-6 (survivorship), the
+Fellegi-Sunter comparison, cross-lingual entity linking, the evaluation harness (the single audit).
 **Next:** merge `rebuild` to main only when the owner agrees; run the single audit pass (stack_probe, audit, story_check), read the
 NLI thresholds (`nli.ENTAIL/CONTRA/UNSURE`, `fidelity.SUPPORT/CONTRA`), the clause splitter and the NER-based speaker keys on real
 stories, and tune settings then.

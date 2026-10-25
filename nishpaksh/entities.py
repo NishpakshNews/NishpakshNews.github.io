@@ -184,6 +184,7 @@ class EntityTable:
         self.mentions: list[tuple[Mention, str]] = []
         self.evidence: dict[tuple, set] = {}
         self.notperson: set[tuple] = set()      # names the analyser mostly labels an organisation or place
+        self.links: list[tuple[tuple, tuple]] = []   # names a report itself calls one person (aliases.py)
         self._built = False
         self.entities: list[Entity] = []
         self._by_keys: dict[tuple, Entity] = {}
@@ -207,10 +208,19 @@ class EntityTable:
         self._built = False
         return m
 
+    def link(self, a: str, b: str) -> None:
+        """Two names an outlet writes as one person (\"X alias Y\"): unified in build(), whatever else says."""
+        ma, mb = parse(a), parse(b)
+        if ma.tokens and mb.tokens and ma.keys != mb.keys:
+            self.links.append((ma.keys, mb.keys))
+            self._built = False
+
     def add_text(self, text: str) -> None:
         """Every named entity of a text. PERSON ones become mentions with "ner" evidence; the same name seen mostly as
         an organisation or place is recorded as not a person (a vote: one wrong label cannot make a person)."""
-        from . import nlp
+        from . import aliases, nlp
+        for a, b in aliases.find(text):
+            self.link(a, b)
         votes: dict[tuple, list[int]] = {}
         for e in nlp.ents(text):
             m = parse(e.text)
@@ -262,6 +272,13 @@ class EntityTable:
                 fit[0].append(k)
             else:
                 extra.append((k, bool(fit)))
+        # 3. names a report itself says are one person are one person
+        for ka, kb in self.links:
+            ca = next((c for c in clusters if ka in c), None)
+            cb = next((c for c in clusters if kb in c), None)
+            if ca is not None and cb is not None and ca is not cb:
+                ca.extend(cb)
+                clusters.remove(cb)
         for c in clusters:
             self._make([m for k in c for m in groups[k]], False)
         for k, many in extra:

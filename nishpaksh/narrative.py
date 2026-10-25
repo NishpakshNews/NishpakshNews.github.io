@@ -1905,6 +1905,11 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
                 flow["language"] = lang
         except Exception as e:  # noqa: BLE001
             log.info("language check skipped: %s", str(e)[:80])
+        try:                                          # one look over the finished text, counted (inspector.py)
+            from . import inspector
+            flow["inspector"] = inspector.inspect(paragraphs)
+        except Exception as e:  # noqa: BLE001
+            log.info("inspector skipped: %s", str(e)[:80])
         if layout and report_text:                    # the express desk: our words, not the outlet's
             paragraphs, copy_stats = _rephrase_copies(router if model else None, paragraphs, by_id, banned, outlets,
                                                       report_text)

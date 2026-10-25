@@ -67,3 +67,16 @@ def test_the_writer_may_quote_exact_words_and_nothing_else():
     by[3] = item(3, "Prithvi Shaw said critics called him a thug.", "They called me a thug")
     assert v('"They called me a thug," Shaw said.', [3]) == [3]                  # his word, inside his quote
     assert "EXACT WORDS" in N._statement_line(dict(by[1], role="core", sources=[], n_sources=1))
+
+
+def test_a_piece_does_not_start_by_pointing_at_a_paragraph_it_was_not_given(monkeypatch):
+    from nishpaksh import extract, nlp
+    monkeypatch.setattr(extract, "PIECE_CHARS", 60)
+    first = lambda s: s.split()[0]
+    monkeypatch.setattr(nlp, "parse", lambda t: [nlp.Tok(0, first(t), 0, 1, first(t).lower(),
+                                                         "PRP" if first(t) in ("He", "It") else "NN", "PRON" if first(t) in ("He", "It") else "NOUN",
+                                                         "nsubj", 0)])
+    paras = ["Ramesh was arrested in Patna on Monday.", "He denied the charge before the court.", "It was adjourned.",
+             "Police filed a second report."]
+    out = extract.pieces("\n".join(paras), cap=10)
+    assert out[1].split("\n")[0] == paras[0]          # the second piece starts back at the paragraph that names "He"
