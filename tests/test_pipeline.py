@@ -1860,17 +1860,13 @@ def test_a_difference_is_a_contradiction_only_if_both_cannot_be_true(store):
     opened, d40, d50 = idx["The bridge opened to traffic in October 2025"], idx["40 people died in the collapse"], idx["50 people died in the collapse"]
     p1, p2 = idx["The state pledged 100 crore for repairs"], idx["The state pledged 100 crore for repairs and 20 new inspectors"]
     e1, e2 = idx["The engineer was in charge of the site"], idx["The engineer had left the job"]
-    answers = {frozenset((c1, opened)): "both_true", frozenset((d40, d50)): "cannot_both_be_true",
-               frozenset((p1, p2)): "both_true", frozenset((e1, e2)): "unsure"}
+    from nishpaksh import nli
+    CONTRA, NEUTRAL, UNS = (0.03, 0.07, 0.90), (0.10, 0.85, 0.05), (0.10, 0.40, 0.50)
+    table = {frozenset((texts[d40], texts[d50])): CONTRA, frozenset((texts[e1], texts[e2])): UNS}
+    nli.set_backend(lambda ps: [table.get(frozenset(p), NEUTRAL) for p in ps])
 
     class R:
         def call(self, tier, prompt, **kw):
-            import re as _re
-            if "can both be true at the same time" in prompt:
-                res = []
-                for n, a, b in _re.findall(r'(\d+)\. A: "(.*?)" \| B: "(.*?)"', prompt):
-                    res.append({"n": int(n), "answer": answers[frozenset((idx[a], idx[b]))]})
-                return LLMResult("", {"results": res}, "m", [], 1)
             return LLMResult("", {"same": [[p1, p2]], "names": {}, "speaker": {}, "responses": [],
                                   "conflicts": [[c1, opened, "March 2024 vs October 2025"],
                                                 [d40, d50, "40 people vs 50 people"],
@@ -1968,17 +1964,11 @@ def test_one_gate_for_disputes():
     assert is_update([t0], [t0 + dt_.timedelta(hours=3)]) == 1 and is_update([t0], [t0]) == 0
     texts = {1: "40 people died in the collapse", 2: "50 people died in the collapse",
              3: "Police arrested the engineer", 4: "Police did not arrest the engineer"}
-    answers = {(1, 2): "cannot_both_be_true", (2, 1): "cannot_both_be_true",
-               (3, 4): "cannot_both_be_true", (4, 3): "both_true"}
-
-    class R:
-        def call(self, tier, prompt, **kw):
-            import re as _re
-            from nishpaksh.router import LLMResult
-            inv = {v: k for k, v in texts.items()}
-            res = [{"n": int(n), "answer": answers[(inv[a], inv[b])]}
-                   for n, a, b in _re.findall(r'(\d+)\. A: "(.*?)" \| B: "(.*?)"', prompt)]
-            return LLMResult("", {"results": res}, "m", [], 1)
+    from nishpaksh import nli
+    table = {(texts[1], texts[2]): (0.03, 0.07, 0.90), (texts[2], texts[1]): (0.03, 0.07, 0.90),
+             (texts[3], texts[4]): (0.10, 0.40, 0.50), (texts[4], texts[3]): (0.10, 0.80, 0.10)}   # the two readings disagree
+    nli.set_backend(lambda ps: [table.get(p, (0.1, 0.85, 0.05)) for p in ps])
+    R = lambda: None
     times = {1: [t0], 2: [t0], 3: [t0], 4: [t0]}
     disputes, doubtful, updates = judge(R(), texts, times, set(), set(), {})
     assert disputes == {(1, 2)} and doubtful == {3, 4} and updates == {}       # the two answers disagreed: doubtful
@@ -2259,24 +2249,17 @@ def test_one_spelling_per_name_in_an_article():
     assert payload["narrative"]["paragraphs"][0][0]["text"] == "Captain Machhar flew."
 
 
-def test_same_fact_in_other_words_is_asked_twice_and_merged_only_on_two_yeses():
-    """Oct 7 2026, story 13809: "take charge" / "take over" frames made four outlets' one fact four
-    one-outlet lines. Code picks the pairs, the model answers same/different twice (A/B swapped)."""
-    from nishpaksh import match
-    class Flip(FakeBackend):                   # says "same" the first time, "different" when swapped
-        calls = 0
-        def generate(self, model, prompt, json_mode, grounded):
-            if "do A and B report the SAME single fact" in prompt:
-                Flip.calls += 1
-                return json.dumps({"results": [{"n": 1, "answer": "same" if Flip.calls == 1 else "different"}]}), [], 10
-            return super().generate(model, prompt, json_mode, grounded)
-    import nishpaksh.db as db
-    store = db.Store("sqlite://")
-    store.init()
-    assert match.same_facts(_router(store, Flip()), [("He will take charge.", "He took charge.")]) == [False]
-    assert Flip.calls == 2
-    assert match.same_facts(_router(store, FakeBackend()),
-                            [("Dixit will take charge as Chief of Air Staff.", "Dixit will take charge as the Chief of Air Staff on October 31.")]) == [True]
+def test_same_fact_in_other_words_needs_both_directions_to_entail():
+    """Oct 7 2026, story 13809: "take charge" / "take over" frames made four outlets' one fact four one-outlet
+    lines. Local NLI reads each pair both ways (nli.py): one direction alone does not merge."""
+    from nishpaksh import match, nli
+    pair = ("He will take charge.", "He took charge.")
+    one_way = {pair: (0.95, 0.03, 0.02), (pair[1], pair[0]): (0.10, 0.85, 0.05)}
+    nli.set_backend(lambda ps: [one_way.get(p, (0.1, 0.85, 0.05)) for p in ps])
+    assert match.same_facts(None, [pair]) == [False]
+    both = {pair: (0.95, 0.03, 0.02), (pair[1], pair[0]): (0.93, 0.05, 0.02)}
+    nli.set_backend(lambda ps: [both.get(p, (0.1, 0.85, 0.05)) for p in ps])
+    assert match.same_facts(None, [pair]) == [True]
 
 
 def test_two_names_in_one_sentence_are_two_people():

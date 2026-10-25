@@ -52,3 +52,35 @@ def carry_over_off(monkeypatch, request):
         return
     import nishpaksh.config as cfg
     monkeypatch.setattr(cfg, "SETTINGS", dataclasses.replace(cfg.SETTINGS, carry_over=False))
+
+
+def fake_nli(pairs):
+    """Stand-in for the local NLI model (nli.py): wording decides. A reads as entailing B when B's words are all in A
+    (or the two share half their words with the same figures); the same wording with other figures or a negation
+    flipped contradicts."""
+    import re
+    out = []
+    for a, b in pairs:
+        wa = {w for w in re.findall(r"[a-z]+", a.lower()) if len(w) > 2}
+        wb = {w for w in re.findall(r"[a-z]+", b.lower()) if len(w) > 2}
+        na, nb = set(re.findall(r"\d[\d,.]*", a)), set(re.findall(r"\d[\d,.]*", b))
+        jac = len(wa & wb) / max(1, len(wa | wb))
+        neg = ("not" in wa) != ("not" in wb)
+        if jac >= 0.5 and (na != nb or neg):
+            out.append((0.03, 0.07, 0.90))
+        elif jac >= 0.5 and na == nb:
+            out.append((0.95, 0.03, 0.02))
+        elif wb and wb <= wa and nb <= na and not neg:
+            out.append((0.92, 0.06, 0.02))
+        else:
+            out.append((0.08, 0.87, 0.05))
+    return out
+
+
+@pytest.fixture(autouse=True)
+def local_nli(monkeypatch):
+    """The NLI model is not downloaded in tests."""
+    from nishpaksh import nli
+    nli.set_backend(fake_nli)
+    yield
+    nli.set_backend(None)

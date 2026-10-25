@@ -1,0 +1,9 @@
+# The language-model libraries of the newsroom (CPU only; installed by .github/actions/nlp-setup in the hourly job and
+# the audit). Kept apart from requirements.txt so the light jobs (archive, audio, live-intro) do not download them.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.3
+transformers>=4.44
+sentencepiece>=0.2
+sentence-transformers>=3.0
+spacy>=3.7
+rapidfuzz>=3.9

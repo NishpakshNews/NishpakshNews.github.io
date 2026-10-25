@@ -1,0 +1,16 @@
+name: Language-model libraries
+description: >-
+  Installs requirements-nlp.txt (torch CPU, transformers, sentence-transformers, spaCy, rapidfuzz), the spaCy English model,
+  and keeps the Hugging Face model files (NLI cross-encoder, multilingual embedder) in the Actions cache so a run
+  downloads them once.
+runs:
+  using: composite
+  steps:
+    - run: pip install -q -r requirements-nlp.txt
+      shell: bash
+    - run: python -m spacy download en_core_web_sm || true
+      shell: bash
+    - uses: actions/cache@v4
+      with:
+        path: ~/.cache/huggingface
+        key: hf-models-v1

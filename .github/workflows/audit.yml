@@ -33,13 +33,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
-      - name: Extra libraries for the stack probe (CPU only)
-        if: ${{ github.event.inputs.tool == 'stack_probe' || github.event.inputs.args == 'stack_probe' }}
-        run: |
-          pip install rapidfuzz splink spacy coreferee sentence-transformers transformers sentencepiece
-          pip install torch --index-url https://download.pytorch.org/whl/cpu || pip install torch
-          python -m spacy download en_core_web_sm || true
-          python -m coreferee install en || true
+      - uses: ./.github/actions/nlp-setup
       - uses: ./.github/actions/newsroom-load
         env:
           NEWSROOM_KEY: ${{ secrets.NEWSROOM_KEY }}
