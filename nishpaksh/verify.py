@@ -146,8 +146,12 @@ def base_verdicts(store: Store, story_id: int) -> int:
     # the same fact on another page of the thread (threads.py, owner Oct 16 2026): one fact, one colour
     from .threads import pooled_origins, twin_rows
     twins = twin_rows(store, canon)
+    from . import truth                  # B25: belief from who supports and denies; an extra gate that can only hold back
+    sums = {cid: support_summary(cid, members, agroup, gpersp) for cid in canon}
+    belief = truth.beliefs({cid: set(x["support_groups"]) for cid, x in sums.items()},
+                           {cid: set(x["deny_groups"]) for cid, x in sums.items()})
     for cid, c in canon.items():
-        s = support_summary(cid, members, agroup, gpersp)
+        s = sums[cid]
         conflict_live = any(support_summary(o, members, agroup, gpersp)["support_groups"]
                             for o in (c["conflicts"] or []) if o in canon)
         contested = bool(s["deny_groups"] and s["support_groups"] or conflict_live)
@@ -163,7 +167,7 @@ def base_verdicts(store: Store, story_id: int) -> int:
         # the 6-hour clock starts when the rule is first met, and restarts if it stops being met
         o = dict(c.get("origins") or {})
         meets = (not contested and bool(s["support_groups"]) and meets_rule(judged_c, s, mode)
-                 and str(cid) not in name_conf)
+                 and str(cid) not in name_conf and belief.get(cid, 0.0) >= truth.BELIEF_MIN)
         if meets and not o.get("met_at"):
             o["met_at"] = now.isoformat(timespec="minutes")
         elif not meets and o.get("met_at"):
@@ -259,9 +263,10 @@ def verify_story(store: Store, router: Router, story_id: int, budget: dict) -> i
         a, b = opinions
         primary = a["basis"] in PRIMARY_EVIDENCE and b["basis"] in PRIMARY_EVIDENCE
         verdict = c["verdict"]
-        if primary and a["verdict"] == b["verdict"] == "contradicted":
+        from . import groundjudge       # B26: the passage must settle it by meaning too, not only two opinions
+        if primary and a["verdict"] == b["verdict"] == "contradicted" and groundjudge.holds(text, evidence, web, "contradicted"):
             verdict = "false"
-        elif primary and a["verdict"] == b["verdict"] == "supported":
+        elif primary and a["verdict"] == b["verdict"] == "supported" and groundjudge.holds(text, evidence, web, "supported"):
             verdict = "confirmed"
         detail = {"checked": True, "checked_at": utcnow().isoformat(timespec="minutes"),
                   "opinions": opinions, "web_sources": web[:8], "outcome": verdict}

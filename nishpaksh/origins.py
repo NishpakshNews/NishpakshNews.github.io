@@ -64,16 +64,6 @@ For each numbered source, say who it is:
 
 Reply with JSON only: {{"items": [{{"n": 1, "name": "...", "kind": "...", "government": null}}]}}"""
 
-CHECKABLE_PROMPT = """For each numbered statement from a news story, decide its type:
-- "fact": something that records, documents, video or direct observation could confirm or refute:
-  who did what, where and when; numbers; arrests; deaths; official decisions; that a person SAID something.
-- "characterisation": a motive, intention, blame, cause asserted without evidence, label, opinion,
-  prediction or interpretation (e.g. "it was a planned conspiracy", "the policy failed farmers").
-
-{items}
-
-Reply with JSON only: {{"items": [{{"n": 1, "type": "fact"}}]}}"""
-
 GENERIC_AUTHOR = re.compile(r"(?i)\b(staff|desk|bureau|team|news|web|correspondent|reporter|online|editor|agencies|"
                             r"agency|trending|digital|ht|toi|express|network)\b"
                             r"|संवाददाता|डेस्क|ब्यूरो|एजेंसी|टीम|न्यूज़|न्यूज")
@@ -214,6 +204,9 @@ def compute_origins(store: Store, router: Router | None, story_id: int) -> dict[
                                                       claims.c.canonical_id.is_not(None)))
             if r["article_id"] in arts]
     groups = independence_groups(list(arts.values()))
+    from . import independence
+    copied = independence.copies(arts)              # a report that reproduces an earlier one is no other source (B28)
+    groups = independence.merge_groups(groups, copied)
     analysis = dict(story["analysis"] or {})
     amap = _attribution_map(router, story["signature"] or "", sorted({r["attributed_to"] or "" for r in rows}),
                             analysis.get("attribution_map") or {})
@@ -232,7 +225,7 @@ def compute_origins(store: Store, router: Router | None, story_id: int) -> dict[
         first_support[earliest["article_id"]] += 1
         if len({r["article_id"] for r in rs}) == 1:
             unique[rs[0]["article_id"]] += 1
-    original = article_originality(arts, first_support, unique)
+    original = {aid: ok and aid not in copied for aid, ok in article_originality(arts, first_support, unique).items()}
     original_owners = {owner_of(a["outlet"], a["url"]) for aid, a in arts.items() if original.get(aid)}
 
     def origin_of(r: dict) -> str:
@@ -287,27 +280,12 @@ def classify_checkable(store: Store, router: Router | None, story_id: int, only:
                                   .where(canonical.c.story_id == story_id))
             if c["checkable"] is None and c["kind"] != "relation" and c["text"]
             and (only is None or c["id"] in only)]
-    if router is None:
-        return
+    from . import checkworthy
     for i in range(0, len(todo), 50):
         chunk = todo[i:i + 50]
-        try:
-            res = router.call("light", CHECKABLE_PROMPT.format(
-                items="\n".join(f'{k + 1}. "{c["text"]}"' for k, c in enumerate(chunk))),
-                json_out=True, max_output_tokens=1500)
-        except QuotaExhausted:
-            return
-        except Exception as e:  # noqa: BLE001
-            log.warning("checkable classification failed: %s", str(e)[:200])
-            continue
-        for it in (res.data or {}).get("items", []) if isinstance(res.data, dict) else []:
-            try:
-                k = int(it["n"]) - 1
-            except (KeyError, TypeError, ValueError):
-                continue
-            if 0 <= k < len(chunk) and it.get("type") in ("fact", "characterisation"):
-                store.exec(update(canonical).where(canonical.c.id == chunk[k]["id"])
-                           .values(checkable=it["type"] == "fact"))
+        for c, fact in zip(chunk, checkworthy.classify([c["text"] for c in chunk])):
+            if fact is not None:                # None = could not tell: stays unclassified, i.e. a characterisation
+                store.exec(update(canonical).where(canonical.c.id == c["id"]).values(checkable=fact))
 
 
 def assess_story(store: Store, router: Router | None, story_id: int) -> bool:

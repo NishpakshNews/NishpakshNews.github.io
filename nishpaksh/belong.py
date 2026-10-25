@@ -37,7 +37,7 @@ from .router import QuotaExhausted, Router
 log = logging.getLogger(__name__)
 
 MODEL_ROLES = ("background", "related", "explanation")
-TAGS = ("history", "leadup", "explains", "linked", "other")
+TAGS = ("history", "leadup", "bg", "explains", "linked", "other")
 LEADUP_DAYS = 14        # dated within this many days before the news = lead-up, older = history (code, not model)
 
 PROMPT = """A news story, and numbered lines from the pages that reported it. A news page often carries OTHER
@@ -180,6 +180,24 @@ def place(payload: dict, tags: dict[str, str | None]) -> dict:
     return {"kept": len(keep), "also": len(also), "moved": moved}
 
 
+KEEP_SIMILARITY = 0.6
+
+
+def _close_lines(lines: list[dict], news: str) -> list[dict]:
+    from . import embed
+    if not lines or not news:
+        return []
+    try:
+        vecs, how = embed.vectors([news] + [i["text"] for i in lines])
+    except Exception as e:  # noqa: BLE001
+        log.info("relevance scoring skipped: %s", str(e)[:80])
+        return []
+    if how != "bi-encoder":
+        return []
+    sims = vecs[1:] @ vecs[0]
+    return [i for i, s in zip(lines, sims) if float(s) >= KEEP_SIMILARITY]
+
+
 def check(store: Store, router: Router | None, story_id: int, payload: dict) -> dict:
     """Tags every background / related / explanation line (two answers each, cached per line text) and places it.
     Returns the counts from `place`."""
@@ -192,6 +210,12 @@ def check(store: Store, router: Router | None, story_id: int, payload: dict) -> 
     cache: dict[str, list] = {k: [a for a in v if a in TAGS] for k, v in (an.get("context_tags") or {}).items()
                               if isinstance(v, list)}
     news, story = _story_text(payload)
+    # B32: a line close in meaning to the story's own news (bi-encoder similarity) is kept without asking the model;
+    # only the rest goes to the twice-asked question. Never drops anything: the model's "other news" still decides that.
+    close = _close_lines(lines, news)
+    keep_as = {"explanation": "explains", "related": "linked", "background": "bg"}      # its own role, confirmed
+    for i in close:
+        cache.setdefault(_key(i["text"]), [keep_as.get(i.get("role"), "linked")] * 2)
 
     def ask(todo: list[dict]) -> None:
         for start in range(0, len(todo), BATCH):

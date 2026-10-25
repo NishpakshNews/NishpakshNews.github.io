@@ -390,50 +390,10 @@ def mark_qualified(store: Store, story_id: int, rule: str) -> None:
     store.exec(update(stories).where(stories.c.id == story_id).values(qualifies=True, analysis=analysis))
 
 
-def _affinity_clusters(rows: list[tuple[str, str, float]], sources: list[str], k: int):
-    from sklearn.cluster import SpectralClustering
-    agg: dict[tuple[str, str], list[float]] = defaultdict(list)
-    for a, b, v in rows:
-        agg[(a, b)].append(v)
-    idx = {s: i for i, s in enumerate(sources)}
-    A = np.full((len(sources), len(sources)), 0.5)
-    np.fill_diagonal(A, 1.0)
-    for (a, b), v in agg.items():
-        if len(v) >= 2 and a in idx and b in idx:
-            A[idx[a], idx[b]] = A[idx[b], idx[a]] = (float(np.mean(v)) + 1) / 2
-    return SpectralClustering(n_clusters=k, affinity="precomputed", random_state=0).fit_predict(A)
-
-
-def _stability(store: Store, sources: list[str], labels, rounds: int = 10, share: float = 0.8) -> float:
-    """Mean adjusted Rand index between the clustering and clusterings of random 80% subsets of the
-    stories: near 1 when the perspectives are real, near 0 when they are noise."""
-    import random
-    from sklearn.metrics import adjusted_rand_score
-    by_story: dict[int, list] = defaultdict(list)
-    for r in store.rows(select(story_pairs.c.story_id, story_pairs.c.a, story_pairs.c.b, story_pairs.c.value)):
-        a, b = sorted((_unit(r["a"]), _unit(r["b"])))
-        if a != b:
-            by_story[r["story_id"]].append((a, b, r["value"]))
-    ids = sorted(by_story)
-    rng = random.Random(0)
-    k = int(max(labels)) + 1
-    scores = []
-    for _ in range(rounds):
-        pick = rng.sample(ids, max(1, int(len(ids) * share)))
-        try:
-            lab = _affinity_clusters([x for sid in pick for x in by_story[sid]], sources, k)
-        except Exception:  # noqa: BLE001
-            scores.append(0.0)
-            continue
-        scores.append(adjusted_rand_score(list(labels), list(lab)))
-    return float(np.mean(scores)) if scores else 0.0
-
-
 def recompute_global(store: Store) -> int:
-    """Cluster sources by their average agreement across all stories."""
+    """Perspectives: groups of outlets whose fitted positions (positions.py) are not apart, shown only when the daily
+    positions test found a real signal."""
     from scipy.optimize import linear_sum_assignment
-    from sklearn.cluster import SpectralClustering
-    from sklearn.metrics import silhouette_score
 
     agg: dict[tuple[str, str], list[float]] = defaultdict(list)
     for r in store.rows(select(story_pairs.c.a, story_pairs.c.b, story_pairs.c.value)):
@@ -455,38 +415,15 @@ def recompute_global(store: Store) -> int:
     if SETTINGS.require_positions_signal and not (pos and pos.get("signal")):
         store.exec(delete(source_clusters))
         return 0
-    idx = {s: i for i, s in enumerate(sources)}
-    A = np.full((len(sources), len(sources)), 0.5)
-    np.fill_diagonal(A, 1.0)
-    for (a, b), v in known.items():
-        if a in idx and b in idx:
-            A[idx[a], idx[b]] = A[idx[b], idx[a]] = (v + 1) / 2
-    D = 1 - A
-    best = None
-    for k in range(2, min(5, len(sources))):
-        try:
-            lab = SpectralClustering(n_clusters=k, affinity="precomputed", random_state=0).fit_predict(A)
-            if len(set(lab)) < 2:
-                continue
-            sil = silhouette_score(D, lab, metric="precomputed")
-        except Exception as e:  # noqa: BLE001
-            log.debug("spectral k=%d failed: %s", k, e)
-            continue
-        if best is None or sil > best[0]:
-            best = (sil, lab)
-    stab = None
-    if best is not None and best[0] >= SETTINGS.global_min_silhouette:
-        stab = _stability(store, sources, best[1])
-    if best is None or best[0] < SETTINGS.global_min_silhouette or stab < SETTINGS.global_min_stability:
-        # Oct 2026: silhouette 0.04-0.07 and resampling agreement (ARI) 0.02-0.68 on real data: the
-        # clusters were noise crossing the threshold now and then, so perspectives flipped between
-        # runs. Shown only when they also survive resampling of the stories.
-        log.info("global perspectives: no stable structure yet (silhouette %s, stability %s)",
-                 None if best is None else round(best[0], 3), None if stab is None else round(stab, 2))
+    # the groups come from the fitted positions and their intervals (positions.groups, B30), not from clustering the
+    # agreement matrix: two outlets share a perspective unless their whole intervals are apart
+    grp = positions.groups(pos.get("positions") or []) if pos else {}
+    sources = sorted(grp)
+    if len(set(grp.values())) < 2:
+        log.info("global perspectives: the position intervals form one group; none shown")
         store.exec(delete(source_clusters))
         return 0
-
-    labels = best[1]
+    labels = np.array([grp[s] for s in sources])
     # keep letters stable: match new clusters to previous ones by member overlap
     prev = {r["source"]: r["cluster"] for r in store.rows(select(source_clusters))}
     k_new = int(labels.max()) + 1
@@ -512,7 +449,7 @@ def recompute_global(store: Store) -> int:
     with store.engine.begin() as c:
         c.execute(insert(source_clusters), [dict(source=s, cluster=mapping[int(l)], updated_at=now)
                                             for s, l in zip(sources, labels)])
-    log.info("global perspectives: %d sources in %d clusters (silhouette %.2f)", len(sources), k_new, best[0])
+    log.info("global perspectives: %d sources in %d groups (from position intervals)", len(sources), k_new)
     return k_new
 
 

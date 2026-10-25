@@ -174,6 +174,22 @@ def test_positions(store: Store, rounds: int = 20, shuffles: int = 3) -> dict:
     return report
 
 
+def groups(positions: list[dict]) -> dict[str, int]:
+    """Perspectives from the fitted positions (B30): outlets in order of position; a new group starts when an outlet's
+    whole interval (5th-95th percentile over resampled stories) lies above everything the current group's intervals reach.
+    Outlets whose intervals overlap the group stay in it, so uncertainty merges groups, never splits them: no spectral
+    clustering, no silhouette cut-off. Returns {outlet: group number from 0, left to right}."""
+    out: dict[str, int] = {}
+    n, reach = 0, None
+    for p in sorted(positions, key=lambda p: p["theta"]):
+        if reach is not None and p["lo"] > reach:
+            n += 1
+            reach = None
+        out[p["unit"]] = n
+        reach = p["hi"] if reach is None else max(reach, p["hi"])
+    return out
+
+
 def latest(store: Store) -> dict | None:
     row = store.one(select(diagnostics.c.report, diagnostics.c.created_at).where(diagnostics.c.kind == "positions")
                     .order_by(diagnostics.c.id.desc()).limit(1))

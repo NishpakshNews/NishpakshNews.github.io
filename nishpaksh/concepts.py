@@ -7,19 +7,10 @@ import hashlib
 import logging
 import re
 
-from .router import QuotaExhausted, Router
+from .router import Router
 
 log = logging.getLogger(__name__)
 DEVA = re.compile(r"[ऀ-ॿ]")
-
-PROMPT = """Each numbered item is a loaded or emotive word or phrase from a Hindi news report. Give the
-English word or short phrase (1-3 words, lowercase) a careful English-language reporter would recognise
-as the SAME choice of wording, keeping its tone (e.g. "दंगाई" -> "rioters", "आतंकी" -> "terrorist").
-
-{items}
-
-Reply with JSON only: {{"items": [{{"n": 1, "en": "..."}}]}}"""
-
 
 def _key(word: str) -> str:
     return hashlib.sha256(("concept|" + word).encode("utf-8")).hexdigest()
@@ -36,33 +27,31 @@ def lookup(store, words: set[str]) -> dict[str, str]:
     return out
 
 
+MIN_SIM = 0.62          # a Hindi word is the same wording choice as an English one only when this close in meaning
+
+
 def map_new(store, router: Router | None, words: set[str], max_calls: int = 3) -> int:
-    """Ask for the Hindi words not yet mapped (at most `max_calls` calls a run). Returns how many
-    were added."""
-    if router is None:
-        return 0
+    """Map the Hindi words not yet mapped to the nearest English loaded word, by a multilingual embedding (cross-lingual
+    nearest neighbour; `router` and `max_calls` are kept for the callers and unused). The English side is the loaded words
+    already in the data and the concepts already mapped. A word with no neighbour close enough stays unmapped (it then
+    stands for itself: never a guess). Needs the bi-encoder; the TF-IDF fallback has no cross-lingual space, so nothing is
+    mapped. Returns how many were added."""
+    from . import embed
     known = lookup(store, words)
     todo = sorted(w for w in words if DEVA.search(w) and w not in known)
-    added = 0
-    for start in range(0, min(len(todo), 60 * max_calls), 60):
-        chunk = todo[start:start + 60]
-        try:
-            res = router.call("light", PROMPT.format(items="\n".join(f"{k + 1}. {w}" for k, w in enumerate(chunk))),
-                              json_out=True, max_output_tokens=1500)
-        except QuotaExhausted:
-            break
-        except Exception as e:  # noqa: BLE001
-            log.warning("concept mapping failed: %s", str(e)[:200])
-            continue
-        put = {}
-        for it in (res.data or {}).get("items", []) if isinstance(res.data, dict) else []:
-            try:
-                k = int(it["n"]) - 1
-                en = str(it.get("en") or "").strip().lower()
-            except (KeyError, TypeError, ValueError):
-                continue
-            if 0 <= k < len(chunk) and en and not DEVA.search(en) and len(en) <= 40:
-                put[_key(chunk[k])] = en
+    english = sorted({w.lower() for w in words if not DEVA.search(w)} | {v for v in known.values() if not DEVA.search(v)})
+    if not todo or not english:
+        return 0
+    vecs, how = embed.vectors(todo + english)
+    if how != "bi-encoder":
+        return 0
+    hi, en = vecs[:len(todo)], vecs[len(todo):]
+    sims = hi @ en.T
+    put = {}
+    for k, w in enumerate(todo):
+        j = int(sims[k].argmax())
+        if sims[k, j] >= MIN_SIM:
+            put[_key(w)] = english[j]
+    if put:
         store.translation_put(put)
-        added += len(put)
-    return added
+    return len(put)

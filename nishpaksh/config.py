@@ -150,8 +150,6 @@ class Settings:
     omission_penalty: float = 0.25
     split_margin: float = 0.25
     global_min_sources: int = 6
-    global_min_silhouette: float = 0.10
-    global_min_stability: float = 0.6   # mean ARI against 80% resamples of the stories
     # an article leaves its outlet's perspective only on strong evidence
     departure_margin: float = 0.5
     departure_min_evidence: int = 3
