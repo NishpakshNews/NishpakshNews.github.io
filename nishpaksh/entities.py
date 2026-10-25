@@ -35,7 +35,7 @@ EXTRA_PREFIX = {"capt", "shree", "shri", "sri", "smt", "free", "communications",
 # "Jamiat Ulema-e-Hind", "Singapore-India Maritime Bilateral Exercise", "BCCI Women"); found in the first shadow run
 BODY_WORDS = {"survey", "exercise", "bilateral", "maritime", "hind", "women", "men", "branch", "house", "secretariat",
               "bureau", "agency", "authority", "association", "federation", "union", "front", "force", "army", "navy",
-              "league", "cup", "trophy", "series", "tournament", "summit", "mission", "scheme", "yojana", "abhiyan"}
+              "league", "cup", "trophy", "series", "tournament", "summit", "mission", "scheme", "yojana", "abhiyan", "sarkar", "government", "govt", "ministry", "police", "court"}
 _TOKEN = re.compile(r"[A-Za-z][A-Za-z.'’-]*")
 _KIN = re.compile(r"[’']s\s+(?:mother|father|wife|husband|son|daughter|brother|sister|parents|family|relatives|"
                   r"uncle|aunt|cousin|nephew|niece)\b", re.I)

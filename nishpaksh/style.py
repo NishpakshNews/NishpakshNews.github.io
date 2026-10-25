@@ -73,8 +73,29 @@ def _candidates(text: str) -> set[str]:
     return out
 
 
+USE_ENTITIES = True      # the entity table (entities.py) decides who is a person and who may be shortened
+
+
 def people(text: str, speakers: list[str] | tuple = ()) -> dict[str, str]:
-    """{full name: surname} for the persons in a text, shortenable without confusion."""
+    """{full name: surname} for the persons in a text, shortenable without confusion. Adopted Oct 25 2026 after two shadow
+    runs on the live articles (tools/entities_shadow.py): one identity per person, so "Parvinder Singh" and "Parvinder
+    Singh Jhota" are one man; a body, event or government ("Modi Sarkar") is never a person. Any failure of the table
+    falls back to the old rule, so a story is never held back."""
+    if USE_ENTITIES:
+        try:
+            from .entities import EntityTable
+            t = EntityTable()
+            for sp in speakers or ():
+                if sp:
+                    t.add(sp, "speaker", text)
+            t.add_text(text)
+            return t.shortenable()
+        except Exception:  # noqa: BLE001
+            pass
+    return _people_old(text, speakers)
+
+
+def _people_old(text: str, speakers: list[str] | tuple = ()) -> dict[str, str]:
     found = {}
     spoken = " ".join(speakers or ())
     cands = _candidates(text)

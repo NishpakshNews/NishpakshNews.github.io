@@ -2055,3 +2055,12 @@ and paragraphs mixed unrelated facts. Rebuilt, keeping the Oct 8 rule (never los
   of the article (`data-replaces`). A struck line in the article (`data-struck`, its statement ids) jumps to its row. Follow option "struck through" (follow kind 'colour', key "struck"): `notify.line_classes` marks struck
   lines "struck" and `queue_colours` counts lines newly struck. No migration. `sw.js` np-main-60.
 - **Desk order:** a story refused as a follow-up before (`edition.followup.ok` False) goes after every other ready story.
+- **Entity table ADOPTED for shortening (Oct 25 2026, after two shadow runs on 66 live articles).** `style.people` now returns
+  `EntityTable.shortenable()` (`style.USE_ENTITIES`; any failure falls back to `_people_old`, kept for the shadow comparison).
+  Run 1 found bodies and events judged people (US Geological Survey, Jamiat Ulema-e-Hind, BCCI Women, an exercise), title-like
+  words kept in names (Commissioners, Capt, Shree, Free, Communications), a doubled name, a place leaking after "of", and
+  order-dependent clustering; run 2 (after fixes): 51 names gained (all people except "Modi Sarkar" / "Narendra Modi Sarkar",
+  fixed by BODY_WORDS), 11 "lost" of which most are bodies or the old code's title-in-name strings, Rahul Gandhi lost correctly
+  (Priyanka Gandhi Vadra is in the story), Ajinkya Mirgul unexplained (the report now prints kind and evidence for each lost
+  name), one cautious split left (story 40418: "Lokesh Shatrujeet Kapoor" cannot be "Shatrujeet Singh Kapoor"). NOT adopted
+  yet: `voice.speaker_key` (context-free, used in ~30 places; the table's `speaker_key` needs a per-story table passed in).

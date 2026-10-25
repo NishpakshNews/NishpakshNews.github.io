@@ -37,7 +37,7 @@ def story_text(payload: dict) -> tuple[str, list[str], list[str]]:
 def compare(payload: dict) -> dict:
     """One article: old against new. Pure function of the payload (tested)."""
     from .. import style, voice
-    from ..entities import EntityTable
+    from ..entities import EntityTable, parse
     text, speakers, sources = story_text(payload)
     t = EntityTable()
     for sp in speakers:
@@ -65,16 +65,17 @@ def compare(payload: dict) -> dict:
             merged.append({"old_keys": sorted(ks), "names": sorted(sp for sp in old if new[sp] == i)})
     out["split"], out["merged"] = split, merged
 
-    o = style.people(" ".join([text, *sources]), speakers)
+    o = style._people_old(" ".join([text, *sources]), speakers)
     n = t.shortenable()
     out["old_short"], out["new_short"] = len(o), len(n)
     out["gained"] = sorted(set(n) - set(o))
-    out["lost"] = sorted(set(o) - set(n))
+    # the old code kept the title in the name ("Student Jasim Ali"); a name is lost only if its bare name is not shortened too
+    out["lost"] = sorted(nm for nm in set(o) - set(n) if parse(nm).text not in n)
     why_lost = {}
     for name in out["lost"]:
         e = t.entity(name)
         if e is None or not e.person:
-            why_lost[name] = "not a person to the table"
+            why_lost[name] = "not a person to the table" + (f" (kind {parse(name).kind}, why {sorted(e.why) if e else '-'})")
         elif e.ambiguous:
             why_lost[name] = "ambiguous"
         elif len(e.fullest.tokens) < 2:

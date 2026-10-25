@@ -4072,7 +4072,9 @@ def test_someone_who_comes_before_the_reader_knows_who_gets_context_in_brackets(
           {"text": "Dipke's mother said the action is wrong.", "ids": [2]},
           {"text": "The mother said Dipke had been warned.", "ids": [2]}]]
     polish({"narrative": {"paragraphs": P}, "contested": items})
-    assert [s["text"] for s in P[0]] == ["Dipke urged the mother (Abhijeet Dipke's mother) not to cry.",
+    # (Oct 25 2026, entity table: the speaker "Abhijeet Dipke" is a person, so the first bare "Dipke" is the full
+    # introduction, as the house rule says; before, the speaker alone was no evidence when the text lacked the full name)
+    assert [s["text"] for s in P[0]] == ["Abhijeet Dipke urged the mother (Abhijeet Dipke's mother) not to cry.",
                                          "Dipke's mother said the action is wrong.",
                                          "The mother said Dipke had been warned."]
     # whose mother is said in the sentence itself: nothing to add, then or later
