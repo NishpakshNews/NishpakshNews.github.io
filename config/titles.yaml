@@ -14,7 +14,7 @@
 # Entries are added here by hand or from what outlets show (a title seen before a name in two or more
 # independent outlets); a model is never the only source for one.
 
-honorifics: [Mr, Mrs, Ms, Dr, Shri, Smt, Sri, Shrimati, Kumari, Sardar, Pandit, Swami, Maulana, Sheikh, Saint, Prof, Professor]
+honorifics: [Mr, Mrs, Ms, Dr, Capt, Shree, Shri, Smt, Sri, Shrimati, Kumari, Sardar, Pandit, Swami, Maulana, Sheikh, Saint, Prof, Professor]
 
 # words that may open or sit inside a title but prove nothing alone
 qualifiers: [Union, Deputy, Chief, Vice, Senior, Additional, Joint, Assistant, Acting, Former, Late, Retired,

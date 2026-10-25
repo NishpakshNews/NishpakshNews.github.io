@@ -84,3 +84,32 @@ def local_nli(monkeypatch):
     nli.set_backend(fake_nli)
     yield
     nli.set_backend(None)
+
+
+def fake_ner(text):
+    """Stand-in for spaCy (nlp.py): a run of 2-4 capitalised words is a PERSON, unless its last word names an institution
+    (then ORG). Good enough to exercise the callers; the real model is checked in the audit."""
+    import re
+    from nishpaksh import nlp
+    from nishpaksh.people import BODY_END
+    out = []
+    from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+    for m in re.finditer(r"(?<![\w-])((?:[A-Z][a-z]+)(?:\s+[A-Z][a-z]+){1,5})(?![\w-])", text):
+        words = m.group(1).split()
+        while words and words[0].lower() in ENGLISH_STOP_WORDS:         # "While Humayun Kabir": not part of the name
+            words = words[1:]
+        if len(words) < 2:
+            continue
+        places = {"champaran", "tel", "aviv", "saudi", "arabia", "new", "zealand", "uttar", "pradesh", "delhi", "kolkata",
+                  "palatine", "street", "games", "league", "asian", "super", "agreement"}   # a gazetteer, for the fake only
+        label = "ORG" if words[-1].lower() in BODY_END | {"team", "survey", "exercise", "women"} else "GPE" if {w.lower() for w in words} & places else "PERSON"
+        out.append(nlp.Ent(" ".join(words), label, m.start(1), m.end(1)))
+    return out
+
+
+@pytest.fixture(autouse=True)
+def local_ner(monkeypatch):
+    from nishpaksh import nlp
+    nlp.set_backend(fake_ner)
+    yield
+    nlp.set_backend(None)

@@ -218,9 +218,13 @@ def speaker_key(name: str | None) -> str | None:
     for key, names in ALIASES.items():
         if any(low == a or low.startswith(a + " ") or low.endswith(" " + a) for a in names):
             return key
+    from . import entities
+    k = entities.person_key(name)             # a person: one identity per man or woman in this story
+    if k:
+        return k
     words = [w for w in re.findall(r"[A-Z][\w'-]+", name) if w not in ("The",)]
-    if len(words) >= 2:
-        return words[-1].lower()
+    if len(words) >= 2 and not entities.current():
+        return words[-1].lower()              # no table (outside a story): the surname, as before
     return low
 
 

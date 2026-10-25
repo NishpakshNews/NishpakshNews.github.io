@@ -1,5 +1,8 @@
-"""One identity per person in a story (Notes B1 / B2 / B18; owner, Oct 25 2026). SHADOW: nothing calls this in the
-pipeline yet; `tools/entities_shadow.py` compares it with the current code on stored articles first.
+"""One identity per person in a story (Notes B1 / B2 / B18; owner, Oct 25 2026).
+
+Who is a person comes from named-entity recognition (nlp.py, spaCy), not from word lists: a name is a person when the
+analyser labels it PERSON in the article (or it is a quoted speaker with a person's title) and never when it labels the
+same name an organisation or place. The linking sieve below is the entity-resolution part and is unchanged.
 
 Why (Group A, 14 days, 65 articles): a full name was written 3+ times in 49% of articles because `style.people` asks
 "is this exact string a person, and is its surname unique among every capitalised string?" ("Parvinder Singh" and
@@ -17,37 +20,19 @@ An entity is a set of mentions that can only be one person. Linking is by code, 
      written out and differ are NEVER linked (the cannot-link rule that makes Bhim Singh and Harjit Singh two people);
   4. a mention that fits two different people ("Singh", "Banerjee") stays unlinked and ambiguous: a surname alone is
      only a short form of someone when exactly one person in the story has it.
-A name is a person when ANY mention of the entity has evidence (a title in front, a speech verb after, being a quoted
-speaker, an age beside it, a verb only a person can be the object of: "was arrested", "died"). Countries, teams,
-films and schemes have none of these, so they are never shortened. Nothing here uses a model."""
+A name is a person when the analyser labels any mention PERSON (and not mostly something else), or when it is a quoted
+speaker with a person's title in front. Countries, teams, films and schemes are labelled otherwise, so they are never
+shortened."""
 from __future__ import annotations
 
+import contextvars
 import re
 from dataclasses import dataclass, field
 
 from . import spelling, titles
 
 PARTICLES = {"al", "el", "bin", "bint", "ibn", "de", "van", "von"}
-# words that stand before a name and are no part of it ("Capt Gurudeep Bala", "Shree Narendra Modi", the slogan "Free
-# Sharjeel Imam", a portfolio "Communications Pemmasani Chandra Sekhar"); the titles registry holds the real titles
-EXTRA_PREFIX = {"capt", "shree", "shri", "sri", "smt", "free", "communications", "commissioners", "students"}
-# a name that ends in, or holds, one of these is a body, place or event, never a person ("US Geological Survey",
-# "Jamiat Ulema-e-Hind", "Singapore-India Maritime Bilateral Exercise", "BCCI Women"); found in the first shadow run
-BODY_WORDS = {"survey", "exercise", "bilateral", "maritime", "hind", "women", "men", "branch", "house", "secretariat",
-              "bureau", "agency", "authority", "association", "federation", "union", "front", "force", "army", "navy",
-              "league", "cup", "trophy", "series", "tournament", "summit", "mission", "scheme", "yojana", "abhiyan", "sarkar", "government", "govt", "ministry", "police", "court"}
 _TOKEN = re.compile(r"[A-Za-z][A-Za-z.'’-]*")
-_KIN = re.compile(r"[’']s\s+(?:mother|father|wife|husband|son|daughter|brother|sister|parents|family|relatives|"
-                  r"uncle|aunt|cousin|nephew|niece)\b", re.I)
-
-SPEECH = r"(?:said|says|told|added|stated|alleged|claimed|denied|announced|noted|asked|urged|wrote|argued|replied)"
-# only a person can be the object of these (a country, team, film or scheme is never "arrested"); passive or intransitive
-PASSIVE = (r"(?:was|were|is|has\s+been|had\s+been|been)\s+(?:arrested|detained|killed|injured|stabbed|convicted|sentenced|"
-           r"acquitted|booked|questioned|summoned|appointed|elected|sacked|hospitali[sz]ed|rescued|abducted|kidnapped|"
-           r"freed|charged|rushed)")
-INTRANSITIVE = r"(?:died|resigned|retired|passed\s+away|surrendered|absconded)"
-
-
 def _bare(w: str) -> str:
     return w.strip(".,;:\"'‘’“”()")
 
@@ -92,20 +77,20 @@ def _stoppers() -> set[str]:
 
 def parse(raw: str) -> Mention:
     """Split what an outlet wrote into its title and its name, and say what kind of thing it names."""
-    from .style import NOT_PERSON, ROLES_LOWER
-    from .voice import is_body
+    from .people import BODY_END
     s = re.sub(r"\s+", " ", (raw or "").strip())
-    if _KIN.search(s):
+    if re.search(r"[’']s\s+\w+", s):                       # "Rahul's mother": a relation, not a name
         return Mention(raw, "", (), "relation", False)
     s = re.sub(r"\s*\([^)]*\)", "", s)                  # "(CERT-In)", "(other)"
     s = s.split(",")[0].strip()                          # "Varsha Singh, a senior civil official"
     toks = _TOKEN.findall(s)
     stop = _stoppers()
+    roles = {w.lower() for w in titles.role_nouns()}
     run: list[str] = []
     for t in reversed(toks):
         b = _bare(t)
         low = b.lower()
-        if b in stop or low in ROLES_LOWER or low in EXTRA_PREFIX or (low.endswith("s") and low[:-1] in ROLES_LOWER):
+        if b in stop or low in roles or (low.endswith("s") and low[:-1] in roles):
             break
         if b[:1].isupper() or (b.lower() in PARTICLES and run):
             run.append(re.sub(r"[’']s$", "", b))
@@ -118,37 +103,16 @@ def parse(raw: str) -> Mention:
         run = run[: len(run) // 2]                       # "Lokesh Adhikari Lokesh Adhikari"
     prefix = toks[: len(toks) - len(run)]
     pw = set(titles.person_title_words())
-    titled = any(_bare(w) in pw or _bare(w).lower() in ROLES_LOWER for w in prefix)
+    titled = any(_bare(w) in pw or _bare(w).lower() in roles for w in prefix)
     title = " ".join(prefix)
     name_text = " ".join(run)
-    words = {w.lower() for t in run for w in t.split("-")}
     acronym = len(run) >= 2 and any(len(t) >= 3 and t.isupper() for t in run)
-    if (is_body(name_text) if titled else is_body(s)) or any(w in NOT_PERSON for w in run) or (words & BODY_WORDS) or acronym:
+    inst_prefix = prefix and prefix[-1].lower() in ("of", "for", "in") and any(_bare(w).lower() in BODY_END for w in prefix)
+    if (len(run) >= 2 and run[-1].lower() in BODY_END) or acronym or inst_prefix:       # "Modi Sarkar", "BCCI Women": institutions
         return Mention(raw, title, tuple(run), "body", titled)
     if not run:
         return Mention(raw, title, (), "role", titled)
     return Mention(raw, title, tuple(run), "person" if titled else "name", titled)
-
-
-def evidence_in(text: str, name: str) -> str:
-    """Why `name` (a name as written in `text`) is a person: "title", "speech", "age", "passive", "apposition", "" if
-    nothing in the text says so. Countries, teams, films and schemes get none of these."""
-    from .style import PERSON_TITLES, ROLES_LOWER
-    e = re.escape(name)
-    pt = "|".join(map(re.escape, sorted(PERSON_TITLES, key=len, reverse=True)))
-    rl = "|".join(sorted(ROLES_LOWER, key=len, reverse=True))
-    if re.search(rf"(?:\b(?:{pt})\.?|\b(?:{rl}))\s+{e}\b", text):
-        return "title"
-    if re.search(rf"\b{e}\s+(?:has\s+|had\s+|also\s+|further\s+)?{SPEECH}\b", text):
-        return "speech"
-    if re.search(rf"\b{e},?\s*\(?\d{{1,2}}\)?[,)]", text) or re.search(rf"\b\d{{1,2}}-year-old\s+{e}\b", text) \
-            or re.search(rf"\b{e},\s+an?\s+\d{{1,2}}-year-old", text):
-        return "age"
-    if re.search(rf"\b{e}\s+(?:{PASSIVE}|{INTRANSITIVE})\b", text):
-        return "passive"
-    if re.search(rf"\b{e},\s+(?:an?|the)\s+(?:[a-z-]+\s+){{0,4}}(?:{rl})\b", text):
-        return "apposition"
-    return ""
 
 
 def _fits(a: tuple, b: tuple) -> bool:
@@ -195,7 +159,9 @@ class Entity:
 
     @property
     def person(self) -> bool:
-        return bool(self.why) or any(m.titled for m in self.mentions)
+        return bool(self.why) and not self.vetoed
+
+    vetoed: bool = False
 
     @property
     def name(self) -> str:
@@ -217,6 +183,7 @@ class EntityTable:
     def __init__(self) -> None:
         self.mentions: list[tuple[Mention, str]] = []
         self.evidence: dict[tuple, set] = {}
+        self.notperson: set[tuple] = set()      # names the analyser mostly labels an organisation or place
         self._built = False
         self.entities: list[Entity] = []
         self._by_keys: dict[tuple, Entity] = {}
@@ -228,22 +195,38 @@ class EntityTable:
         self.mentions.append((m, source))
         if m.kind in ("person", "name") and m.tokens:
             ev = self.evidence.setdefault(m.keys, set())
-            if source == "speaker" and m.kind != "body":
+            if source == "speaker":
                 ev.add("speaker")
+                if not m.titled:                      # a bare speaker string: ask the analyser what kind of name it is
+                    from . import nlp
+                    labels = {e.label for e in nlp.ents(f"{m.text} said on Monday.") if m.tokens[-1] in e.text}
+                    if labels and labels <= nlp.NOT_PERSON_LABELS:
+                        self.notperson.add(m.keys)
             if m.titled:
                 ev.add("title")
-            if text and m.text:
-                w = evidence_in(text, m.text)
-                if w:
-                    ev.add(w)
         self._built = False
         return m
 
     def add_text(self, text: str) -> None:
-        """Every capitalised name in a text, with the evidence the text gives for it."""
-        from .style import _candidates
-        for name in _candidates(text):
-            self.add(name, "text", text)
+        """Every named entity of a text. PERSON ones become mentions with "ner" evidence; the same name seen mostly as
+        an organisation or place is recorded as not a person (a vote: one wrong label cannot make a person)."""
+        from . import nlp
+        votes: dict[tuple, list[int]] = {}
+        for e in nlp.ents(text):
+            m = parse(e.text)
+            if not m.tokens or m.kind in ("relation", "role"):
+                continue
+            v = votes.setdefault(m.keys, [0, 0])
+            if e.label == nlp.PERSON:
+                v[0] += 1
+                self.add(e.text, "text", text)
+            elif e.label in nlp.NOT_PERSON_LABELS:
+                v[1] += 1
+        for k, (yes, no) in votes.items():
+            if yes > no:
+                self.evidence.setdefault(k, set()).add("ner")
+            elif no >= yes:
+                self.notperson.add(k)
 
     # ------------------------------------------------------------------ the sieve
     def build(self) -> "EntityTable":
@@ -289,6 +272,7 @@ class EntityTable:
     def _make(self, members: list, ambiguous: bool) -> None:
         e = Entity(id=len(self.entities) + 1, ambiguous=ambiguous)
         for m, s in members:
+            e.vetoed = e.vetoed or (m.keys in self.notperson and "title" not in self.evidence.get(m.keys, ()))
             e.mentions.append(m)
             e.sources.add(s)
             e.why |= self.evidence.get(m.keys, set())
@@ -332,3 +316,37 @@ class EntityTable:
                 if len(m.tokens) >= 2:
                     out[m.text] = e.surname
         return out
+
+
+# ------------------------------------------------------------------ the story's table, shared by every module
+_current: contextvars.ContextVar = contextvars.ContextVar("entity_table", default=None)
+
+
+def for_items(items: list[dict]) -> EntityTable:
+    """The table of one story: every statement's speaker (as a speaker) and every statement's text (analysed)."""
+    t = EntityTable()
+    for i in items:
+        if i.get("speaker"):
+            t.add(i["speaker"], "speaker", i.get("text") or "")
+    t.add_text(" ".join(i.get("text") or "" for i in items))
+    return t.build()
+
+
+def use(table: EntityTable | None) -> None:
+    """Make `table` the story every module (voice.speaker_key, style) is working on."""
+    _current.set(table)
+
+
+def current() -> EntityTable | None:
+    return _current.get()
+
+
+def person_key(raw: str | None) -> str | None:
+    """The key of the person `raw` names in the current story, or None (not a person / no table / ambiguous surname)."""
+    t = _current.get()
+    if t is None or not raw:
+        return None
+    e = t.entity(raw)
+    if e is not None and e.person and not e.ambiguous:
+        return e.key
+    return None

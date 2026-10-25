@@ -6,4 +6,5 @@ transformers>=4.44
 sentencepiece>=0.2
 sentence-transformers>=3.0
 spacy>=3.7
+murmurhash<1.0.14        # 1.0.14+ breaks spaCy 3.8 model loading (OverflowError in the tokenizer)
 rapidfuzz>=3.9

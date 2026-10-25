@@ -27,7 +27,7 @@ import logging
 import re
 import threading
 
-from . import clock, figures, grammar, refs, sentences, voice
+from . import clock, entities, figures, grammar, refs, sentences, voice
 from . import plan as planning
 from .grammar import (ATTRIBUTION_VERBS, CONNECTIVE, DISPUTE_MARKERS, FALSE_MARKERS,  # noqa: F401 (moved to grammar.py)
                       HEDGE_MARKERS)
@@ -1739,6 +1739,7 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
     Flash-Lite carries everything. Each sentence is checked; a section rewrite is kept only if the
     article then carries at least as much."""
     items, background, by_id, outlets, banned = _context(payload, banned)
+    entities.use(entities.for_items(items + background))     # one identity per person for every check that follows
     _TL.pronouns = voice.pronouns(items + background)
     sec = assign_sections(items, background)
     # the express desk (expressdesk.py, owner Oct 16 2026): a story from ONE report is laid out by its kind
