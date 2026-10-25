@@ -3014,7 +3014,7 @@ function tidy() {
   if (tidied) return;
   if (Date.now() - lastScroll < 400 || running) { clearTimeout(tidyTimer); tidyTimer = setTimeout(tidy, 500); return; }   // never mid-swipe
   tidied = true;
-  const animate = !STILL.matches && !openId && cards.length;
+  const animate = !STILL.matches && !openId && cards.length && !document.hidden;   // never start the glide while the app is in the background (rAF is paused there)
   const h0 = top_.offsetHeight;
   const slot = animate ? track.querySelector(`.slot[data-i="${current}"]`) : null;
   const card = slot && slot.querySelector("a.card"), hOld = card ? card.offsetHeight : 0;
@@ -3037,19 +3037,32 @@ function tidy() {
   for (const [el, y] of [[hbw, 0], [hbgr, 0], ...parts.map(p => [p, d])]) { el.style.willChange = "transform"; el.style.transform = `translateY(${y}px)`; }
   void top_.offsetWidth;
   const ease = "420ms cubic-bezier(.4,0,.2,1)";
+  // The cleanup runs ONCE and always wins (owner, Oct 25 2026: reopening the installed app from the background showed the
+  // header folded, a thin indigo strip with the pills below it). Cause: the glide starts in two nested rAFs, which a
+  // backgrounded page does not run, while the 540 ms timer still fires; the cleanup then ran first and the late rAFs set
+  // the end-of-glide transforms afterwards, with nothing left to clear them. Now the rAFs do nothing once the cleanup has
+  // run (or the page is hidden), and going to the background finishes the glide at once.
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    document.removeEventListener("visibilitychange", onHide);
+    back.remove();
+    for (const el of [hbw, hbgr, ...parts]) { el.style.transition = ""; el.style.transform = ""; el.style.willChange = ""; }
+    for (const k of ["position", "zIndex", "background", "boxShadow"]) card.style[k] = "";
+    slot.style.position = ""; hbg.style.height = "";
+  };
+  const onHide = () => { if (document.hidden) finish(); };
+  document.addEventListener("visibilitychange", onHide);
   requestAnimationFrame(() => requestAnimationFrame(() => {   // after the frame that carries the layout change
+    if (done || document.hidden) { finish(); return; }
     for (const el of [hbw, hbgr, back, ...parts]) el.style.transition = `transform ${ease}`;
     hbw.style.transform = `translateY(${-d}px)`;
     hbgr.style.transform = `translateY(${d}px)`;
     back.style.transform = "scaleY(1)";
     parts.forEach(p => { p.style.transform = "translateY(0)"; });
   }));
-  setTimeout(() => {
-    back.remove();
-    for (const el of [hbw, hbgr, ...parts]) { el.style.transition = ""; el.style.transform = ""; el.style.willChange = ""; }
-    for (const k of ["position", "zIndex", "background", "boxShadow"]) card.style[k] = "";
-    slot.style.position = ""; hbg.style.height = "";
-  }, 540);
+  setTimeout(finish, 540);
 }
 track.addEventListener("scroll", () => { lastScroll = Date.now(); }, {passive: true});
 function countSwipe(prev) { if (prev !== current && ++swipes >= 2) tidy(); }
