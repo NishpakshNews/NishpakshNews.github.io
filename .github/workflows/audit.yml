@@ -8,7 +8,7 @@ on:
       tool:
         description: "Which read-only report"
         type: choice
-        options: [audit, express_review, story_check, stack_probe, evaluate]
+        options: [audit, express_review, story_check, stack_probe, evaluate, merge_audit]
         default: audit
       args:
         description: "Arguments for the tool (story_check: story ids; empty = the 5 newest published)"
@@ -46,6 +46,6 @@ jobs:
         run: |
           # a tool name typed into the args box (a slip that happened) still runs that tool
           case "$ARGS" in
-            audit|express_review|story_check|stack_probe|evaluate) TOOL="$ARGS"; ARGS="";;
+            audit|express_review|story_check|stack_probe|evaluate|merge_audit) TOOL="$ARGS"; ARGS="";;
           esac
           python -m "nishpaksh.tools.$TOOL" $ARGS
