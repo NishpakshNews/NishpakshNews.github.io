@@ -149,6 +149,61 @@ def set_chunker(fn) -> None:
     _chunker = fn
 
 
+# ------------------------------------------------------------------ sentences (Oct 26 2026)
+_segmenter = None
+
+
+def set_segmenter(fn) -> None:
+    """Tests: fn(paragraph) -> list of (sentence text, has_verb)."""
+    global _segmenter
+    _segmenter = fn
+
+
+def merge_fragments(parts: list[tuple[str, bool]]) -> list[str]:
+    """Sentences from a segmentation, with every VERBLESS piece joined to the piece after it: a boundary the parser put
+    after "On Sunday, US Central Command chief Adm." is no sentence end, because nothing in front of it says anything.
+    The same rule holds for any abbreviation, with no list of them (the cause of story 46150's empty statement: the
+    reading model was shown "[17] ... chief Adm." and "[18] Brad Cooper said ..." as two sentences)."""
+    out: list[str] = []
+    carry = ""
+    for text, verb in parts:
+        text = (carry + " " + text).strip() if carry else text.strip()
+        carry = ""
+        if not text:
+            continue
+        if not verb:
+            carry = text
+            continue
+        out.append(text)
+    if carry:
+        if out:
+            out[-1] = out[-1] + " " + carry
+        else:
+            out.append(carry)
+    return out
+
+
+def sentences(text: str) -> list[str] | None:
+    """The sentences of an English text by the dependency parser (one pass per paragraph), verbless pieces joined on;
+    None when not analysed (the caller keeps its own splitter)."""
+    if not text:
+        return []
+    out: list[str] = []
+    nlp = None if _segmenter is not None else pipeline()
+    if _segmenter is None and nlp is None:
+        return None
+    for para in re.split(r"\n+", text):
+        if not para.strip():
+            continue
+        if _segmenter is not None:
+            parts = _segmenter(para)
+        else:
+            doc = nlp(para[:20_000])
+            parts = [(sp.text, any(t.pos_ in ("VERB", "AUX") for t in sp)) for sp in doc.sents]
+        out += merge_fragments(parts)
+    return out
+
+
 # ------------------------------------------------------------------ clauses (B27): a dependency parse, not a word list
 SPEECH_LEMMA = {"say", "tell", "state", "claim", "allege", "add", "note", "announce", "confirm", "deny", "warn",
                 "argue", "report", "assert", "maintain", "insist", "explain", "mention", "remark", "stress", "reveal"}

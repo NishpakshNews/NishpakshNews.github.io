@@ -211,6 +211,42 @@ def _close_lines(lines: list[dict], news: str) -> list[dict]:
     return [i for i, s in zip(lines, sims) if float(s) >= KEEP_SIMILARITY]
 
 
+def _entity_keys(text: str) -> set[str]:
+    """The named things (people, bodies, places, events) a text names, as lower-case word sets joined: the language
+    analyser's entities, not a list."""
+    from . import nlp
+    out = set()
+    for e in nlp.ents(text or ""):
+        if e.label == nlp.PERSON or e.label in nlp.NOT_PERSON_LABELS:
+            w = tuple(sorted(re.findall(r"[a-z0-9]+", e.text.lower())))
+            if w:
+                out.add(" ".join(w))
+    return out
+
+
+def grounded(line: str, core: list[str]) -> bool:
+    """Does a line that claims to be tied to the story name something the story names? A different event is "linked" to
+    the news only through a person, body, place or event both name; sharing a subject area (weather, prices, a court)
+    is not a link. An entity that stands in more than a third of the story's own statements is the story's setting
+    (India, the country) and ties nothing. Oct 26 2026: five weather lines for other states sat under "Related events"
+    of a cyclone's story because they were close in meaning to it; none named anything the story names."""
+    mine = _entity_keys(line)
+    if not mine:
+        return False
+    seen: dict[str, int] = {}
+    for t in core:
+        for k in _entity_keys(t):
+            seen[k] = seen.get(k, 0) + 1
+    limit = max(2, len(core) // 3)
+    for k in mine:
+        if k in seen and seen[k] <= limit:
+            return True
+        if any(k != o and (set(k.split()) <= set(o.split()) or set(o.split()) <= set(k.split())) and seen[o] <= limit
+               for o in seen):
+            return True
+    return False
+
+
 def check(store: Store, router: Router | None, story_id: int, payload: dict) -> dict:
     """Tags every background / related / explanation line (two answers each, cached per line text) and places it.
     Returns the counts from `place`."""
@@ -276,6 +312,15 @@ def check(store: Store, router: Router | None, story_id: int, payload: dict) -> 
             store.exec(update(stories).where(stories.c.id == story_id).values(analysis=an))
     tags = {_key(i["text"]): resolve([v for v in (cache.get(ck(i), {}).get("f"), cache.get(ck(i), {}).get("r")) if v])
             for i in lines}
+    # a line the model (or the similarity) calls "linked" must also name something the story names (belong.grounded);
+    # otherwise it is another event on the same page: placed under "Also in these reports", never deleted
+    from .narrative import ordered_items
+    core = [i["text"] for i in ordered_items(payload) if i.get("role", "core") == "core" and i.get("text")]
+    for i in lines:
+        k = _key(i["text"])
+        if tags.get(k) == "linked" and core and not grounded(i["text"], core):
+            tags[k] = "other"
+            STATS["ungrounded"] = STATS.get("ungrounded", 0) + 1
     out = place(payload, tags)
     try:                                                    # E36: what this pass decided, for the single audit
         from . import dossier

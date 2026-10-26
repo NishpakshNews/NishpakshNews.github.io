@@ -96,10 +96,29 @@ def numbers(text: str | None) -> set[str]:
 _SENT = re.compile(r"(?<=[।॥?!.])\s+|\n+")
 
 
+_cache: dict[str, list[str]] = {}
+
+
 def sentences(text: str) -> list[str]:
-    """A report's sentences (danda, full stop, question and exclamation marks, line breaks). An abbreviation's
-    full stop may split one sentence in two; that only makes a window smaller."""
-    return [s.strip() for s in _SENT.split(text or "") if s and s.strip()]
+    """A report's sentences. English text goes to the dependency parser's segmentation (nlp.sentences: an abbreviation
+    such as "Adm." is no sentence end, a verbless piece is joined to the next); Devanagari text, and text the parser
+    cannot read, to the punctuation rule (danda, full stop, question and exclamation marks, line breaks)."""
+    text = text or ""
+    if text in _cache:
+        return list(_cache[text])
+    out = None
+    if not re.search(r"[\u0900-\u097F]", text):
+        from . import nlp
+        try:
+            out = nlp.sentences(text)
+        except Exception:  # noqa: BLE001
+            out = None
+    if out is None:
+        out = [s.strip() for s in _SENT.split(text) if s and s.strip()]
+    if len(_cache) > 200:
+        _cache.clear()
+    _cache[text] = out
+    return list(out)
 
 
 def _name_hits(statement: str, sentence: str, src_lang: str, registry) -> int:

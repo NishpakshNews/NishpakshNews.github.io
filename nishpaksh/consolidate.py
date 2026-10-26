@@ -383,7 +383,10 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
         except (TypeError, ValueError):
             continue
         if k in by_id and k not in gone and isinstance(v, str) and v.strip():
-            speakers[str(k)] = _apply_names(v.strip(), names)[:80]
+            from . import speakers as _speakers
+            ok = _speakers.verify(v.strip(), attrib.get(k, ()), by_id[k]["text"])      # verified, never typed (speakers.py)
+            if ok:
+                speakers[str(k)] = _apply_names(ok, names)[:80]
     alive = lambda x: x not in gone   # noqa: E731
     roles = {str(k): v for k, v in (analysis.get("roles") or {}).items()}
     for k, v in (data.get("role") or {}).items():

@@ -18,7 +18,7 @@ from .frames import normalize as normalize_frame
 from sqlalchemy import func
 from .db import Store, articles, claims, delete, insert, select, stories, update, utcnow
 from . import heavy
-from . import evidence
+from . import evidence, hygiene
 from .router import CallFailed, QuotaExhausted, Router
 
 log = logging.getLogger(__name__)
@@ -267,6 +267,8 @@ def ground(ex: dict, source: str) -> int:
         keep = []
         for it in ex.get(key) or []:
             bad = absent_people(it["text"], source)
+            if not bad and hygiene.kind(it["text"]) == "hi":
+                bad = ["written in Hindi"]          # statements are English (the prompt says so): a Hindi one cannot be matched, written or translated back
             if bad or META.search(it["text"]):
                 dropped.add(it["id"])
                 log.info("reading dropped a statement the report does not support (%s): %s",

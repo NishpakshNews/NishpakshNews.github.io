@@ -51,17 +51,51 @@ def people(text: str, speakers: list[str] | tuple = ()) -> dict[str, str]:
 
 
 def intro_forms(names: dict[str, str], texts: list[str]) -> dict[str, str]:
-    """{full name: the form that introduces the person}: the longest title phrase any statement or sentence
-    writes right before the name (\"Assam Chief Minister Himanta Biswa Sarma\"), or the full name alone."""
-    out = {}
-    for full in names:
+    """{surname: the form that introduces the person}: the longest title phrase any statement or sentence writes
+    right before one of the person's written forms (\"Assam Chief Minister Himanta Biswa Sarma\"), with the fullest
+    written form of the name. One introduction per PERSON (the forms of one person share a surname), not per form."""
+    out: dict[str, str] = {}
+    by_short: dict[str, list[str]] = {}
+    for full, short in names.items():
+        by_short.setdefault(short, []).append(full)
+    for short, forms in by_short.items():
+        fullest = max(forms, key=lambda f: (len(f.split()), len(f)))
         best = ""
-        for t in texts:
-            tb = _titles.title_before(t, full)
-            if len(tb) > len(best):
-                best = tb
-        out[full] = f"{best} {full}" if best else full
+        for f in forms:
+            for t in texts:
+                tb = _titles.title_before(t, f)
+                if len(tb) > len(best):
+                    best = tb
+        out[short] = f"{best} {fullest}" if best else fullest
     return out
+
+
+def mentions(t: str, names: dict[str, str]) -> list[tuple[int, int, str]]:
+    """Every mention of a listed person in ONE text, found on the text as written: (start, end, surname), no two
+    overlapping. Written forms come longest first; a bare surname is extended to the left over the person's own
+    given names (\"Chandrababu Naidu\" when only \"N Chandrababu Naidu\" is a listed form), so a partial name is one
+    mention, never a surname with a stray first name in front of it (Oct 26 2026: \"Chief Minister Chandrababu Andhra
+    Pradesh Chief Minister N Chandrababu Naidu\")."""
+    forms = sorted({(f, sh) for f, sh in names.items()} | {(sh, sh) for sh in names.values()},
+                   key=lambda x: (-len(x[0].split()), -len(x[0])))
+    own: dict[str, set[str]] = {}
+    for f, sh in names.items():
+        own.setdefault(sh, set()).update(f.split())
+    taken: list[tuple[int, int, str]] = []
+    for form, short in forms:
+        for m in re.finditer(rf"(?<![\w-]){re.escape(form)}(?![\w-])", t):
+            a, b = m.start(), m.end()
+            if form == short:                                # a bare surname: take its own given names with it
+                while True:
+                    left = re.search(r"([A-Za-z][\w.'-]*)\s+$", t[:a])
+                    if left and left.group(1) in own.get(short, ()) and left.group(1) != short:
+                        a = left.start(1)
+                    else:
+                        break
+            if any(a < y and x < b for x, y, _ in taken):
+                continue
+            taken.append((a, b, short))
+    return sorted(taken)
 
 
 def shorten_names(paragraphs: list[list[dict]], speakers: list[str] | tuple = (), sources: list[str] | tuple = ()) -> None:
@@ -70,7 +104,10 @@ def shorten_names(paragraphs: list[list[dict]], speakers: list[str] | tuple = ()
       * the first mention is the full introduction (title and full name); a bare surname or \"Title Surname\" that
         comes before the person has been introduced is expanded to it
       * every later mention is the surname alone: a full name or a title in front of the surname is dropped
-    Only for persons code has evidence for (`people`): places and bodies are never touched."""
+    Only for persons code has evidence for (`people`): places and bodies are never touched.
+    Mentions are found FIRST, on the text as written (`mentions`), and rewritten once; the introduction is kept per
+    person, not per written form (a text patched form by form re-matched its own output: a doubled name, an
+    introduction written twice)."""
     text = " ".join(s["text"] for p in paragraphs for s in p)
     # the statements know the full names the writer may have shortened away (\"Verma\" for \"Rajesh Verma\"); only the
     # persons the article names, in full or by surname, are kept
@@ -79,44 +116,41 @@ def shorten_names(paragraphs: list[list[dict]], speakers: list[str] | tuple = ()
     if not names:
         return
     intro = intro_forms(names, [text, *sources])
+    width: dict[str, int] = {}                    # words in the fullest written form of each person
+    for full, short in names.items():
+        width[short] = max(width.get(short, 0), len(full.split()))
     seen: set[str] = set()
-    pats = {full: re.compile(rf"(?<![\w-])(?:(?P<full>{re.escape(full)})|(?P<sur>{re.escape(short)}))(?![\w-])")
-            for full, short in names.items()}
 
     def shorten(t: str) -> str:
-        for full, short in names.items():
-            out, last = [], 0
-            for m in pats[full].finditer(t):
-                if m.start() < last:
-                    continue
-                # the title written in front of the name, taken WHOLE or not at all (owner, Oct 12 2026: a title of
-                # the form \"Leader of Opposition\" lost only its end and read \"Lok Sabha Leader of Gandhi\")
-                prefix = t[:m.start()]
-                at = _titles.title_start(prefix, extra=TITLES, extra_person=PERSON_TITLES)
-                if at < len(prefix) and re.search(r"(?i)\bthe\s+$", prefix[:at]):
-                    at = re.search(r"(?i)\bthe\s+$", prefix[:at]).start()
-                at = max(at, last)
-                if at < len(prefix) and prefix[at] in "'\"\u2018\u201c":     # a quoted nickname ('Prime Minister Ambani') is the speaker's words: never shortened
-                    out += [t[last:m.end()]]
-                    last = m.end()
-                    seen.add(full)
-                    continue
-                written = t[at:m.end()]                  # the title as written, and the name
-                if m.group("full"):
-                    if full not in seen:               # the introduction stays as the writer wrote it
-                        seen.add(full)
-                        new = written
-                    else:
-                        new = short
-                elif full not in seen:                 # a surname before the person was introduced
-                    seen.add(full)
-                    new = intro[full]
-                else:
-                    new = short                        # \"Chief Minister Sarma\" after the introduction
-                out += [t[last:at], new]
-                last = m.end()
-            t = "".join(out) + t[last:] if out else t
-        return t
+        out, last = [], 0
+        for a, b, short in mentions(t, names):
+            if a < last:
+                continue
+            written_name = t[a:b]
+            # the title written in front of the name, taken WHOLE or not at all (owner, Oct 12 2026: a title of
+            # the form \"Leader of Opposition\" lost only its end and read \"Lok Sabha Leader of Gandhi\")
+            prefix = t[:a]
+            at = _titles.title_start(prefix, extra=TITLES, extra_person=PERSON_TITLES)
+            if at < len(prefix) and re.search(r"(?i)\bthe\s+$", prefix[:at]):
+                at = re.search(r"(?i)\bthe\s+$", prefix[:at]).start()
+            at = max(at, last)
+            if at < len(prefix) and prefix[at] in "'\"\u2018\u201c":     # a quoted nickname ('Prime Minister Ambani') is the speaker's words: never shortened
+                out.append(t[last:b])
+                last = b
+                seen.add(short)
+                continue
+            written = t[at:b]                            # the title as written, and the name
+            if short in seen:
+                new = short                              # every later mention, however written
+            elif len(written_name.split()) >= width[short]:
+                new = written                            # the introduction stays as the writer wrote it
+                seen.add(short)
+            else:                                        # a surname before the person was introduced
+                new = intro[short]
+                seen.add(short)
+            out += [t[last:at], new]
+            last = b
+        return "".join(out) + t[last:] if out else t
 
     for para in paragraphs:
         for sent in para:

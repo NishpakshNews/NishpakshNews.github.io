@@ -219,7 +219,8 @@ def _pack(units: list[list[dict]], words, strict: bool = True, topical: bool = F
     for u in units:
         w = set().union(*(words(i) for i in u))
         if strict:
-            split = bool(cur) and (len(cur) + len(u) > MAX_STATEMENTS or not _related(last_words, w))
+            split = bool(cur) and (len(cur) + len(u) > MAX_STATEMENTS
+                                   or (len(cur) >= MIN_STATEMENTS and not _related(last_words, w)))
         else:
             split = bool(cur) and (len(cur) + len(u) > MAX_STATEMENTS
                                    or (len(cur) >= MIN_STATEMENTS and not (w & cur_words)))
@@ -235,6 +236,56 @@ def _pack(units: list[list[dict]], words, strict: bool = True, topical: bool = F
         tail = paras.pop()
         paras[-1] += tail
     return paras
+
+
+def merge_small(groups: list[list[dict]], locked: list[bool] | None = None) -> list[list[dict]]:
+    """Size-constrained adjacent merging, applied after ANY grouping (themes, topic labels, shared words): a paragraph
+    of fewer than MIN_STATEMENTS statements joins the neighbouring paragraph its meaning is closer to (sentence
+    embeddings, the neighbour only if the two fit in MAX_STATEMENTS + 1). Groupings only decide where a subject changes;
+    nothing decided that a paragraph may be one sentence (Oct 26 2026: 23 paragraphs of 1.3 sentences in a story of 24
+    statements, every one a lone statement the word-overlap test would not join). A section with a single statement
+    stays as it is. `locked[k]`: group k is one labelled topic (belong.assign_topics) and is never merged or merged into:
+    a paragraph is one subject, whatever its size. Order never changes."""
+    locked = list(locked) if locked is not None else [False] * len(groups)
+    groups = [list(g) for g in groups if g]
+    locked = locked[:len(groups)] + [False] * (len(groups) - len(locked))
+    if len(groups) < 2 or all(len(g) >= MIN_STATEMENTS or locked[k] for k, g in enumerate(groups)):
+        return groups
+    try:
+        import numpy as np
+        from . import embed
+        texts = [" ".join(i.get("text") or "" for i in g) for g in groups]
+        v, _how = embed.vectors(texts)
+        sim = lambda a, b: float(np.dot(v[a], v[b]))      # noqa: E731
+    except Exception:  # noqa: BLE001
+        sim = None
+    vecs = {id(g): k for k, g in enumerate(groups)}
+    while True:
+        small = [k for k, g in enumerate(groups) if len(g) < MIN_STATEMENTS and not locked[k]]
+        if not small or len(groups) < 2:
+            break
+        k = small[0]
+        options = []
+        for j in (k - 1, k + 1):
+            if 0 <= j < len(groups) and not locked[j] and len(groups[j]) + len(groups[k]) <= MAX_STATEMENTS + 1:
+                s_ = sim(vecs[id(groups[k])], vecs[id(groups[j])]) if sim else 0.0
+                options.append((s_, -len(groups[j]), j))
+        if not options:
+            locked[k] = True                               # nothing fits beside it: it stays
+            continue
+        _s, _n, j = max(options)
+        a, b = sorted((k, j))
+        merged = groups[a] + groups[b]
+        if sim:                                            # the merged paragraph's vector: the mean of its parts
+            ka, kb = vecs[id(groups[a])], vecs[id(groups[b])]
+            m = (v[ka] * len(groups[a]) + v[kb] * len(groups[b]))
+            v = np.vstack([v, m / (np.linalg.norm(m) or 1.0)])
+            vecs[id(merged)] = len(v) - 1
+        else:
+            vecs[id(merged)] = 0
+        groups[a:b + 1] = [merged]
+        locked[a:b + 1] = [False]
+    return groups
 
 
 def _words_fn():
@@ -287,9 +338,14 @@ def build(items: list[dict], sec: dict[int, str]) -> list[Para]:
             # first express pages had a paragraph per sentence)
             express_layout = narrative._keys() is not narrative.SECTION_KEYS
             for chunk in chunks:
+                packed: list[list[dict]] = []
+                locked: list[bool] = []
                 for part, topical in _by_topic(chunk):
-                    for group in _pack(_units(part), words, topical=topical or express_layout):
-                        made.append(Para(0, key, [i["id"] for i in group]))
+                    got = _pack(_units(part), words, topical=topical or express_layout)
+                    packed += got
+                    locked += [topical and not express_layout] * len(got)
+                for group in merge_small(packed, locked):
+                    made.append(Para(0, key, [i["id"] for i in group]))
         _open(made, key, {i["id"]: i for i in mine})
         plan += made
     for n, p in enumerate(plan, 1):
@@ -304,9 +360,17 @@ def _by_topic(chunk: list[dict]) -> list[tuple[list[dict], bool]]:
     if not any(i.get("topic") is not None for i in chunk):
         return [(chunk, False)]
     parts: dict = {}
+    loose: list[dict] = []
     for i in chunk:
-        parts.setdefault(i.get("topic") if i.get("topic") is not None else ("alone", i["id"]), []).append(i)
-    return [(p_, True) for p_ in parts.values()]
+        if i.get("topic") is not None:
+            parts.setdefault(i["topic"], []).append(i)
+        else:
+            loose.append(i)           # the grouping call left it unlabelled: grouped by meaning like a chunk with no topics
+    first = {k: min(chunk.index(i) for i in v) for k, v in parts.items()}
+    out = sorted(((first[k], v, True) for k, v in parts.items()), key=lambda x: x[0])
+    if loose:
+        out.append((chunk.index(loose[0]), loose, False))
+    return [(v, t) for _f, v, t in sorted(out, key=lambda x: x[0])]
 
 
 def _say(items: list[dict], words, key: str = "say") -> list[Para]:

@@ -3480,9 +3480,10 @@ def test_the_plan_gives_every_section_its_own_paragraphs():
     sec = assign_sections(items)
     sec[3] = "news"
     pl = plan.build(items, sec)
-    # section order of Oct 15 2026; "What happened" here is three different subjects, and since the owner's Oct 13-14
-    # commits a lone statement stays alone rather than join a paragraph about something else (plan._pack, strict)
-    assert [p.section for p in pl] == ["news", "background", "happened", "happened", "happened", "say", "say", "say",
+    # section order of Oct 15 2026. Oct 26 2026: a paragraph of one statement is the exception, not the rule (a story
+    # printed 23 one-sentence paragraphs because "a lone statement stays alone"); three statements about different things
+    # of one section share ONE paragraph (plan.merge_small), in time order
+    assert [p.section for p in pl] == ["news", "background", "happened", "say", "say", "say",
                                        "numbers", "next", "related"]
     assert [p.n for p in pl] == list(range(1, len(pl) + 1))
     by = {p.n: p for p in pl}
