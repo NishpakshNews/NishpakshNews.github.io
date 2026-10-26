@@ -6,12 +6,13 @@ one-way covers / contradiction / neutral. The report counts what the rebuilt mat
 the stored run did (the statements are still separate), with example pairs and scores. Writes one `diagnostics` row kind
 'merge_audit'.
 
-    python -m nishpaksh.tools.merge_audit 44582 45418      # no ids: the five newest published stories
+    python -m nishpaksh.tools.merge_audit 44582 45418      # no ids: the three newest published stories
 """
 from __future__ import annotations
 
 import argparse
 import json
+import time
 from collections import Counter
 
 from sqlalchemy import text as sql
@@ -19,7 +20,9 @@ from sqlalchemy import text as sql
 from ..config import database_url
 from ..db import Store
 
-PAIRS_MAX = 400          # pairs read by NLI per story (closest first)
+PAIRS_MAX = 120          # pairs read by NLI per story (closest first); CPU: ~2 passes a pair
+BUDGET_SECONDS = 600     # the whole run stops starting new stories after this
+STORIES = 3              # when no ids are typed
 EXAMPLES = 12
 
 
@@ -70,6 +73,7 @@ def audit_story(items: list[dict]) -> dict:
     out.update(method=how, threshold=thr, proposed=len(cand))
     cand = cand[:PAIRS_MAX]
     pairs = [(texts[a], texts[b]) for _s, a, b in cand]
+    print("  embedded", len(items), "statements;", len(pairs), "pairs to NLI", flush=True)
     both = nli.both(pairs)
     kinds: Counter = Counter()
     ex: dict[str, list] = {}
@@ -94,6 +98,15 @@ def audit_story(items: list[dict]) -> dict:
     return out
 
 
+def _write(store, report: dict) -> None:
+    try:
+        with store.readers.engine.begin() as c:
+            c.execute(sql("insert into diagnostics (kind, report) values ('merge_audit', :r)"),
+                      {"r": json.dumps(report, ensure_ascii=False, default=str)})
+    except Exception as e:  # noqa: BLE001
+        print("diagnostics not written:", e)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("ids", nargs="*", type=int)
@@ -101,9 +114,13 @@ def main() -> None:
     store = Store(database_url())
     with store.engine.connect() as c:
         if not a.ids:
-            a.ids = [r[0] for r in c.execute(sql("select story_id from published order by updated_at desc limit 5"))]
+            a.ids = [r[0] for r in c.execute(sql("select story_id from published order by updated_at desc limit 3"))]
         report: dict = {}
+        t0 = time.time()
         for sid in a.ids:
+            if time.time() - t0 > BUDGET_SECONDS:
+                print("budget used; stories left out:", sid, flush=True)
+                break
             can = [dict(r) for r in c.execute(sql("select id, text from canonical where story_id = :s order by id"), {"s": sid}).mappings()]
             arts: dict[int, set] = {}
             for r in c.execute(sql("select canonical_id, article_id from claims where story_id = :s and canonical_id is not null"), {"s": sid}):
@@ -114,14 +131,9 @@ def main() -> None:
             except Exception as e:  # noqa: BLE001
                 report[str(sid)] = {"error": str(e)[:300]}
             r = report[str(sid)]
-            print(sid, {k: r.get(k) for k in ("statements", "proposed", "pairs_read", "statements_after_merging_same",
-                                              "statements_after_folding_covers")})
-    try:
-        with store.readers.engine.begin() as c:
-            c.execute(sql("insert into diagnostics (kind, report) values ('merge_audit', :r)"),
-                      {"r": json.dumps(report, ensure_ascii=False, default=str)})
-    except Exception as e:  # noqa: BLE001
-        print("diagnostics not written:", e)
+            _write(store, {str(sid): r})                   # each story is kept as soon as it is done
+            print(round(time.time() - t0), "s", sid, {k: r.get(k) for k in ("statements", "proposed", "pairs_read", "statements_after_merging_same",
+                                              "statements_after_folding_covers")}, flush=True)
 
 
 if __name__ == "__main__":
