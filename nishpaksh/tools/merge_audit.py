@@ -20,10 +20,12 @@ from sqlalchemy import text as sql
 from ..config import database_url
 from ..db import Store
 
+from ..consolidate import SOFT_SIMILARITY  # noqa: E402
+
 PAIRS_MAX = 120          # pairs read by NLI per story (closest first); CPU: ~2 passes a pair
 BUDGET_SECONDS = 600     # the whole run stops starting new stories after this
 STORIES = 4              # stories drawn at random when no ids are typed
-STUDIED = {44582, 45418, 44807, 45562, 44297, 45316, 23690}   # looked at while fixing: never in the sample
+STUDIED = {44582, 45418, 44807, 45562, 44297, 45316, 23690, 41435, 43960, 41340, 42228}   # looked at while fixing: never in the sample
 EXAMPLES = 12
 
 
@@ -81,7 +83,7 @@ def audit_story(items: list[dict]) -> dict:
     same_edges, cover_edges = [], []
     for (s, a, b), r in zip(cand, both):
         code = relate.relate(texts[a], texts[b])
-        if code == "different" and s >= 0.85 and relate.soft_candidate(texts[a], texts[b]):
+        if code == "different" and s >= SOFT_SIMILARITY and relate.soft_candidate(texts[a], texts[b]):
             code = "soft"                       # what consolidate now offers the model (names / words only)
         k = classify(code, r[0] if r else None, r[1] if r else None, nli)
         kinds[f"{k}|code:{code}"] += 1

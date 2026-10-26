@@ -66,7 +66,7 @@ Reply with JSON only:
  "name_conflicts": [{{"ids": [5, 9], "names": ["Company A", "Company B"]}}]}}"""
 
 ROLES = {"background", "related", "explanation", "reaction", "next"}
-SOFT_SIMILARITY = 0.85    # sentence-embedding cosine for a "different by words only" pair to be read by the model
+SOFT_SIMILARITY = 0.70    # sentence-embedding cosine for a "different by words only" pair to be read by the model
 SOFT_MAX = 150            # such pairs a consolidation reads (closest first); the local reader costs no quota
 SAME_ASK_MAX = 80         # same-fact questions per consolidation, closest pairs first (the rest next time)
 CONSOLIDATE_VERSION = 11  # part of the cache key: stories are consolidated again when the task changes
