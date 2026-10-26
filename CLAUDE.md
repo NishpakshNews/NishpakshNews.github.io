@@ -37,10 +37,9 @@ the real models are first exercised by the end-of-build audit on the runner (`au
 - **Deleted:** the titles / synonyms / glossary learners, `learning.py`, `context.py`, their `*_learned.yaml` / `devils_advocate.yaml`
   files, the `learn_candidates` table, `learn.sh` and the hourly steps, the entity shadow tool. `relate.py` / `titles.py` / `hindi.py`
   read hand-written files only. Hand-written `synonyms.yaml`, `titles.yaml`, `glossary.yaml` `terms:` stay.
-- **Not built / still hand-made (be honest about it):** B9 dangling references by noun chunks (`refs.HEADS` list remains), B11 story
-  dossier, B33 sidebar-block classifier, `voice.ALIASES` / `COUNTRY` body-alias lists, and the items that need owner-labelled data
-  (B25, B26, B28-B32). The Oct 5-24 entries below describe behaviour that still holds unless they mention a learner, a qualifier list
-  or a Gemini same / covers / conflict question: those are superseded by this section.
+- **Superseded by Rebuild 9-12 below:** B9 (noun chunks), B11 (dossier), B33 (sidebar blocks) and the body-alias lists are built. The real
+  "not built" list is the paragraph that begins "Not built (the real list" under Rebuild 14. The Oct 5-24 entries below describe behaviour that
+  still holds unless they mention a learner, a qualifier list or a Gemini same / covers / conflict question: those are superseded by this section.
 **Rebuild 9-12 (Oct 25 2026, same branch; all real-model / Wikidata paths run only on fakes until the audit):**
 `agreement.py` (it/they by dependency parse + lemminflect), `refs.py` (definite phrases by spaCy noun chunks; `HEADS` gone),
 `langcheck.py` (LanguageTool, counted not enforced), `bodies.py` (body identity from Wikidata, table `body_links`; `voice.ALIASES` /
@@ -75,10 +74,14 @@ labelled model exists; `bands` = size of the middle band); `crosslingual.py` (De
 they enter `EntityTable`, exact lookup only; `compose` puts the registry in scope); `tools/evaluate.py` (THE single audit: claim matching
 recall at 99% precision for code / Fellegi-Sunter / logistic, NLI score distribution, inspector counts per article, all untuned thresholds;
 one `diagnostics` row kind 'evaluate'; workflow `audit`, tool `evaluate`). The conftest fake parser now builds speech structure.
-Not built (the real list, corrected Oct 25): B25/B26/B28-B32 labelled-data evaluation (the harness measures with the newsroom's own answers,
-no owner labels), a coreference model for the writer, S9 soft time level inside Fellegi-Sunter beyond the date field, E1's "re-ask once" (an
-invalid closed value becomes "unknown"/"attributes" and is counted), E23's weight in `story_pairs` (the table cannot gain a column without a
-migration: the SHRUNK value is stored instead), E40's `stories.created_at` column (still written by `stories.py`; only the unused query went).
+Not built (the real list, corrected Oct 26): (1) B25/B26/B28-B32 labelled-data evaluation: no owner labels are needed, `tools/evaluate.py` already
+measures with the newsroom's own answers; what is missing is running it (audit) and reading the numbers; (2) a coreference model for the writer
+(`discourse.py` / `refs.py` / `agreement.py` count dangling pronouns; a fastcoref / coreferee check would be added as a COUNTED metric in the audit
+first, never enforced); (3) E1's "re-ask once" (an invalid closed value becomes "unknown"/"attributes" and is counted; build only if the audit shows
+the invalid rate matters, it costs quota); (4) E40: `stories.created_at` stays on purpose (`threads.root_of` breaks ties by it; only the unused query
+went). DONE Oct 26: S9 graded time field in `fellegisunter` (`time_level`: overlap / one day apart / further / unknown; `times` passed from
+`consolidate` through `dupescore.order`); E23 evidence weight per pair in the side table `story_pair_weights` (in `TABLES` of `newsroom.sh`;
+`perspectives.pair_means` weights each story by it, a pair stored before counts as 1).
 **Rebuild 15-16 (Oct 25 2026, same branch; fakes only until the audit): the NOTES S- and E-lists.** S1 closed factuality fields (polarity,
 certainty; `extract._factuality`), S2 central pieces + entity slots for long reports, S3 repeated readings clustered (`_merge_pieces` via
 `redundancy`), S4/S6 greedy coverage selection (`selection.greedy`; Tavily failures backed off in `articles.extraction["tavily"]`), S7 blocking

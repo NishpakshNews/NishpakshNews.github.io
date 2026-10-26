@@ -232,7 +232,7 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     ask_pairs = list(dict.fromkeys(tuple(sorted(p)) for p in ask_pairs if tuple(sorted(p)) not in code_same_set))
     same_checks = dict(analysis.get("same_checks") or {})
     from . import dupescore
-    todo = dupescore.order([p for p in ask_pairs if key(p) not in same_checks], prof, texts)[:SAME_ASK_MAX]
+    todo = dupescore.order([p for p in ask_pairs if key(p) not in same_checks], prof, texts, times)[:SAME_ASK_MAX]
     firsts: dict[int, bool] = {}
     unanswered = 0
     labelled: list[tuple[str, str, bool]] = []

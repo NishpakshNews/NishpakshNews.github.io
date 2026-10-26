@@ -38,3 +38,29 @@ def test_bands_add_up():
     pairs = [(a, b) for a in prof for b in prof if a < b]
     b = fs.bands(pairs, prof)
     assert b["upper"] + b["lower"] + b["middle"] == b["pairs"] == len(pairs)
+
+
+def test_time_level_is_graded_and_unknown_is_its_own_level():
+    day = lambda d: {"start": f"2026-10-{d:02d}"}  # noqa: E731
+    assert fs.time_level(day(5), day(5)) == 3
+    assert fs.time_level(day(5), day(6)) == 2
+    assert fs.time_level(day(5), day(9)) == 0
+    assert fs.time_level(day(5), None) == 1 and fs.time_level(None, None) == 1
+    assert fs.time_level({"start": "2026-10-05", "end": "2026-10-08"}, day(7)) == 3     # ranges that overlap
+
+
+def test_gamma_has_a_time_field_and_old_calls_still_work():
+    a, b = Profile("Police arrested Ravi in Patna"), Profile("Ravi was arrested by police in Patna")
+    assert len(fs.gamma(a, b)) == len(fs.FIELDS) == 6
+    assert fs.gamma(a, b)[-1] == 1
+    assert fs.gamma(a, b, {"start": "2026-10-05"}, {"start": "2026-10-05"})[-1] == 3
+
+
+def test_times_that_agree_rank_a_pair_higher_when_the_story_has_dated_lines():
+    prof = _story()
+    times = {k: {"start": "2026-10-05"} if k < 12 else {"start": "2026-10-%02d" % (6 + k % 4)} for k in prof}
+    model = fs.fit_story(prof, times)
+    assert model is not None
+    same = fs._g(prof, times, 0, 1)
+    assert same[-1] == 3
+    assert fs.order([(0, 12), (0, 1)], prof, times)[0] == (0, 1)

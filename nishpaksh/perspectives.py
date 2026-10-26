@@ -22,7 +22,8 @@ from collections import Counter, defaultdict
 import numpy as np
 
 from .config import SETTINGS
-from .db import Store, articles, canonical, claims, delete, insert, select, source_clusters, stories, story_pairs, update, utcnow
+from .db import (Store, articles, canonical, claims, delete, insert, select, source_clusters, stories, story_pair_weights,
+                 story_pairs, update, utcnow)
 from . import heavy
 from .wire import independence_groups, independent, is_state
 
@@ -224,11 +225,13 @@ def analyze_story(store: Store, story_id: int) -> dict:
 
     n = len(groups)
     W = np.zeros((n, n))
+    EV = np.zeros((n, n))                          # E23: the evidence behind each value (agreement's total weight)
     overlap = np.zeros((n, n), dtype=int)
     for i in range(n):
         for j in range(i + 1, n):
-            w, _, k = agreement(prof[groups[i]], prof[groups[j]], informative, notable, conflicts)
+            w, tw, k = agreement(prof[groups[i]], prof[groups[j]], informative, notable, conflicts)
             W[i, j] = W[j, i] = w
+            EV[i, j] = EV[j, i] = tw
             overlap[i, j] = overlap[j, i] = k
     side, inter, intra = _split(W)
     if side is not None and not _direct_conflict(side, groups, M, conflicts):
@@ -308,7 +311,9 @@ def analyze_story(store: Store, story_id: int) -> dict:
 
     # per-story pairwise agreement between sources, for the global matrix
     store.exec(delete(story_pairs).where(story_pairs.c.story_id == story_id))
+    store.exec(delete(story_pair_weights).where(story_pair_weights.c.story_id == story_id))
     pair_rows = {}
+    pair_ev = {}
     for i in range(n):
         for j in range(i + 1, n):
             if not overlap[i, j]:
@@ -320,10 +325,13 @@ def analyze_story(store: Store, story_id: int) -> dict:
                     if a != b:
                         x, y = sorted((a, b))
                         pair_rows[(x, y)] = W[i, j]
+                        pair_ev[(x, y)] = EV[i, j]
     if pair_rows:
         with store.engine.begin() as c:
             c.execute(insert(story_pairs), [dict(story_id=story_id, a=a, b=b, value=float(v))
                                             for (a, b), v in pair_rows.items()])
+            c.execute(insert(story_pair_weights), [dict(story_id=story_id, a=a, b=b, weight=float(pair_ev[(a, b)]))
+                                                   for (a, b) in pair_rows])
 
     analysis = {
         # every other stage's work survives: this step rewrites only its own fields. It used to keep a fixed
@@ -402,17 +410,25 @@ def mark_qualified(store: Store, story_id: int, rule: str) -> None:
     store.exec(update(stories).where(stories.c.id == story_id).values(qualifies=True, analysis=analysis))
 
 
+def pair_means(rows, weights: dict) -> dict[tuple[str, str], float]:
+    """E23: the mean agreement of two outlets over the stories they share (2+), each story counted by the evidence it rested on
+    (`weights` keyed (story_id, a, b), from story_pair_weights). A pair stored before the weights existed counts as 1."""
+    agg: dict[tuple[str, str], list[tuple[float, float]]] = defaultdict(list)
+    for r in rows:
+        a, b = sorted((_unit(r["a"]), _unit(r["b"])))
+        if a != b:
+            w = weights.get((r["story_id"], r["a"], r["b"]))
+            agg[(a, b)].append((r["value"], w if w and w > 0 else 1.0))
+    return {k: float(sum(v * w for v, w in vs) / sum(w for _, w in vs)) for k, vs in agg.items() if len(vs) >= 2}
+
+
 def recompute_global(store: Store) -> int:
     """Perspectives: groups of outlets whose fitted positions (positions.py) are not apart, shown only when the daily
     positions test found a real signal."""
     from scipy.optimize import linear_sum_assignment
 
-    agg: dict[tuple[str, str], list[float]] = defaultdict(list)
-    for r in store.rows(select(story_pairs.c.a, story_pairs.c.b, story_pairs.c.value)):
-        a, b = sorted((_unit(r["a"]), _unit(r["b"])))
-        if a != b:
-            agg[(a, b)].append(r["value"])
-    known = {k: float(np.mean(v)) for k, v in agg.items() if len(v) >= 2}
+    ev = {(r["story_id"], r["a"], r["b"]): r["weight"] for r in store.rows(select(story_pair_weights))}
+    known = pair_means(store.rows(select(story_pairs.c.story_id, story_pairs.c.a, story_pairs.c.b, story_pairs.c.value)), ev)
     deg = Counter()
     for a, b in known:
         deg[a] += 1

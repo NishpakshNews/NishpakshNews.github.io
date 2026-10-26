@@ -1,6 +1,6 @@
 """Probabilistic record linkage for statements (B2/B21; Fellegi & Sunter 1969, the Splink way): no labels needed.
 
-Each pair of statements is compared field by field into AGREEMENT LEVELS (words, names, figures, negation, date). For
+Each pair of statements is compared field by field into AGREEMENT LEVELS (words, names, figures, negation, date, time). For
 every field the model holds two probabilities per level: m = how often a true match shows that level, u = how often a
 non-match does. EM estimates them from the pairs themselves (unsupervised); a pair's MATCH WEIGHT is the sum of
 log2(m/u) over its fields. Weight above `UPPER` = likely the same, below `LOWER` = likely different, the band between is
@@ -12,14 +12,24 @@ from __future__ import annotations
 
 import math
 
-LEVELS = {"words": 4, "names": 3, "nums": 4, "neg": 2, "date": 3}
+LEVELS = {"words": 4, "names": 3, "nums": 4, "neg": 2, "date": 3, "time": 4}
 FIELDS = list(LEVELS)
 UPPER, LOWER = 6.0, -4.0
 MIN_PAIRS = 30
 
 
-def gamma(pa, pb) -> tuple[int, ...]:
-    """Agreement levels, higher = more alike. Profile pairs (relate.Profile)."""
+def time_level(ta, tb) -> int:
+    """S9, a graded time field: 3 = the two time ranges overlap, 2 = one day apart, 0 = further apart, 1 = not both dated.
+    Unknown is its own level (not a middle one): a statement with no time says nothing for or against."""
+    from .relate import ADJACENT_DAYS, time_gap_days
+    gap = time_gap_days(ta, tb)
+    if gap is None:
+        return 1
+    return 3 if gap == 0 else 2 if gap <= ADJACENT_DAYS else 0
+
+
+def gamma(pa, pb, ta=None, tb=None) -> tuple[int, ...]:
+    """Agreement levels, higher = more alike. Profile pairs (relate.Profile); ta / tb = the statements' time ranges."""
     wa, wb = set(pa.roots), set(pb.roots)
     jac = len(wa & wb) / len(wa | wb) if wa | wb else 0.0
     words = 3 if jac >= 0.8 else 2 if jac >= 0.5 else 1 if jac >= 0.25 else 0
@@ -40,7 +50,7 @@ def gamma(pa, pb) -> tuple[int, ...]:
     neg = 1 if pa.neg == pb.neg else 0
     da, db = getattr(pa, "date", None), getattr(pb, "date", None)
     date = 1 if (da is None or db is None) else 2 if da == db else 0
-    return (words, names, nums, neg, date)
+    return (words, names, nums, neg, date, time_level(ta, tb))
 
 
 class Model:
@@ -95,25 +105,30 @@ def fit(gammas: list[tuple[int, ...]], iters: int = 40) -> Model | None:
     return Model(p, m, u)
 
 
-def fit_story(prof: dict) -> Model | None:
+def _g(prof: dict, times: dict | None, a, b) -> tuple[int, ...]:
+    t = times or {}
+    return gamma(prof[a], prof[b], t.get(a), t.get(b))
+
+
+def fit_story(prof: dict, times: dict | None = None) -> Model | None:
     ids = sorted(prof)
-    return fit([gamma(prof[a], prof[b]) for i, a in enumerate(ids) for b in ids[i + 1:]])
+    return fit([_g(prof, times, a, b) for i, a in enumerate(ids) for b in ids[i + 1:]])
 
 
-def order(pairs: list[tuple[int, int]], prof: dict) -> list[tuple[int, int]]:
+def order(pairs: list[tuple[int, int]], prof: dict, times: dict | None = None) -> list[tuple[int, int]]:
     """The same pairs, highest weight first (stable). Unchanged when the story is too small to fit."""
-    model = fit_story(prof)
+    model = fit_story(prof, times)
     if model is None or len(pairs) < 2:
         return list(pairs)
-    scored = [(model.weight(gamma(prof[a], prof[b])), k, (a, b)) for k, (a, b) in enumerate(pairs)]
+    scored = [(model.weight(_g(prof, times, a, b)), k, (a, b)) for k, (a, b) in enumerate(pairs)]
     return [p for _w, _k, p in sorted(scored, key=lambda t: (-t[0], t[1]))]
 
 
-def bands(pairs: list[tuple[int, int]], prof: dict) -> dict:
+def bands(pairs: list[tuple[int, int]], prof: dict, times: dict | None = None) -> dict:
     """How many of the pairs fall above UPPER, below LOWER and in the middle: the share a model must still be asked."""
-    model = fit_story(prof)
+    model = fit_story(prof, times)
     if model is None:
         return {}
-    ws = [model.weight(gamma(prof[a], prof[b])) for a, b in pairs]
+    ws = [model.weight(_g(prof, times, a, b)) for a, b in pairs]
     return {"upper": sum(w >= UPPER for w in ws), "lower": sum(w <= LOWER for w in ws),
             "middle": sum(LOWER < w < UPPER for w in ws), "pairs": len(ws)}

@@ -104,6 +104,14 @@ story_pairs = Table(  # per-story agreement between two sources; global affinity
     Column("value", Float),
 )
 
+story_pair_weights = Table(  # E23: how much evidence stands behind a story_pairs value (a side table: story_pairs cannot gain a column)
+    "story_pair_weights", md,
+    Column("story_id", Integer, primary_key=True),
+    Column("a", String(300), primary_key=True),
+    Column("b", String(300), primary_key=True),
+    Column("weight", Float),
+)
+
 source_clusters = Table(
     "source_clusters", md,
     Column("source", String(300), primary_key=True),
@@ -472,6 +480,6 @@ class Store:
 
 
 __all__ = [
-    "Store", "utcnow", "feeds", "articles", "stories", "claims", "canonical", "story_pairs",
+    "Store", "utcnow", "feeds", "articles", "stories", "claims", "canonical", "story_pairs", "story_pair_weights",
     "source_clusters", "published", "translations", "quota_usage", "runs", "story_links", "select", "insert", "update", "delete",
 ]
