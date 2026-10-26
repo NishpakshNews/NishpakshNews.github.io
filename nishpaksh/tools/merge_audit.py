@@ -60,6 +60,13 @@ def clusters(n: int, edges: list[tuple[int, int]]) -> int:
     return len({find(i) for i in range(n)})
 
 
+def _tells(pl, pm) -> bool:
+    """The same code check consolidate uses before folding a covered line."""
+    from ..relate import core_names
+    nums_ok = all(any(abs(x - y) <= 0.05 * max(abs(x), abs(y), 1) for y in pl.nums) for x in pm.nums)
+    return nums_ok and core_names(pm) <= (core_names(pl) | pl.roots | pl.names)
+
+
 def audit_story(items: list[dict]) -> dict:
     """items: [{id, text, arts: set(article ids)}]. Returns counts and examples."""
     from .. import embed, nli, relate
@@ -90,7 +97,11 @@ def audit_story(items: list[dict]) -> dict:
         if k == "same":
             same_edges.append((a, b))
         elif k in ("a_says_b", "b_says_a"):
-            cover_edges.append((a, b))
+            lead, member = (a, b) if k == "a_says_b" else (b, a)
+            if _tells(relate.Profile(texts[lead]), relate.Profile(texts[member])):
+                cover_edges.append((a, b))      # consolidate folds only when code agrees too
+            else:
+                kinds[f"{k}|code:{code}|not_folded"] += 1
         if len(ex.setdefault(k, [])) < EXAMPLES:
             ex[k].append({"sim": round(s, 3), "code": code, "a": texts[a][:220], "b": texts[b][:220],
                           "ent": [round(r[0][0], 2), round(r[1][0], 2)] if r else None,
