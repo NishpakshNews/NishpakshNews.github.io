@@ -31,7 +31,7 @@ def nli_check() -> dict:
                   ("Police arrested the minister.", "Police did not arrest the minister.")])
     if not r or r[0] is None or r[1] is None:
         return {"ok": False, "error": "no answer"}
-    ent = nli.same([("Police arrested the minister on Monday.", "The minister was arrested.")])
+    ent = nli.covers([("Police arrested the minister on Monday.", "The minister was arrested.")])
     con = nli.conflict([("Police arrested the minister.", "Police did not arrest the minister.")])
     return {"model": nli.MODEL, "entails": ent, "conflict": con, "ok": con == ["cannot_both_be_true"] and ent == [True]}
 

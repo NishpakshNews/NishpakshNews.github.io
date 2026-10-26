@@ -8,6 +8,8 @@ runs:
   steps:
     - run: pip install -q -r requirements-nlp.txt
       shell: bash
+    - run: python -m spacy download en_core_web_lg || python -m spacy download en_core_web_sm || true
+      shell: bash
     - run: python -m spacy download en_core_web_sm || true
       shell: bash
     - uses: actions/cache@v4

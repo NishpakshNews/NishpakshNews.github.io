@@ -85,7 +85,7 @@ went). DONE Oct 26 (merge audit, runner): `tools/merge_audit.py` showed code's "
 **Model check (Oct 26 2026, owner: "how can we check models get loaded, not just NLI, rather than waiting for runs"):** `tools/model_check.py`
 (workflow `audit`, tool `model_check`, diagnostics kind 'model_check') calls the pipeline's OWN entry points (nli, embed, nlp, lemminflect,
 langcheck, bodies/Wikidata, coref, focus/YuNet, HF cache) and reports ok / fallback / seconds per component; a TF-IDF embedding or the small
-spaCy model shows as `fallback`, not ok. Every hourly run also stores `runs.stats["models"]` (module state only, no loading, no cost).
+spaCy model shows as `fallback`, not ok. First run (Oct 26): NLI, MiniLM, lemminflect, LanguageTool (Java ok), Wikidata, YuNet all loaded; spaCy was on `en_core_web_sm` (nlp-setup only installed the small model; fixed to install `en_core_web_lg`, small as fallback); fastcoref absent (optional, None). Every hourly run also stores `runs.stats["models"]` (module state only, no loading, no cost).
 **B and E finished (Oct 26 2026, owner: "finish builds B and E before the merge"):** E1 `reask.py` (a stance outside the closed set is asked ONCE more,
 one batched quality-tier call per article, cap 20 a run, closed answers only, "asserts" refused when a speaker is named; counted `stance re-ask:`),
 B9 `coref.py` (fastcoref as a COUNTED dangling-pronoun check in `tools/evaluate.py` section "coreference", optional install in the audit workflow,
