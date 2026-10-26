@@ -80,6 +80,8 @@ def audit_story(items: list[dict]) -> dict:
     same_edges, cover_edges = [], []
     for (s, a, b), r in zip(cand, both):
         code = relate.relate(texts[a], texts[b])
+        if code == "different" and s >= 0.85 and relate.soft_candidate(texts[a], texts[b]):
+            code = "soft"                       # what consolidate now offers the model (names / words only)
         k = classify(code, r[0] if r else None, r[1] if r else None, nli)
         kinds[f"{k}|code:{code}"] += 1
         if k == "same":

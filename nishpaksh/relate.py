@@ -119,6 +119,21 @@ _NORM_RULES = [
 ]
 
 
+def fold_latin(text: str) -> str:
+    """Accents off Latin letters only (Inácio = Inacio, Flávio = Flavio: one line was folded, the other not, and the
+    names then "differed", merge_audit Oct 26 2026); Devanagari and every other script are left exactly as written."""
+    import unicodedata
+    if text.isascii():
+        return text
+    out = []
+    for ch in text:
+        if ord(ch) < 0x250 and not ch.isascii():
+            d = unicodedata.normalize("NFD", ch)
+            ch = "".join(c for c in d if not unicodedata.combining(c)) or ch
+        out.append(ch)
+    return "".join(out)
+
+
 def normalise(text: str) -> str:
     """B8: the form two lines are compared in: NFKC, one hyphen, one way to write rupees and per cent, a range as "a to b",
     lower case, punctuation and spacing gone. Two lines equal here are the same words (the exact-match fast path)."""
@@ -147,7 +162,7 @@ class Profile:
     __slots__ = ("norm", "nums", "names", "roots", "neg", "contrast", "date", "years", "clocks")
 
     def __init__(self, text: str):
-        t = text or ""
+        t = fold_latin(text or "")
         self.norm = normalise(t)
         # a clock time is a time, not figures and not a name ("12:30 PM" read as 12, 30 and a name "PM" kept two
         # tellings of the Ladakh inauguration apart, Oct 15 2026); compared as times, through the statements' times
@@ -500,3 +515,51 @@ def numbers_close(pa: Profile, pb: Profile, tol: float = 0.05) -> bool:
     if not small:
         return True
     return all(any(abs(x - y) <= tol * max(abs(x), abs(y), 1e-9) for y in big) for x in small)
+
+
+# --- pairs the word rules call "different" only because of names or words (merge_audit, Oct 26 2026) -----------------------
+# "Modi congratulated Lula on his re-election" / "Modi congratulated Brazilian President Lula on his electoral victory": the
+# second line adds a title and a demonym, so the NAME sets differ and the code's veto ended it, though the model reads the
+# two as the same fact (0.99 both ways). Code keeps every veto about FACTS (negation, figures, dates, clock times, results);
+# a difference only in names or words, where one line has names the other lacks (not both, which is two different people),
+# is offered to the local reader (NLI), which decides.
+def core_names(p: "Profile") -> frozenset:
+    """Names without title words and demonym forms ("senator", "president", "brazilian" next to "brazil")."""
+    try:
+        from .titles import title_words
+        tw = {_stem(w.lower()) for w in title_words()}
+    except Exception:  # noqa: BLE001
+        tw = set()
+    names = {n for n in p.names if n not in tw}
+    return frozenset(names)
+
+
+def _names_match(x: str, y: str) -> bool:
+    return x == y or (min(len(x), len(y)) >= 5 and (x.startswith(y) or y.startswith(x)))
+
+
+def name_sets_fit(pa: "Profile", pb: "Profile") -> bool:
+    """True when the names of the two lines do not name two different things: what one line has and the other lacks
+    is on one side only."""
+    na, nb = core_names(pa), core_names(pb)
+    only_a = {x for x in na if not any(_names_match(x, y) for y in nb)}
+    only_b = {y for y in nb if not any(_names_match(x, y) for x in na)}
+    return not (only_a and only_b)
+
+
+def soft_candidate(a: str, b: str, time_a: dict | None = None, time_b: dict | None = None,
+                   pa: "Profile | None" = None, pb: "Profile | None" = None) -> bool:
+    """Is a pair code called "different" worth the model's look? Only when no fact differs: same negation, nothing
+    dated apart, no clock or year conflict, figures equal or on one side only, and the names fit (one-sided)."""
+    pa, pb = pa or Profile(a), pb or Profile(b)
+    if pa.neg != pb.neg or (pa.clocks and pb.clocks and not pa.clocks & pb.clocks):
+        return False
+    if pa.years and pb.years and not pa.years & pb.years:
+        return False
+    if pa.date and pb.date and any(x is not None and y is not None and x != y for x, y in zip(pa.date, pb.date)):
+        return False
+    if _times_apart(time_a, time_b) and time_gap_days(time_a, time_b) not in (None, 0, 1):
+        return False
+    if not (pa.nums <= pb.nums or pb.nums <= pa.nums):
+        return False
+    return name_sets_fit(pa, pb)

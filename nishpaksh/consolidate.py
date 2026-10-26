@@ -66,7 +66,9 @@ Reply with JSON only:
  "name_conflicts": [{{"ids": [5, 9], "names": ["Company A", "Company B"]}}]}}"""
 
 ROLES = {"background", "related", "explanation", "reaction", "next"}
-SAME_ASK_MAX = 30         # same-fact questions per consolidation, closest pairs first (the rest next time)
+SOFT_SIMILARITY = 0.85    # sentence-embedding cosine for a "different by words only" pair to be read by the model
+SOFT_MAX = 150            # such pairs a consolidation reads (closest first); the local reader costs no quota
+SAME_ASK_MAX = 80         # same-fact questions per consolidation, closest pairs first (the rest next time)
 CONSOLIDATE_VERSION = 11  # part of the cache key: stories are consolidated again when the task changes
                           # (9, Oct 8 2026: paraphrases proposed by topic, dupes.py)
                           # (10, Oct 9 2026: the review's results had been wiped by perspectives.py; every
@@ -123,6 +125,33 @@ def _repair_aliases(store: Store, story_id: int, analysis: dict) -> None:
     analysis.pop("consolidated", None)
     log.info("consolidate story %s: undid %d alias mappings", story_id, len(bad))
 
+
+def _soft_pairs(texts, times, prof, code_same_set, ask_pairs, ask_cover):
+    """Add the embedding-close pairs that only names or words kept apart to the same-fact and covers questions."""
+    from . import embed
+    from .relate import relate, soft_candidate
+    ids = sorted(texts)
+    if len(ids) < 2:
+        return ask_pairs, ask_cover
+    try:
+        sim, _thr = embed.similarity([texts[i] for i in ids])
+    except Exception:  # noqa: BLE001
+        return ask_pairs, ask_cover
+    known = {tuple(sorted(p)) for p in ask_pairs} | {tuple(sorted(p)) for p in ask_cover} | set(code_same_set)
+    cand = sorted(((float(sim[x, y]), ids[x], ids[y]) for x in range(len(ids)) for y in range(x + 1, len(ids))
+                   if sim[x, y] >= SOFT_SIMILARITY), reverse=True)
+    added = 0
+    for _s, a, b in cand:
+        if added >= SOFT_MAX:
+            break
+        if (a, b) in known or relate(texts[a], texts[b], times.get(a), times.get(b), prof[a], prof[b]) != "different":
+            continue
+        if not soft_candidate(texts[a], texts[b], times.get(a), times.get(b), prof[a], prof[b]):
+            continue
+        ask_pairs = list(ask_pairs) + [(a, b)]
+        ask_cover = list(ask_cover) + [(a, b), (b, a)]
+        added += 1
+    return ask_pairs, ask_cover
 
 def consolidate_story(store: Store, router: Router | None, story_id: int, max_statements: int = 90) -> dict:
     story = store.one(select(stories.c.id, stories.c.analysis).where(stories.c.id == story_id))
@@ -227,6 +256,9 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
         neg_ok = prof[a].neg == prof[b].neg or (a, b) in d_same
         if r in ("same", "ask") or (neg_ok and numbers_close(prof[a], prof[b])):
             ask_pairs.append((a, b))
+    # pairs the word rules called "different" only through names or words, but the sentence embedding puts side by side:
+    # the local reader decides (relate.soft_candidate keeps every veto about a fact: not, figures, dates, clock times)
+    ask_pairs, ask_cover = _soft_pairs(texts, times, prof, code_same_set, ask_pairs, ask_cover)
     from . import redundancy
     ask_pairs += redundancy.number_pairs(prof)        # one card per subject and measure: offered to the question, decides nothing
     ask_pairs = list(dict.fromkeys(tuple(sorted(p)) for p in ask_pairs if tuple(sorted(p)) not in code_same_set))
@@ -268,7 +300,8 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     def tells(lead: int, member: int) -> bool:
         pl, pm = prof[lead], prof[member]
         nums_ok = all(any(abs(x - y) <= 0.05 * max(abs(x), abs(y), 1) for y in pl.nums) for x in pm.nums)
-        return nums_ok and pm.names <= (pl.names | pl.roots)
+        from .relate import core_names
+        return nums_ok and core_names(pm) <= (core_names(pl) | pl.roots | pl.names)
     for big, small in ask_cover:
         if small not in covered and same_checks.get("f" + ckey((big, small))) and tells(big, small):
             covered[small] = big
