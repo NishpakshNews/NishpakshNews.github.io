@@ -103,6 +103,11 @@ def _units(ordered: list[dict]) -> list[list[dict]]:
         for x in _links(i):
             if x in parent:
                 parent[find(x)] = find(i["id"])
+    # the pieces of one report sentence (bundles.py) are written together: one sentence in coloured parts
+    from . import sentences
+    for g in sentences.bundle_sets(ordered):
+        for x in g[1:]:
+            parent[find(x)] = find(g[0])
     units: dict[int, list[dict]] = {}
     for i in ordered:
         units.setdefault(find(i["id"]), []).append(i)

@@ -15,6 +15,9 @@ A dispute is the SAME QUESTION with a DIFFERENT ANSWER. Judges, in this order:
   2. figures over time: when every report giving one figure was published clearly after every report
      giving the other, it is an UPDATE, not a dispute ("the toll rose to 50; earlier reports put it at
      40"): each line keeps its own colour
+  2b. a STATE that changed ("an orange alert" on Sunday, "a red alert" today): the same question with another answer in
+     words, no figure or date involved. Code finds the candidate (`_state`); only when the model, asked twice, says both
+     cannot be true is it anything: an update when the reports are clearly ordered in time, else a dispute. Never doubtful.
   3. the model answers "can both be true?" twice, A/B swapped: two "cannot" make a dispute (amber, both
      versions and whose), however many outlets are on each side and whether a side is an official or
      an outlet; any "unsure" or the two answers disagreeing: doubtful (never amber, never green)
@@ -35,6 +38,8 @@ MONTH_DAY = re.compile(r"(?i)\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov
 OF_TOTAL = re.compile(r"(?i)\b(\d+)\s+(?:out\s+)?of\s+(?:the\s+)?(?:total\s+|all\s+)?(\d+)\b")
 QUESTION_SIM = {"bi-encoder": 0.72, "tfidf": 0.5}     # cosine of the two claims: the same question (embed.py)
 UPDATE_GAP = dt.timedelta(hours=1)
+STATE_COMMON = 3       # content words two lines share when they ask one question about a state ("orange alert for Odisha")
+STATE_MAX = 2          # words that differ on either side: the answer ("orange" / "red")
 
 
 def _question(p: Profile, text: str) -> tuple[frozenset, frozenset]:
@@ -48,6 +53,34 @@ def _question(p: Profile, text: str) -> tuple[frozenset, frozenset]:
 
 SPEAKER = re.compile(r"(?i)^.{0,80}?\b(?:said|says|stated|states|claimed|claims|alleged|alleges|told reporters|"
                      r"reported|announced|confirmed)\b(?:\s+that)?,?\s+")
+
+def _without_times(text: str) -> str:
+    """The text with every time expression taken out (today, Sunday, 5 pm, 12 October): a state said on another day is the same
+    question (when.py finds them in both languages; no list of words here)."""
+    from . import when
+    t = text
+    for m in sorted(when.find(t), key=lambda m: -m.start):
+        t = t[:m.start] + " " + t[m.end:]
+    return t
+
+
+def _state(a: str, b: str) -> bool:
+    """Two lines that ask one question about a STATE and answer it with different words: "an orange alert is in force for the
+    coast" / "a red alert is in force for the coast". No figure, date or negation differs (those are the other kinds), the names
+    are the same, they share STATE_COMMON content words, and each has 1 to STATE_MAX words the other lacks (the roots are the
+    synonym list's: injured / hurt are one word). It is only a CANDIDATE: the model decides whether both can be true."""
+    ta, tb = _without_times(a), _without_times(b)
+    pa, pb = Profile(ta), Profile(tb)
+    if pa.neg != pb.neg or pa.nums != pb.nums:
+        return False
+    qa, na = _question(pa, ta)
+    qb, nb = _question(pb, tb)
+    if na != nb:
+        return False
+    da, db = qa - qb, qb - qa
+    return bool(da) and bool(db) and len(da) <= STATE_MAX and len(db) <= STATE_MAX and len(qa & qb) >= STATE_COMMON
+
+
 ACCORDING = re.compile(r"(?i),?\s+according to [^,.;]+")
 
 
@@ -61,7 +94,7 @@ def claim_body(text: str) -> str:
 
 def candidate(a: str, b: str, pa: Profile | None = None, pb: Profile | None = None, sim: float | None = None,
               need: float | None = None) -> str | None:
-    """'number', 'date' or 'negation' when a and b look like the same question answered differently;
+    """'number', 'date', 'negation' or 'state' when a and b look like the same question answered differently;
     None when code can tell they are not a dispute. `sim` is the claims' sentence similarity (computed here for one
     pair when not given; judge() passes it from one matrix)."""
     a, b = claim_body(a), claim_body(b)
@@ -95,6 +128,8 @@ def candidate(a: str, b: str, pa: Profile | None = None, pb: Profile | None = No
         if (UPPER.search(a) and min(pb.nums) <= max(pa.nums)) or (UPPER.search(b) and min(pa.nums) <= max(pb.nums)):
             return None
         return "number"
+    if _state(a, b):
+        return "state"                    # same question about a state, another answer: an update or a dispute, by time and the model
     return None
 
 
@@ -143,7 +178,7 @@ def judge(router, texts: dict[int, str], times: dict[int, list], proposals: set[
     cands = {p: k for p, k in cands.items() if p not in exclude}
     updates: dict[int, int] = {}
     ask = []
-    for (a, b), kind in cands.items():
+    for (a, b), kind in sorted(cands.items(), key=lambda kv: kv[1] == "state"):    # the sure kinds first: the asking is capped
         if kind == "number":
             u = is_update(times.get(a) or [], times.get(b) or [])
             if u:
@@ -163,11 +198,18 @@ def judge(router, texts: dict[int, str], times: dict[int, list], proposals: set[
     disputes, doubtful = set(), set()
     for a, b in ask:
         first, second = cache.get(_key(texts[a], texts[b])), cache.get(_key(texts[b], texts[a]))
+        state = cands.get((a, b)) == "state"    # a broad candidate: it never makes a statement doubtful, only a dispute or an update
         if first is None or second is None:
-            doubtful |= {a, b}            # not asked, or the asking failed (quota): no amber, no green; asked again next run
+            if not state:
+                doubtful |= {a, b}        # not asked, or the asking failed (quota): no amber, no green; asked again next run
             continue
         if first == second == "cannot_both_be_true":
-            disputes.add((a, b))
-        elif "unsure" in (first, second) or first != second:
+            u = is_update(times.get(a) or [], times.get(b) or []) if state else 0
+            if u:                         # the state changed between the reports: the later one is the update
+                old, new = (a, b) if u == 1 else (b, a)
+                updates[old] = new
+            else:
+                disputes.add((a, b))
+        elif not state and ("unsure" in (first, second) or first != second):
             doubtful |= {a, b}
     return disputes, doubtful, updates

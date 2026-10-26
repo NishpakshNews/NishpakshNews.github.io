@@ -438,7 +438,8 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
                     doubtful_conflicts=sorted(x for x in doubtful if alive(x)),
                     # an older figure and the newer one that replaced it (both true when reported)
                     updates={str(merged_into.get(k, k)): merged_into.get(v, v) for k, v in updates.items()
-                             if alive(merged_into.get(k, k)) and alive(merged_into.get(v, v))})
+                             if alive(merged_into.get(k, k)) and alive(merged_into.get(v, v))
+                             and merged_into.get(k, k) != merged_into.get(v, v)})
     store.exec(update(stories).where(stories.c.id == story_id).values(analysis=analysis))
     log.info("consolidate story %s: %d merged, %d contradictions, %d names", story_id, merged, added, len(names))
     return {"merged": merged, "conflicts": added, "names": len(names)}

@@ -161,6 +161,11 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         # share becomes one statement with both behind it (story 13970: one definition written three times)
         from . import split
         split.split_story(store, router, sid)
+        # a fact two outlets share inside sentences that bundle different details becomes one statement with both behind it
+        # (bundles.py, owner Oct 26 2026): cut before matching, which then merges the shared parts
+        if origins.independent_read_outlets(store, sid) >= 2:
+            from . import bundles
+            bundles.split_bundles(store, sid)
         match.match_story(store, router, sid)
         # merge duplicate statements, mark contradictions, one spelling per name: only for stories
         # that can be published (it costs a model call)
@@ -271,6 +276,12 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         from . import desk
         stats["desk"] = desk.work(store, router)
         stats["published"] = len(stats["desk"]["published"])
+    try:
+        from . import bundles
+        stats["bundles"] = dict(bundles.STATS)            # facts shared across bundled sentences (bundles.py)
+        bundles.STATS.clear()
+    except Exception:  # noqa: BLE001
+        pass
     try:
         from .tools import model_check
         stats["models"] = model_check.snapshot()

@@ -105,6 +105,44 @@ def _parallel_key(i: dict) -> tuple | None:
     return (act, _speaker(i) or "", bool(f.get("negated")), _when(i))
 
 
+def bundle_sets(items: list[dict]) -> list[list[int]]:
+    """Groups of statements that are pieces of one report sentence (bundles.py): statements sharing a `bundle_roots` entry,
+    directly or through a chain of shared facts, in the order given. A group of 2 to MAX_PARALLEL; a bigger chain is left
+    as separate statements (too much for one sentence)."""
+    parent: dict[int, int] = {}
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    owner: dict[str, int] = {}
+    for i in items:
+        if not i.get("bundle_roots"):
+            continue
+        parent.setdefault(i["id"], i["id"])
+        for r in i["bundle_roots"]:
+            if r in owner:
+                parent[find(i["id"])] = find(owner[r])
+            else:
+                owner[r] = i["id"]
+    groups: dict[int, list[int]] = {}
+    for i in items:
+        if i["id"] in parent:
+            groups.setdefault(find(i["id"]), []).append(i["id"])
+    return [g for g in groups.values() if 2 <= len(g) <= MAX_PARALLEL]
+
+
+def bundle_groups(plan_: list, by_id: dict) -> dict[int, list[int]]:
+    """{statement id: the ids of its bundle, in plan order} for the pieces of one report sentence that stand in ONE paragraph."""
+    out: dict[int, list[int]] = {}
+    for p in plan_:
+        for g in bundle_sets([by_id[x] for x in p.ids if x in by_id]):
+            for x in g:
+                out[x] = g
+    return out
+
+
 def parallel_groups(plan_: list, by_id: dict) -> dict[int, list[int]]:
     """{statement id: the ids of its parallel group, in plan order} for the statements of each paragraph that share
     actor, action, speaker, negation and time and differ in what they are about (groups of 2 to MAX_PARALLEL)."""
@@ -160,6 +198,12 @@ def link_line(item: dict, prev: dict | None) -> str | None:
         return f"contrast with #{p}: both versions in ONE sentence, each with whose it is"
     if p in (item.get("responds_to") or []) or item["id"] in (prev.get("responds_to") or []):
         return f"the answer to #{p}: say who answers and to what, in the sentence right after it"
+    if p in (item.get("bundle") or []):
+        g = ", ".join(f"#{x}" for x in item["bundle"])
+        return (f"PIECES of one sentence with #{p} ({g}: each repeats the same opening and adds one detail): write them as "
+                "ONE sentence, the opening once and then each detail in turn (\"Cyclone Montha made landfall on the Andhra "
+                "coast on Tuesday morning, with winds of 100 km/h\"), in parts, one per statement, each part carrying only its "
+                "own detail")
     if p in (item.get("parallel") or []):
         g = ", ".join(f"#{x}" for x in item["parallel"])
         return (f"PARALLEL with #{p} ({g}: the same actor doing the same thing to different things): write them as "

@@ -95,6 +95,31 @@ spaCy model shows as `fallback`, not ok. First run (Oct 26): NLI, MiniLM, lemmin
 (6) a Hindi sentence in the English page: `extract.ground` drops a statement written in Devanagari (`hygiene.kind`).
 (7) the inspector had counted 0 problems: it now also counts `repeated_run`, `cut_sentence`, `one_sentence_paragraphs` (`narrative.flow.inspector`).
 NOT a bug, a design limit for the owner to decide (philosophy first): merge_audit on both stories shows the matcher folded what it could (59 -> 51 and 57 -> 52 statements, 101 close pairs read, 65 correctly "different"); eight outlets still give one-outlet colours because each outlet's sentence bundles different details (date + place + intensity), so no whole statement has two sources. The fix would be atomic facts (subject, predicate, object, time) as the unit of support, with the writer composing coloured parts from them, or cross-document support by entailment against other outlets' evidence spans. Also open: a state that changes over time (orange alert Sunday, red alert today) is printed as two lines, not as an update; wire prices at different minutes are separate statements.
+**Facts shared across bundled sentences (Oct 26 2026, owner: "what needs to be done is what is best for a coherently written article"; fakes only until the audit).**
+The design limit above is built: the unit of SUPPORT is one fact, the unit of WRITING stays the sentence (loose facts would make choppy prose).
+(1) `bundles.py`: `decompose` reads a statement by its dependency parse (`nlp.parse`): the CORE (subject, verb, objects, a reported clause's
+speaker) and its DETAILS (each adverbial phrase of the verb); fewer than 2 details = one fact. `split_bundles(store, sid)` runs in `run.analyse`
+right after `split.split_story`, before `match_story`, for stories with 2+ independent read outlets: two statements of different reports, close
+by embedding (`SIMILARITY` 0.55) and not already same / covers by code, are read by the local NLI model: a detail is SHARED when the OTHER
+statement entails core + that detail; the two shared parts must say each other (`nli.same`), the original must entail each piece and
+`faithful` must pass (every figure and name kept, no detail figure given to two pieces, no negation added). Both rows are cut into
+shared + rest (`_replace`, `rel.bundle = {root, role}`; `root` ties every piece of one report sentence together through later cuts); the shared
+parts then merge in the normal matching (code same, or the twice-asked NLI) and become ONE statement with every outlet behind it. Answers are kept
+per pair in `stories.analysis.bundle_pairs`, a story unchanged since the last look is skipped (`bundle_stamp`, not set while a pair could not be
+read), `MAX_PAIRS` 40 a story. Counted in `runs.stats.bundles` {stories_read, pairs, unread, split, rows}. Colours are the matching's: nothing
+here can make a line more certain than the usual gates allow.
+(2) The writer: items carry `bundle_roots` (compose); `sentences.bundle_sets` / `bundle_groups` group pieces that share a root (2 to
+MAX_PARALLEL); `plan._units` keeps them in one paragraph; `narrative` marks them `parallel` + `bundle`, so `link_line` says "PIECES of one
+sentence ... ONE sentence, the opening once, each detail in turn, in parts" and `_with_parts` allows one coloured part per piece.
+(3) `disputes.py` kind "state": the same question about a STATE answered with other words ("orange alert" / "red alert"; times taken out with
+`when.find`, no figure / date / negation differs, same names, 3+ shared content words, 1-2 differing words a side). Only a CANDIDATE: the model,
+asked twice, must say both cannot be true; then an UPDATE (`analysis.updates`, the writer pairs the newest with the older) when the reports are
+clearly ordered in time, else a dispute; unsure or unread = nothing, never doubtful. No line is struck by this (striking is the thread path).
+Not built: wire prices at different minutes stay separate statements (a rounding pair is already merged; a series rule risked a false update).
+Time budgets raised for the extra local NLI reading: pipeline `--time-budget` 45 -> 55, desk 20 -> 28 (`SETTINGS.desk_minutes`), job limit 110 unchanged.
+UNTUNED, read in the audit: `bundles.SIMILARITY`, `MAX_PAIRS`, `nli.ENTAIL` as used for details, `disputes.STATE_COMMON` / `STATE_MAX`. Check on the
+runner: `runs.stats.bundles` (split count, unread), how many state updates / disputes appear, the inspector's `alike` / `unlinked` for pieces.
+Tests: `tests/test_bundles.py`, `tests/test_state_updates.py`. Known flake in `test_end_to_end` (set order upstream) showed once in the full run, passes in 18 seeded runs.
 **B and E finished (Oct 26 2026, owner: "finish builds B and E before the merge"):** E1 `reask.py` (a stance outside the closed set is asked ONCE more,
 one batched quality-tier call per article, cap 20 a run, closed answers only, "asserts" refused when a speaker is named; counted `stance re-ask:`),
 B9 `coref.py` (fastcoref as a COUNTED dangling-pronoun check in `tools/evaluate.py` section "coreference", optional install in the audit workflow,

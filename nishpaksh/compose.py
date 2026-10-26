@@ -227,6 +227,9 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
             "refs": _item_refs(c, members.get(cid, [])),
             # a speaker's exact words, as an English report printed them (checked word for word when read)
             "words": _exact_words(members.get(cid, [])),
+            # the report sentences this line is a piece of (bundles.py): pieces of one sentence are written back as one
+            "bundle_roots": sorted({str(((r.get("rel") or {}).get("bundle") or {}).get("root")) for r in members.get(cid, [])
+                                    if ((r.get("rel") or {}).get("bundle") or {}).get("root")}),
         }
 
     def _exact_words(rows: list[dict]) -> str | None:

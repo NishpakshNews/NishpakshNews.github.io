@@ -98,7 +98,7 @@ jobs:
           GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
           GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}   # the Translator project's key: quality tier only (models.yaml keys)
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
-        run: python -m nishpaksh.run --time-budget 45
+        run: python -m nishpaksh.run --time-budget 55
       - name: Move articles older than 3 days to the archive branch
         # a story leaves the newsroom only after its page is pushed (nishpaksh/pagearchive.py)
         if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
@@ -111,7 +111,7 @@ jobs:
           GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
           GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}   # the Translator project's key: quality tier only (models.yaml keys)
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-        run: python -m nishpaksh.desk --minutes 20
+        run: python -m nishpaksh.desk --minutes 28
       - name: Write the ledger
         # one record of this run (embedding use, outlet yield, the express lane's funnel) into ledger/, committed to
         # the branch (nishpaksh/ledger.py). Reads only; before the newsroom is saved so it sees this hour's data.

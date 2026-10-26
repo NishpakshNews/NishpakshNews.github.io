@@ -487,10 +487,10 @@ def _statement_line(i: dict) -> str:
     if i["verdict"] == "false" and i.get("check"):
         line += f" | evidence: {'; '.join(i['check'].get('reasons') or [])}"
     if i.get("update_of"):
-        line += (f" | the NEWEST figure (later reports than #{i['update_of']}): write it as the latest and "
-                 f"mention #{i['update_of']} as the earlier figure, in the same sentence or the next")
+        line += (f" | the NEWEST version (later reports than #{i['update_of']}: a figure or a changed state): write it as the "
+                 f"latest and mention #{i['update_of']} as the earlier one, in the same sentence or the next")
     if i.get("updated_by"):
-        line += f" | an EARLIER figure, since updated by #{i['updated_by']}: write it with #{i['updated_by']}"
+        line += f" | an EARLIER version, since updated by #{i['updated_by']}: write it with #{i['updated_by']}"
     if i.get("adds_to"):
         line += (f" | says all of #{i['adds_to']} and more: write the two as ONE sentence in two parts, "
                  f"#{i['adds_to']}'s fact first, then what this adds")
@@ -1768,9 +1768,11 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
     # parallel statements (one actor, one action, several things) side by side and marked, to be joined (owner,
     # Oct 16 2026); the marks are copies on this run's items only
     groups = sentences.parallel_groups(pl, by_id)
+    pieces = sentences.bundle_groups(pl, by_id)           # the pieces of one report sentence come first (bundles.py)
+    groups = {**groups, **pieces}
     sentences.keep_together(pl, groups)
     for x, g in groups.items():
-        by_id[x] = dict(by_id[x], parallel=g)
+        by_id[x] = dict(by_id[x], parallel=g, **({"bundle": pieces[x]} if x in pieces else {}))
     at = {i: n for n, p_ in enumerate(pl) for i in p_.ids}
     before = {b: a for p_ in pl for a, b in zip(p_.ids, p_.ids[1:])}     # the statement before, in its paragraph
 

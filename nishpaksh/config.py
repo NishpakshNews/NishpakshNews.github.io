@@ -138,7 +138,8 @@ class Settings:
     desk_per_hour: int = 2               # articles the writer publishes in one clock hour from any story (owner)
     desk_beat_seat: int = 2              # ...plus this many for Domains, Sport or express stories only (express.py: Oct 13 2026, 1 -> 2); empty if none is ready
     desk_tries: int = 5                  # stories the writer job tries per run before giving up
-    desk_minutes: float = 20             # the writer job's time budget
+    desk_minutes: float = 28             # the writer job's time budget (20 until Oct 26 2026: pieces of bundled sentences and state
+                                         # updates give the writer more statements and the pipeline more pairs to read)
     min_sources_to_read: int = 3          # independent sources with a readable page before a story is read
 
     # claim matching (TF-IDF within a story; the middle band goes to an LLM)
