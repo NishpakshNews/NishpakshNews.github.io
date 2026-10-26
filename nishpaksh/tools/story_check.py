@@ -23,9 +23,12 @@ def _j(o):
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("ids", nargs="+", type=int)
+    ap.add_argument("ids", nargs="*", type=int)
     a = ap.parse_args()
     store = Store(database_url())
+    if not a.ids:        # no ids typed: the five newest published stories
+        with store.engine.connect() as c:
+            a.ids = [r[0] for r in c.execute(sql("select story_id from published order by updated_at desc limit 5"))]
     out: dict = {}
     with store.engine.connect() as c:
         def rows(q, **p):
