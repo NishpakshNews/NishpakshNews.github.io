@@ -34,6 +34,9 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - uses: ./.github/actions/nlp-setup
+      - name: Coreference model (optional, counted only)
+        continue-on-error: true
+        run: pip install --no-deps fastcoref && pip install --no-deps spacy-alignments || true
       - uses: ./.github/actions/newsroom-load
         env:
           NEWSROOM_KEY: ${{ secrets.NEWSROOM_KEY }}

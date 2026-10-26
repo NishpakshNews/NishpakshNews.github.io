@@ -130,11 +130,35 @@ def writing(pages: list[dict]) -> dict:
     return {"articles": seen, **tot, "per_article": {k: round(v / seen, 3) for k, v in tot.items()} if seen else {}}
 
 
+def coreference(pages: list[dict], limit: int = 40) -> dict:
+    """B9: the coreference model's count of dangling pronouns beside the rules' count (`pronoun_without_antecedent`)."""
+    from .. import coref
+    n = pron = dang = unknown = 0
+    for p in pages[:limit]:
+        paras = (p.get("narrative") or {}).get("paragraphs") or []
+        text = "\n\n".join(" ".join((x.get("text") or "") for x in para if isinstance(x, dict)) for para in paras)
+        if not text.strip():
+            continue
+        r = coref.dangling(text)
+        if r is None:
+            unknown += 1
+            continue
+        n += 1
+        pron += r["pronouns"]
+        dang += r["dangling"]
+    return {"articles": n, "unknown": unknown, "pronouns": pron, "dangling": dang,
+            "per_article": round(dang / n, 3) if n else None}
+
+
 def thresholds() -> dict:
     out = {}
     for mod, names in [("nli", ["ENTAIL", "CONTRA", "UNSURE"]), ("fidelity", ["SUPPORT", "CONTRA"]), ("threads", ["LINK"]),
                        ("belong", ["KEEP_SIMILARITY"]), ("truth", ["BELIEF_MIN"]), ("checkworthy", ["SURE"]),
-                       ("events", ["MARGIN", "MIN_N", "SURE"]), ("fellegisunter", ["UPPER", "LOWER"])]:
+                       ("events", ["MARGIN", "MIN_N", "SURE"]), ("fellegisunter", ["UPPER", "LOWER"]),
+                       ("consolidate", ["SOFT_SIMILARITY", "SOFT_MAX", "SAME_ASK_MAX"]), ("perspectives", ["PRIOR_WEIGHT", "CLEAR_AFTER"]),
+                       ("positions", ["MAX_AGE_HOURS"]), ("fidelity", ["QE_MIN"]), ("qa", ["MIN_SCORE"]),
+                       ("contrast", ["MIN_PAIRS", "RATIO"]), ("aggregate", ["PRIOR", "POSTERIOR_MIN"]),
+                       ("reask", ["MAX_CALLS_PER_RUN"])]:
         try:
             m = __import__(f"nishpaksh.{mod}", fromlist=["x"])
             for n in names:
@@ -178,6 +202,7 @@ def main() -> None:
     except Exception as e:  # noqa: BLE001
         report["published"] = {"error": str(e)[:100]}
     section("writing", lambda: writing(pages))
+    section("coreference", lambda: coreference(pages))
     section("thresholds", thresholds)
     print(json.dumps(report, ensure_ascii=False, indent=1, default=str))
     try:

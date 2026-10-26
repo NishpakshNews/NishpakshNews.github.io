@@ -218,6 +218,8 @@ def normalize_extraction(data: dict) -> dict | None:
             item["frame"] = normalize_frame(it.get("frame"))
             item.update(_factuality(item["text"], it))
             item["stance_defaulted"] = kind != "context" and it.get("stance") not in STANCES          # E15: counted, and held back in verify
+            sv = str(it.get("stance") or "").strip().lower()
+            item["stance_invalid"] = kind != "context" and bool(sv) and sv not in STANCES            # E1: asked once more (reask.py)
             if kind == "context":
                 item["context"] = it["type"]
                 item["event"] = str(it.get("event") or "").strip()[:160] if it["type"] == "related" else ""
@@ -643,6 +645,12 @@ def _extract_one(store: Store, router: Router, a: dict, names: str = "", registr
             readcheck.check(ex, f"{a['title'] or ''}. {a['text'] or ''}", a.get("lang") or "en", router, registry)
         except Exception as e:  # noqa: BLE001
             log.warning("readcheck failed for article %s: %s", a["id"], str(e)[:150])
+        # E1: a stance outside the closed set is asked once more (reask.py), then stays the cautious default
+        try:
+            from . import reask
+            reask.check(ex, router)
+        except Exception as e:  # noqa: BLE001
+            log.warning("stance re-ask failed for article %s: %s", a["id"], str(e)[:150])
         # what "It" and "the new scheme" point to, from the article itself (refs.py, Oct 15 2026)
         try:
             from . import refs as _refs
@@ -908,6 +916,8 @@ def extract_pending(store: Store, router: Router, deadline: float, workers: int 
     from . import namepair, names as _names, readcheck
     name_hints = namepair.prepare(store, router, pending, deadline)
     readcheck.reset_run()
+    from . import reask as _reask
+    _reask.reset_run()
     try:
         registry = _names.load(store)          # Hindi names that tie a statement to its report sentence
     except Exception:  # noqa: BLE001
@@ -941,6 +951,8 @@ def extract_pending(store: Store, router: Router, deadline: float, workers: int 
         t.join()
     if readcheck.STATS:
         log.info("readcheck: %s", dict(readcheck.STATS))
+    if _reask.STATS:
+        log.info("stance re-ask: %s", dict(_reask.STATS))
         log.info("reading schema: %s", dict(SCHEMA))
         log.info("evidence spans: %s", dict(evidence.STATS))
     if COVERAGE_STATS:
