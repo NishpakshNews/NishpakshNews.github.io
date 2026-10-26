@@ -271,6 +271,11 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         from . import desk
         stats["desk"] = desk.work(store, router)
         stats["published"] = len(stats["desk"]["published"])
+    try:
+        from .tools import model_check
+        stats["models"] = model_check.snapshot()
+    except Exception:  # noqa: BLE001 - a record, never a reason to fail a run
+        pass
     stats["health"] = health(store, stats)
     store.exec(update(_runs).where(_runs.c.id == run_id).values(finished_at=_now(), stats=stats))
     log.info("run complete: %s", stats)
