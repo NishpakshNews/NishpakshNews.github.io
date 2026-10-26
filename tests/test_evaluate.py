@@ -23,3 +23,24 @@ def test_writing_counts_only_articles_with_an_inspector():
     pages = [{"narrative": {"flow": {"inspector": {"repeats": 2, "unintroduced": 1}}}}, {"narrative": {}}]
     w = ev.writing(pages)
     assert w["articles"] == 1 and w["repeats"] == 2 and w["unintroduced"] == 1
+
+
+def test_labels_are_recovered_from_stored_same_checks():
+    import hashlib
+    import json
+
+    from nishpaksh.tools import evaluate as e
+
+    class R(list):
+        def all(self):
+            return self
+
+    class C:
+        def execute(self, q, p=None):
+            if "same_checks" in str(q):
+                k = hashlib.sha256(json.dumps(["B text", "A text"]).encode()).hexdigest()[:16]
+                return R([(1, {k: False, "fzz": True})])
+            return [("A text",), ("B text",), ("C text",)]
+
+    got = e.labels_from_answers(C())
+    assert got == [{"a": "B text", "b": "A text", "label": False}]       # the "f..." fold answers are not labels

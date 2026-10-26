@@ -77,12 +77,51 @@ def nli_scores(rows: list[dict], limit: int = 300) -> dict:
             "thresholds": {"ENTAIL": nli.ENTAIL, "CONTRA": nli.CONTRA, "UNSURE": nli.UNSURE}}
 
 
+def labels_from_answers(conn, max_stories: int = 300, per_story: int = 4000) -> list[dict]:
+    """The newsroom's own twice-asked same-fact answers, recovered from `stories.analysis.same_checks` (keyed by a hash of the
+    two texts, so the pairs are found by hashing the story's statements two by two). Used when `pair_labels` does not exist
+    yet (it is created by the first run of the rebuilt pipeline) or is empty. answer True = "same", False = "different"."""
+    import hashlib
+    from sqlalchemy import text as sql
+    out: list[dict] = []
+    rows = conn.execute(sql("select id, analysis->'same_checks' as sc from stories where analysis->'same_checks' is not null "
+                            "order by updated_at desc limit :n"), {"n": max_stories}).all()
+    for sid, sc in rows:
+        sc = {k: v for k, v in (sc or {}).items() if isinstance(v, bool) and not str(k).startswith("f")}
+        if not sc:
+            continue
+        texts = [r[0] for r in conn.execute(sql("select text from canonical where story_id = :s order by id"), {"s": sid})]
+        if len(texts) > 300:
+            continue
+        seen = 0
+        for i, a in enumerate(texts):
+            for b in texts[i + 1:]:
+                for x, y in ((a, b), (b, a)):
+                    k = hashlib.sha256(json.dumps([x, y]).encode()).hexdigest()[:16]
+                    if k in sc:
+                        out.append({"a": x, "b": y, "label": sc[k]})
+                        seen += 1
+                        break
+                if seen >= per_story:
+                    break
+            if seen >= per_story:
+                break
+    return out
+
+
 def writing(pages: list[dict]) -> dict:
     keys = ["opens_with_pronoun", "pronoun_without_antecedent", "repeats", "unintroduced", "pronoun_without_focus", "time_back"]
     tot = {k: 0 for k in keys}
     seen = 0
     for p in pages:
-        ins = ((p.get("narrative") or {}).get("flow") or {}).get("inspector")
+        nar = p.get("narrative") or {}
+        ins = (nar.get("flow") or {}).get("inspector")
+        if not ins and nar.get("paragraphs"):        # a page written before the inspector existed: look at its text now
+            try:
+                from .. import inspector
+                ins = inspector.inspect(nar["paragraphs"])
+            except Exception:  # noqa: BLE001
+                ins = None
         if not ins:
             continue
         seen += 1
@@ -120,8 +159,14 @@ def main() -> None:
 
     rows: list[dict] = []
     try:
-        with store.engine.begin() as c:
-            rows = [dict(r._mapping) for r in c.execute(sql("select a, b, label from pair_labels order by id desc limit 3000"))]
+        with store.engine.connect() as c:
+            if c.execute(sql("select to_regclass('public.pair_labels')")).scalar():
+                rows = [dict(r._mapping) for r in c.execute(sql("select a, b, label from pair_labels order by id desc limit 3000"))]
+            report["pair_labels"] = {"rows": len(rows)}
+            if not rows:                              # the rebuilt pipeline has not run yet: use the answers already stored
+                rows = labels_from_answers(c)
+                report["pair_labels"] = {"from": "stories.analysis.same_checks", "rows": len(rows),
+                                         "same": sum(bool(r["label"]) for r in rows)}
     except Exception as e:  # noqa: BLE001
         report["pair_labels"] = {"error": str(e)[:100]}
     section("claim_matching", lambda: score_pairs(rows) if rows else {"pairs": 0})
@@ -129,7 +174,7 @@ def main() -> None:
     pages: list[dict] = []
     try:
         with store.engine.begin() as c:
-            pages = [r[0] for r in c.execute(sql("select payload from published order by updated_at desc limit 200")) if r[0]]
+            pages = [r[0] for r in c.execute(sql("select payload_en from published order by updated_at desc limit 200")) if r[0]]
     except Exception as e:  # noqa: BLE001
         report["published"] = {"error": str(e)[:100]}
     section("writing", lambda: writing(pages))
