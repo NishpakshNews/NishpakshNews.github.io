@@ -15,6 +15,10 @@ A dispute is the SAME QUESTION with a DIFFERENT ANSWER. Judges, in this order:
   2. figures over time: when every report giving one figure was published clearly after every report
      giving the other, it is an UPDATE, not a dispute ("the toll rose to 50; earlier reports put it at
      40"): each line keeps its own colour
+  2a. a figure that MOVED A LITTLE ("series": 82.10 / 82.35 written at two precisions-apart, 40 / 42; `relate.numbers_near`
+     says within 5% where `numbers_close` says they are not one rounded figure): an update only when something orders
+     the two (the reports' publish times, or one clock time in each line); otherwise nothing, as before, never asked
+     of the model and never a dispute (two outlets quoting a moving price minutes apart are not in disagreement)
   2b. a STATE that changed ("an orange alert" on Sunday, "a red alert" today): the same question with another answer in
      words, no figure or date involved. Code finds the candidate (`_state`); only when the model, asked twice, says both
      cannot be true is it anything: an update when the reports are clearly ordered in time, else a dispute. Never doubtful.
@@ -31,7 +35,7 @@ import re
 
 from .frames import LOWER, UPPER, date_of
 from . import embed, figures
-from .relate import NEGATION, Profile, numbers_close
+from .relate import NEGATION, Profile, numbers_close, numbers_near
 
 MONTH_DAY = re.compile(r"(?i)\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b|"
                        r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b")
@@ -127,6 +131,8 @@ def candidate(a: str, b: str, pa: Profile | None = None, pb: Profile | None = No
             return None
         if (UPPER.search(a) and min(pb.nums) <= max(pa.nums)) or (UPPER.search(b) and min(pa.nums) <= max(pb.nums)):
             return None
+        if numbers_near(pa, pb):
+            return "series"               # the same figure a little changed (82.10 / 82.35, 40 / 42): an update, or nothing
         return "number"
     if _state(a, b):
         return "state"                    # same question about a state, another answer: an update or a dispute, by time and the model
@@ -142,6 +148,20 @@ def is_update(times_a: list[dt.datetime], times_b: list[dt.datetime]) -> int:
         return 1
     if min(times_a) - max(times_b) >= UPDATE_GAP:
         return -1
+    return 0
+
+
+def series_order(text_a: str, text_b: str, times_a: list, times_b: list) -> int:
+    """For a figure that moved a little (a candidate of kind "series"): 1 when b is the later reading, -1 when a is, 0 when
+    nothing says. Evidence, in this order: the reports' publish times (the same gap as any update), then the outlets' own
+    clock times when each line names exactly one ("at 10:05" / "at 10:40"). Two outlets quoting a moving figure minutes
+    apart with no time in the text prove nothing about its order: nothing is said, and the pair stays two lines as before."""
+    u = is_update(times_a, times_b)
+    if u:
+        return u
+    ca, cb = Profile(text_a).clocks, Profile(text_b).clocks
+    if len(ca) == 1 and len(cb) == 1 and ca != cb:
+        return 1 if next(iter(cb)) > next(iter(ca)) else -1
     return 0
 
 
@@ -179,6 +199,12 @@ def judge(router, texts: dict[int, str], times: dict[int, list], proposals: set[
     updates: dict[int, int] = {}
     ask = []
     for (a, b), kind in sorted(cands.items(), key=lambda kv: kv[1] == "state"):    # the sure kinds first: the asking is capped
+        if kind == "series":              # a little change: only an update, only with evidence of order; never asked, never a dispute
+            u = series_order(texts[a], texts[b], times.get(a) or [], times.get(b) or [])
+            if u:
+                old, new = (a, b) if u == 1 else (b, a)
+                updates[old] = new
+            continue
         if kind == "number":
             u = is_update(times.get(a) or [], times.get(b) or [])
             if u:

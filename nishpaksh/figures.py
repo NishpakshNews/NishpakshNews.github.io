@@ -212,6 +212,49 @@ def find(text: str | None, spoken_min: float | None = None) -> list[Figure]:
     return sorted(out, key=lambda f: f.start)
 
 
+def unit(f: Figure) -> float:
+    """The place the outlet's own writing stops at: "82.10" is exact to 0.01, "125.27 million" to 10,000, "125 million" to a
+    million, "50" to 1. Spelled numbers, ordinals and roman numerals are exact counts (unit 1). Trailing zeros are NOT read as
+    rounding ("1,000" may be exactly 1,000), so a plain count is only ever equal to itself."""
+    if f.kind != "digits":
+        return 1.0
+    m = _DIGITS.match(f.text)
+    if not m:
+        return 1.0
+    mant = m.group(1)
+    dec = len(mant.split(".")[1]) if "." in mant else 0
+    try:
+        base = float(mant.replace(",", ""))
+    except ValueError:
+        return 1.0
+    scale = (f.value / base) if base else 1.0
+    if m.group("bps"):
+        scale = 0.01
+    return (10.0 ** -dec) * (scale or 1.0)
+
+
+ROUND_TOL = 0.05      # a rounding is also never more than this far off in proportion: "5 crore" is not "4.6 crore"
+
+
+def agree(va: float, ua: float, vb: float, ub: float, tol: float = ROUND_TOL) -> bool:
+    """Do two written figures say the same quantity? Equal, or one is the other rounded at the coarser one's own precision
+    (125.27 million / about 125 million). 82.10 and 82.35 are both exact to 0.01, so no rounding explains the gap: two
+    readings. Both tests must hold (the precision test alone lets "5 crore" stand for 4.6)."""
+    if abs(va - vb) <= 1e-9 * max(abs(va), abs(vb), 1.0):
+        return True
+    coarse = max(ua, ub)
+    return abs(va - vb) <= coarse / 2 + 1e-9 * coarse and abs(va - vb) <= tol * max(abs(va), abs(vb))
+
+
+def units_of(text: str | None) -> dict[float, float]:
+    """{value rounded to 3 places: its unit}; a value written twice keeps the coarser unit."""
+    out: dict[float, float] = {}
+    for f in find(text):
+        k = round(f.value, 3)
+        out[k] = max(out.get(k, 0.0), unit(f))
+    return out
+
+
 def values(text: str | None, spoken_min: float | None = None) -> list[float]:
     return [f.value for f in find(text, spoken_min)]
 

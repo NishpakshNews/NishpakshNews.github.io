@@ -159,7 +159,7 @@ def _ner_names(text: str) -> set[str]:
 
 
 class Profile:
-    __slots__ = ("norm", "nums", "names", "roots", "neg", "contrast", "date", "years", "clocks")
+    __slots__ = ("norm", "nums", "units", "names", "roots", "neg", "contrast", "date", "years", "clocks")
 
     def __init__(self, text: str):
         t = fold_latin(text or "")
@@ -177,6 +177,7 @@ class Profile:
                     + _MONTHS + r"\s+\d{1,2}(?:st|nd|rd|th)?\b(?:,?\s+(?:19|20)\d\d)?|\b(?:19|20)\d\d\b", " ", t)
         # figures.py: 26 = twenty-six = twenty six = २६, 1.2 lakh = 1,20,000, "29th", "Section IV" = "Section 4"
         self.nums = frozenset(round(x, 3) for x in _numbers(nt))
+        self.units = {k: u for k, u in figures.units_of(nt).items() if k in self.nums}      # how precisely each was written
         # names: capitalised words inside the sentence (the first word is capitalised anyway)
         toks = re.findall(r"[A-Za-z][\w'-]*", t)
         names = {_stem(w.lower()) for w in toks[1:] if w[0].isupper() and len(w) > 1}
@@ -508,13 +509,26 @@ def resolve_covered(covered: dict[int, int]) -> dict[int, int]:
     return out
 
 
-def numbers_close(pa: Profile, pb: Profile, tol: float = 0.05) -> bool:
-    """Every number of the line with fewer numbers has one within `tol` in the other (rounding:
-    "125.27 million" / "about 125 million"); True when either line has none."""
+def nums_within(small: "Profile", big: "Profile") -> bool:
+    """Every figure of `small` is one of `big`'s, or one of them rounded at the coarser one's own written precision
+    (figures.agree): "125.27 million" / "about 125 million" agree, "82.10" / "82.35" do not, "40" / "42" do not."""
+    return all(any(figures.agree(x, small.units.get(x, 1.0), y, big.units.get(y, 1.0)) for y in big.nums) for x in small.nums)
+
+
+def numbers_near(pa: Profile, pb: Profile, tol: float = 0.05) -> bool:
+    """Every figure of the line with fewer figures has one within `tol` of it in the other, whatever the written precision
+    (the old test: a moved price is near, a different count is not)."""
     small, big = sorted((pa.nums, pb.nums), key=len)
-    if not small:
-        return True
     return all(any(abs(x - y) <= tol * max(abs(x), abs(y), 1e-9) for y in big) for x in small)
+
+
+def numbers_close(pa: Profile, pb: Profile) -> bool:
+    """Every figure of the line with fewer figures agrees with one in the other (rounding by written precision, see
+    `figures.agree`); True when either line has none."""
+    small, big = (pa, pb) if len(pa.nums) <= len(pb.nums) else (pb, pa)
+    if not small.nums:
+        return True
+    return nums_within(small, big)
 
 
 # --- pairs the word rules call "different" only because of names or words (merge_audit, Oct 26 2026) -----------------------

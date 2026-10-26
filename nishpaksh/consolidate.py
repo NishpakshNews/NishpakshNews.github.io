@@ -225,7 +225,7 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     # model asked twice only about the middle cases; the consolidation model's "same" groups and the
     # frames' "same" are proposals, checked the same way. The frames no longer veto anything here.
     from .match import covers_facts, same_facts
-    from .relate import Profile, group, numbers_close, relate, resolve_covered
+    from .relate import Profile, group, nums_within, numbers_close, relate, resolve_covered
     key = lambda p: hashlib.sha256(json.dumps([by_id[p[0]]["text"], by_id[p[1]]["text"]]).encode()).hexdigest()[:16]  # noqa: E731
     texts = {i: by_id[i]["text"] for i in by_id}
     times = {i: fr[i][1] for i in by_id}
@@ -241,8 +241,7 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     d_same, d_cover = propose(router, texts, dupe_checks)
     proposals |= d_same
     for big, small in d_cover:
-        if (all(any(abs(x - y) <= 0.05 * max(abs(x), abs(y), 1) for y in prof[big].nums)
-                                                    for x in prof[small].nums)):
+        if nums_within(prof[small], prof[big]):
             ask_cover.append((big, small))
     ask_cover = list(dict.fromkeys(ask_cover))
     code_same_set = {tuple(sorted(p)) for p in code_same}
@@ -299,7 +298,7 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     # is in the line that tells it. (Merging, which does change colours, still needs two.)
     def tells(lead: int, member: int) -> bool:
         pl, pm = prof[lead], prof[member]
-        nums_ok = all(any(abs(x - y) <= 0.05 * max(abs(x), abs(y), 1) for y in pl.nums) for x in pm.nums)
+        nums_ok = nums_within(pm, pl)
         from .relate import core_names
         return nums_ok and core_names(pm) <= (core_names(pl) | pl.roots | pl.names)
     for big, small in ask_cover:

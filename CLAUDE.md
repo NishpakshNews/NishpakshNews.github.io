@@ -115,7 +115,13 @@ sentence ... ONE sentence, the opening once, each detail in turn, in parts" and 
 `when.find`, no figure / date / negation differs, same names, 3+ shared content words, 1-2 differing words a side). Only a CANDIDATE: the model,
 asked twice, must say both cannot be true; then an UPDATE (`analysis.updates`, the writer pairs the newest with the older) when the reports are
 clearly ordered in time, else a dispute; unsure or unread = nothing, never doubtful. No line is struck by this (striking is the thread path).
-Not built: wire prices at different minutes stay separate statements (a rounding pair is already merged; a series rule risked a false update).
+DONE Oct 26 (owner: "is there an algorithm for this?"; fakes only): a figure is the same figure when it is the other one ROUNDED at its own
+written precision (`figures.unit` / `figures.agree`: "125.27 million" = "about 125 million"; "82.10" != "82.35"; "40" != "42"; "5 crore" != "4.6 crore"
+because the old 5% cap must also hold). `Profile.units`, `relate.nums_within` / `numbers_close` use it (consolidate's two inline 5% tests too).
+`relate.numbers_near` keeps the old 5% test: a pair near but not rounding-equal is kind "series" in `disputes.candidate`; `judge` makes it an
+UPDATE only when something orders the two (`series_order`: publish gap >= 1 h, else one clock time in each line), otherwise nothing: never asked of
+the model, never a dispute or doubtful (two outlets quoting a moving price minutes apart do not disagree). Side effect to read in the audit: 40 / 42
+style pairs (4-5% apart) are no longer "close", so they are no longer offered as same-fact proposals. Tests: `tests/test_series.py`.
 Time budgets raised for the extra local NLI reading: pipeline `--time-budget` 45 -> 55, desk 20 -> 28 (`SETTINGS.desk_minutes`), job limit 110 unchanged.
 UNTUNED, read in the audit: `bundles.SIMILARITY`, `MAX_PAIRS`, `nli.ENTAIL` as used for details, `disputes.STATE_COMMON` / `STATE_MAX`. Check on the
 runner: `runs.stats.bundles` (split count, unread), how many state updates / disputes appear, the inspector's `alike` / `unlinked` for pieces.
