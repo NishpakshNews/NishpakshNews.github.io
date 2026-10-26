@@ -6,7 +6,7 @@ one-way covers / contradiction / neutral. The report counts what the rebuilt mat
 the stored run did (the statements are still separate), with example pairs and scores. Writes one `diagnostics` row kind
 'merge_audit'.
 
-    python -m nishpaksh.tools.merge_audit 44582 45418      # no ids: the three newest published stories
+    python -m nishpaksh.tools.merge_audit            # a random sample, never the stories used to find the faults
 """
 from __future__ import annotations
 
@@ -22,7 +22,8 @@ from ..db import Store
 
 PAIRS_MAX = 120          # pairs read by NLI per story (closest first); CPU: ~2 passes a pair
 BUDGET_SECONDS = 600     # the whole run stops starting new stories after this
-STORIES = 3              # when no ids are typed
+STORIES = 4              # stories drawn at random when no ids are typed
+STUDIED = {44582, 45418, 44807, 45562, 44297, 45316, 23690}   # looked at while fixing: never in the sample
 EXAMPLES = 12
 
 
@@ -116,7 +117,12 @@ def main() -> None:
     store = Store(database_url())
     with store.engine.connect() as c:
         if not a.ids:
-            a.ids = [r[0] for r in c.execute(sql("select story_id from published order by updated_at desc limit 3"))]
+            # no ids: a RANDOM sample of published stories with enough statements, never one already studied while the
+            # rules were being fixed (checking a fix on the stories that showed the fault proves nothing)
+            a.ids = [r[0] for r in c.execute(sql(
+                "select p.story_id from published p where p.story_id <> all(:seen) and "
+                "(select count(*) from canonical c where c.story_id = p.story_id) >= 20 order by random() limit :n"),
+                {"seen": sorted(STUDIED), "n": STORIES})]
         report: dict = {}
         t0 = time.time()
         for sid in a.ids:
