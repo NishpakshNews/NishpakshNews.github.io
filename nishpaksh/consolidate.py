@@ -68,7 +68,7 @@ Reply with JSON only:
 ROLES = {"background", "related", "explanation", "reaction", "next"}
 SOFT_SIMILARITY = 0.70    # sentence-embedding cosine for a "different by words only" pair to be read by the model
 SOFT_MAX = 150            # such pairs a consolidation reads (closest first); the local reader costs no quota
-SAME_ASK_MAX = 80         # same-fact questions per consolidation, closest pairs first (the rest next time)
+SAME_ASK_MAX = 400        # questions per consolidation (the local reader costs no quota), likeliest first; pairs left over count as unanswered
 CONSOLIDATE_VERSION = 11  # part of the cache key: stories are consolidated again when the task changes
                           # (9, Oct 8 2026: paraphrases proposed by topic, dupes.py)
                           # (10, Oct 9 2026: the review's results had been wiped by perspectives.py; every
@@ -263,9 +263,10 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     ask_pairs = list(dict.fromkeys(tuple(sorted(p)) for p in ask_pairs if tuple(sorted(p)) not in code_same_set))
     same_checks = dict(analysis.get("same_checks") or {})
     from . import dupescore
-    todo = dupescore.order([p for p in ask_pairs if key(p) not in same_checks], prof, texts, times)[:SAME_ASK_MAX]
+    pending = dupescore.order([p for p in ask_pairs if key(p) not in same_checks], prof, texts, times)
+    todo = pending[:SAME_ASK_MAX]
     firsts: dict[int, bool] = {}
-    unanswered = 0
+    unanswered = len(pending) - len(todo)        # offered but not asked (over the cap) is unanswered too, never silent
     labelled: list[tuple[str, str, bool]] = []
     for n, (p, ok) in enumerate(zip(todo, same_facts(router, [(texts[a], texts[b]) for a, b in todo], firsts))):
         if ok is None:                    # not answered (quota, error): remember nothing, ask again next time (F123)
@@ -276,7 +277,9 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
         same_checks["f" + key(p)] = bool(firsts.get(n))
     dupescore.record(store, labelled)
     ckey = lambda p: "c" + key(p)  # noqa: E731
-    todo = [p for p in ask_cover if ckey(p) not in same_checks][:SAME_ASK_MAX]
+    pending = dupescore.order([p for p in ask_cover if ckey(p) not in same_checks], prof, texts, times)
+    todo = pending[:SAME_ASK_MAX]
+    unanswered += len(pending) - len(todo)
     firsts = {}
     for n, (p, ok) in enumerate(zip(todo, covers_facts(router, [(texts[a], texts[b]) for a, b in todo], firsts))):
         if ok is None:
@@ -421,7 +424,7 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
         name_conf = {k: v for k, v in name_conf.items() if classify(v, texts) == "disagreement"}
     after = [r for r in store.rows(select(canonical.c.id, canonical.c.text, canonical.c.kind)
                                    .where(canonical.c.story_id == story_id)) if r["kind"] != "relation" and r["text"]]
-    analysis.update(consolidated=_hash(after), unanswered_asks=unanswered, speakers=speakers,
+    analysis.update(consolidated=_hash(after) if not unanswered else None, unanswered_asks=unanswered, speakers=speakers,
                     names={**(analysis.get("names") or {}), **names},
                     roles=roles, related_event=related, responses=[list(p) for p in all_resp],
                     name_conflicts=name_conf, conflict_checks=dict(list(checks.items())[-400:]), conflict_checks_v=2,

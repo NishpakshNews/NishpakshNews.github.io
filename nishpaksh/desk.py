@@ -35,6 +35,30 @@ log = logging.getLogger("nishpaksh.desk")
 DESK_LOOK = 25      # stories looked at per run at most (each costs a few cheap page calls)
 
 
+REVIEW_HOLDS = 2          # desk looks a story may wait for its review to finish
+
+
+def _review_open(store, sid: int) -> bool:
+    """True while the story's review still has unasked questions and has been waited for fewer than REVIEW_HOLDS times."""
+    try:
+        from sqlalchemy import select as _sel
+        from .db import stories as _st
+        row = store.one(_sel(_st.c.analysis).where(_st.c.id == sid))
+        an = dict((row or {}).get("analysis") or {})
+        if not an.get("unanswered_asks"):
+            if an.get("review_holds"):
+                an.pop("review_holds")
+                store.exec(_st.update().where(_st.c.id == sid).values(analysis=an))
+            return False
+        n = int(an.get("review_holds") or 0)
+        if n >= REVIEW_HOLDS:
+            return False
+        an["review_holds"] = n + 1
+        store.exec(_st.update().where(_st.c.id == sid).values(analysis=an))
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
 def _hour_start(now: dt.datetime) -> dt.datetime:
     return now.replace(minute=0, second=0, microsecond=0)
 
@@ -251,6 +275,11 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
         # 11867: dispute marks from before the dispute gate were published) is reviewed again first;
         # when nothing changed this costs nothing (consolidate_story returns at once)
         consolidate.consolidate_story(store, router, sid)
+        # a review with questions still unasked (cap, quota, error) is finished first: the article would repeat facts
+        # the review has not yet compared. Held at most REVIEW_HOLDS desk looks, then written with what is known.
+        if _review_open(store, sid):
+            stats["skipped"]["review not finished"] = stats["skipped"].get("review not finished", 0) + 1
+            continue
         verify.base_verdicts(store, sid)            # the 6-hour clock moved since it was analysed
         if compose.publish_story(store, router, sid):
             stats["published"].append(sid)
