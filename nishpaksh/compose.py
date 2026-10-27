@@ -103,6 +103,42 @@ def _item_refs(c: dict, rows: list[dict]) -> list[dict]:
     return [{"phrase": ph, "gloss": next(iter(g))} for ph, g in found.items() if len(g) == 1]
 
 
+MAX_WRITTEN = 60       # statements the writer is given for one article (Oct 27 2026: a story of 116 gave a 114-sentence article)
+
+
+def trim_to_cap(payload: dict, cap: int = MAX_WRITTEN) -> int:
+    """A very large story is written from its best-supported statements; the rest go to "Also in these reports" (shown,
+    coloured, numbered, but not part of the article or its completeness bar). Order of removal: background / related /
+    explanation / reaction / next lines first, then core statements only one report carries; never a disputed or false
+    line, a line with a partner (contradiction, response) or one the lead is chosen from. Within a class the least
+    supported goes first. Returns how many were moved."""
+    from .narrative import ordered_items
+    items = ordered_items(payload)
+    over = len(items) - cap
+    if over <= 0:
+        return 0
+    keep_ids = set(payload.get("news") or []) | set(payload.get("lead") or [])
+
+    def locked(i: dict) -> bool:
+        return (i["id"] in keep_ids or i.get("verdict") in ("disputed", "false") or i.get("conflicts_with")
+                or i.get("responds_to") or i.get("responded_by") or i.get("update_of") or i.get("updated_by")
+                or i.get("adds_to"))
+
+    context = [i for i in items if (i.get("role") or "core") != "core" and not locked(i)]
+    core = [i for i in items if (i.get("role") or "core") == "core" and i.get("minor") and not locked(i)]
+    rank = lambda i: (i.get("n_sources", 0), i.get("n_articles", 0), -i["id"])  # noqa: E731
+    cut = (sorted(context, key=rank) + sorted(core, key=rank))[:over]
+    if not cut:
+        return 0
+    gone = {i["id"] for i in cut}
+    payload["timeline"] = [[i for i in tier if i["id"] not in gone] for tier in payload.get("timeline") or []]
+    for k in ("undated", "established", "contested", "context"):
+        payload[k] = [i for i in payload.get(k) or [] if i["id"] not in gone]
+    payload.setdefault("also", []).extend(dict(i, tag="cap") for i in cut)
+    log.info("story payload trimmed: %d of %d statements moved to 'also in these reports'", len(cut), len(items))
+    return len(cut)
+
+
 def build_payload(store: Store, router: Router | None, story_id: int) -> dict | None:
     story, agroup, gpersp, arts, canon, members = _story_context(store, story_id)
     if not story["qualifies"]:
@@ -831,6 +867,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     an_ = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
     fold_covered(payload, an_.get("covered") or {})
     link_updates(payload, an_.get("updates") or {})
+    payload["trimmed"] = trim_to_cap(payload)         # a very large story: the best-supported statements are written
     unify_payload(payload)                  # one spelling per name, before the writer sees the statements
     from .news import pick_news
     payload["news"] = pick_news(ordered_items(payload))[:3]   # again: folding can remove a statement

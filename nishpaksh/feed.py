@@ -126,6 +126,8 @@ def slim_payload(p: dict | None, who: list | None = None) -> dict | None:
     nar = p.get("narrative") or {}
     out["narrative"] = {"paragraphs": nar.get("paragraphs") or [], "section_keys": nar.get("section_keys") or [],
                         "sources": nar.get("sources") or []}
+    if nar.get("other_coverage"):      # "Also in these reports": the site shows it, so the slim page must carry it
+        out["narrative"]["other_coverage"] = nar["other_coverage"]
     if who and any(who):
         out["narrative"]["who"] = who
     out["timeline"] = [[_item(i) for i in day] for day in p.get("timeline") or []]

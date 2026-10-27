@@ -153,7 +153,34 @@ def _soft_pairs(texts, times, prof, code_same_set, ask_pairs, ask_cover):
         added += 1
     return ask_pairs, ask_cover
 
-def consolidate_story(store: Store, router: Router | None, story_id: int, max_statements: int = 90) -> dict:
+def is_current(store: Store, story_id: int) -> bool:
+    """True when the review of this story needs no work now (a call to consolidate_story would return at once)."""
+    story = store.one(select(stories.c.analysis).where(stories.c.id == story_id))
+    if not story:
+        return True
+    rows = [r for r in store.rows(select(canonical.c.id, canonical.c.text, canonical.c.kind)
+                                  .where(canonical.c.story_id == story_id)) if r["kind"] != "relation" and r["text"]]
+    return len(rows) < 2 or (story["analysis"] or {}).get("consolidated") == _hash(rows)
+
+
+def _ask_in_batches(fn, router, todo, texts, until, size=50):
+    """Ask `fn` (same_facts / covers_facts) in batches; after `until` (a clock time) the rest is left unasked (None =
+    could not ask, never an answer), so it counts as unanswered and is asked again next time."""
+    import time
+    out: list = []
+    firsts: dict[int, bool] = {}
+    for i in range(0, len(todo), size):
+        if until and time.time() > until:
+            out += [None] * (len(todo) - i)
+            break
+        part, f = todo[i:i + size], {}
+        out += list(fn(router, [(texts[a], texts[b]) for a, b in part], f))
+        firsts.update({i + k: v for k, v in f.items()})
+    return out, firsts
+
+
+def consolidate_story(store: Store, router: Router | None, story_id: int, max_statements: int = 90,
+                      until: float | None = None) -> dict:
     story = store.one(select(stories.c.id, stories.c.analysis).where(stories.c.id == story_id))
     if not story or router is None:
         return {}
@@ -268,7 +295,8 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     firsts: dict[int, bool] = {}
     unanswered = len(pending) - len(todo)        # offered but not asked (over the cap) is unanswered too, never silent
     labelled: list[tuple[str, str, bool]] = []
-    for n, (p, ok) in enumerate(zip(todo, same_facts(router, [(texts[a], texts[b]) for a, b in todo], firsts))):
+    answers, firsts = _ask_in_batches(same_facts, router, todo, texts, until)
+    for n, (p, ok) in enumerate(zip(todo, answers)):
         if ok is None:                    # not answered (quota, error): remember nothing, ask again next time (F123)
             unanswered += 1
             continue
@@ -281,7 +309,8 @@ def consolidate_story(store: Store, router: Router | None, story_id: int, max_st
     todo = pending[:SAME_ASK_MAX]
     unanswered += len(pending) - len(todo)
     firsts = {}
-    for n, (p, ok) in enumerate(zip(todo, covers_facts(router, [(texts[a], texts[b]) for a, b in todo], firsts))):
+    answers, firsts = _ask_in_batches(covers_facts, router, todo, texts, until)
+    for n, (p, ok) in enumerate(zip(todo, answers)):
         if ok is None:
             unanswered += 1
             continue

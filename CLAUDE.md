@@ -83,6 +83,15 @@ went). DONE Oct 26 (merge audit, runner): `tools/merge_audit.py` showed code's "
 `consolidate` through `dupescore.order`); E23 evidence weight per pair in the side table `story_pair_weights` (in `TABLES` of `newsroom.sh`;
 `perspectives.pair_means` weights each story by it, a pair stored before counts as 1).
 **Review questions never silently cut (Oct 27 2026, owner: E100 article, story 46120 wrote one event 4-5 times).** Root cause (story_check + merge_audit on the runner): the local reader judged most of the paraphrases "one says the other" (score ~1.0 one way), but `SAME_ASK_MAX` 80 cut the questions, the covers list was unordered with the soft pairs appended last, and a pair cut by the cap was not counted as unanswered (`unanswered_asks` 0, so the review looked finished and the desk wrote). Now: cap 400 (local reader, no quota), both lists ordered by `dupescore.order`, pairs over the cap count as unanswered, a review with unanswered questions is not stored as done (re-reviewed next call), and `desk._review_open` holds a story for at most `REVIEW_HOLDS` (2) desk looks while questions are open. Read next: desk skipped "review not finished", `analysis.unanswered_asks`, whether the E100-style duplicates fold. Untuned: the 400 cap vs time.
+**Desk time, length cap, hidden "Also" section (Oct 27 2026, owner: few articles, "too long", "I never see Also in these reports").** (1) Desk
+runs hit their 28 minutes every hour: the full review (cap 400) used the whole budget before the writer. Now `desk.REVIEW_SHARE` 0.6: reviews get at most
+60% of the desk's time (`consolidate_story(until=)` asks in batches of 50 and leaves the rest unasked = unanswered); a story whose review is
+current (`consolidate.is_current`) is written first; a story that still needs a review after the share is used is skipped "review deferred".
+The desk report has `review_seconds` / `write_seconds`: READ THEM next. (2) `compose.trim_to_cap` (`MAX_WRITTEN` 60): a story with more statements gives
+the writer its best-supported ones; context lines first, then one-report core lines; never disputed / false / paired / lead lines; the rest go to
+`payload["also"]` (tag "cap"). `payload.trimmed` counts them. (3) The slim story files (`feed.slim_payload`) never carried `narrative.other_coverage`,
+so the site's "Also in these reports" dropdown could not show since it was built (13 Oct); fixed, visible from the next feed export.
+Untuned: REVIEW_SHARE, MAX_WRITTEN. Tests: `tests/test_trim_cap.py`.
 **Model check (Oct 26 2026, owner: "how can we check models get loaded, not just NLI, rather than waiting for runs"):** `tools/model_check.py`
 (workflow `audit`, tool `model_check`, diagnostics kind 'model_check') calls the pipeline's OWN entry points (nli, embed, nlp, lemminflect,
 langcheck, bodies/Wikidata, coref, focus/YuNet, HF cache) and reports ok / fallback / seconds per component; a TF-IDF embedding or the small

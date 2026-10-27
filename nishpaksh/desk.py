@@ -35,6 +35,8 @@ log = logging.getLogger("nishpaksh.desk")
 DESK_LOOK = 25      # stories looked at per run at most (each costs a few cheap page calls)
 
 
+REVIEW_SHARE = 0.6        # of the desk's time, at most this much goes to reviews; the rest is kept for writing (Oct 27 2026:
+                          # reviews used the whole 28 minutes every run and few articles were written)
 REVIEW_HOLDS = 2          # desk looks a story may wait for its review to finish
 
 
@@ -260,6 +262,15 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
     stats["ready"] = len(queue)
     stats["ready_beat"] = len(beats)
     stats["skipped"] = {}
+    t_start = time.time()
+    review_until = (t_start + REVIEW_SHARE * (until - t_start)) if until else None
+    # stories whose review is already finished are written first (they cost no review time); the rest keep their order
+    try:
+        done = {sid for sid in queue if consolidate.is_current(store, sid)}
+        queue = [s for s in queue if s in done] + [s for s in queue if s not in done]
+    except Exception:  # noqa: BLE001
+        pass
+    review_s = write_s = 0.0
     for n, sid in enumerate(queue):
         # a try is a story the writer was asked to write; stories turned away before that (not a
         # follow-up yet, no headline) do not use one up, but at most DESK_LOOK stories are looked at
@@ -274,14 +285,22 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
         # written only from the current analysis: a story reviewed under older rules (Oct 8 2026, story
         # 11867: dispute marks from before the dispute gate were published) is reviewed again first;
         # when nothing changed this costs nothing (consolidate_story returns at once)
-        consolidate.consolidate_story(store, router, sid)
+        t0 = time.time()
+        if review_until and t0 > review_until and not consolidate.is_current(store, sid):
+            stats["skipped"]["review deferred"] = stats["skipped"].get("review deferred", 0) + 1
+            continue                                # no review time left this run: the review goes on next hour
+        consolidate.consolidate_story(store, router, sid, until=review_until)
+        review_s += time.time() - t0
         # a review with questions still unasked (cap, quota, error) is finished first: the article would repeat facts
         # the review has not yet compared. Held at most REVIEW_HOLDS desk looks, then written with what is known.
         if _review_open(store, sid):
             stats["skipped"]["review not finished"] = stats["skipped"].get("review not finished", 0) + 1
             continue
         verify.base_verdicts(store, sid)            # the 6-hour clock moved since it was analysed
-        if compose.publish_story(store, router, sid):
+        t1 = time.time()
+        ok = compose.publish_story(store, router, sid)
+        write_s += time.time() - t1
+        if ok:
             stats["published"].append(sid)
             if sid in express_ids:
                 stats.setdefault("express", []).append(sid)
@@ -299,6 +318,7 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
                 stats.setdefault("short", {})[str(sid)] = compose.LAST_OUTCOME["detail"]
         else:
             stats["skipped"][why] = stats["skipped"].get(why, 0) + 1
+    stats["review_seconds"], stats["write_seconds"] = round(review_s), round(write_s)
     if beat_room > 0:       # the seat stays empty (owner): say why
         why = "empty: no Domains or Sport story ready" if not beats else "empty: none could be written"
         if stats.get("beat_seat"):
