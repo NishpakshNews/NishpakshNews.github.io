@@ -11,12 +11,14 @@ headline (news.write_headline) is written from it after the article, then the Hi
 """
 from __future__ import annotations
 
+import contextlib
 import copy
 import datetime as dt
 import hashlib
 import json
 import logging
 import re
+import time
 from collections import Counter, defaultdict
 
 from .db import Store, articles, claims, published, select, stories, update, utcnow, insert
@@ -26,6 +28,20 @@ from .verify import _story_context, relation_text, support_summary
 
 log = logging.getLogger(__name__)
 ESTABLISHED = {"corroborated", "confirmed"}
+
+# Seconds the stages of publish_story took in this process (the desk reads and clears it each run, desk.py): the desk used to
+# record only "review" and "write", so a 30-minute run could not say whether the thread check, the follow-up check, the
+# writer, the headline or the translation took the time (owner, Oct 27 2026).
+STAGE_SECONDS: dict[str, float] = {}
+
+
+@contextlib.contextmanager
+def _timed(stage: str):
+    t0 = time.time()
+    try:
+        yield
+    finally:
+        STAGE_SECONDS[stage] = round(STAGE_SECONDS.get(stage, 0.0) + time.time() - t0, 1)
 
 TRANSLATE_PROMPT = """Translate each value of this JSON object into Hindi (Devanagari script).
 Translate literally and neutrally: do not add, soften or strengthen anything, and keep the small words that change
@@ -119,10 +135,10 @@ def trim_to_cap(payload: dict, cap: int = MAX_WRITTEN) -> int:
         return 0
     keep_ids = set(payload.get("news") or []) | set(payload.get("lead") or [])
 
+    from .followup import partnered
+
     def locked(i: dict) -> bool:
-        return (i["id"] in keep_ids or i.get("verdict") in ("disputed", "false") or i.get("conflicts_with")
-                or i.get("responds_to") or i.get("responded_by") or i.get("update_of") or i.get("updated_by")
-                or i.get("adds_to"))
+        return i["id"] in keep_ids or partnered(i)
 
     context = [i for i in items if (i.get("role") or "core") != "core" and not locked(i)]
     core = [i for i in items if (i.get("role") or "core") == "core" and i.get("minor") and not locked(i)]
@@ -320,8 +336,9 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
     summary = [items[n]["text"] for n in news_ids[:1]] + [i["text"] for i in by_support if i["id"] not in news_ids[:1]]
     from .editions import link_candidate, parent_pages
     link_candidate(store, story_id)      # later reports of a published story develop it
-    parent_ids = threads.find_parents(store, router, story_id, story["signature"] or "", " ".join(summary[:4]))
-    live = parent_pages(store, parent_ids, strict=True)   # live, or already on the archive branch; Unreachable = wait
+    with _timed("thread_check"):
+        parent_ids = threads.find_parents(store, router, story_id, story["signature"] or "", " ".join(summary[:4]))
+        live = parent_pages(store, parent_ids, strict=True)   # live, or already on the archive branch; Unreachable = wait
     thread_ctx = "; ".join(live[p]["headline_en"] for p in parent_ids if p in live)
 
     analysis = story["analysis"] or {}
@@ -838,8 +855,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     is published with a good essay or not at all (it waits; Oct 2026: 85 of 91 live pages were
     code-stitched and read like he-said-she-said). A published article is closed: this never changes
     it again (its colours mature by code, editions.mature). A development of an earlier article is
-    published only if it earns a follow-up (editions.follow_up_ok). Returns True when written."""
-    from .editions import follow_up_ok
+    judged like any story, only on what is new (followup.py). Returns True when written."""
+    from .editions import judge_follow_up
     from .narrative import (essay_ok, essay_shortfall, input_hash, ordered_items, publish_bar, sections_from_payload,
                             write_narrative)
     if store.one(select(published.c.story_id).where(published.c.story_id == story_id)):
@@ -867,6 +884,25 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     an_ = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
     fold_covered(payload, an_.get("covered") or {})
     link_updates(payload, an_.get("updates") or {})
+    # a development of a published article is judged like any story, only on what is NEW (owner, Oct 27 2026): what the
+    # parent already told is left out and the parent lines the article needs are chosen (followup.py). It waits only
+    # while nothing in it is new, or while the check could not be asked. Before the cap, so told lines do not use it up,
+    # and before the spelling pass and the lead, which then see only what is written.
+    parents = [x["story_id"] for x in payload.get("parents") or []]
+    if parents:
+        from . import dossier, followup
+        try:
+            with _timed("follow_up"):
+                fu = judge_follow_up(store, router, story_id, payload, parents)
+                if fu.state == "judged" and fu.ok:
+                    dossier.record(store, story_id, "followup", followup.apply(payload, fu))
+        except pagearchive.Unreachable as e:
+            log.warning("story %s waits: a parent page could not be fetched for the follow-up check (%s)", story_id, e)
+            return _outcome(story_id, "parent unreachable")
+        if fu.state == "unjudged":
+            return _outcome(story_id, "follow-up not judged yet")
+        if fu.state == "judged" and not fu.ok:
+            return _outcome(story_id, "nothing new yet")
     payload["trimmed"] = trim_to_cap(payload)         # a very large story: the best-supported statements are written
     unify_payload(payload)                  # one spelling per name, before the writer sees the statements
     from .news import pick_news
@@ -874,9 +910,6 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     payload["news"] = pick_news(ordered_items(payload), en_titles)[:3]   # again: folding can remove a statement
     from .news import lead_news
     payload["lead"] = lead_news(ordered_items(payload), en_titles)       # the news, and the fact of the day if another
-    parents = [x["story_id"] for x in payload.get("parents") or []]
-    if parents and not follow_up_ok(store, router, story_id, payload, parents):
-        return _outcome(story_id, "not a follow-up yet")
     h = input_hash(sections_from_payload(payload), payload.get("background"))
     banned = set(payload["loaded_words"])
     if router is None:
@@ -899,9 +932,10 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     from . import dossier
     dossier.record(store, story_id, "statements", {"items": dossier.statements_trace(ordered_items(payload)),
                                                    "bodies": body_stats, "qualified_by": payload.get("qualified_by")})
-    nar = write_narrative(router, payload, banned, draft=draft if _keepable({"model": (draft or {}).get("model"),
-                                                                             "paragraphs": [1]}) else None,
-                          report_text=report_text, bar=bar)
+    with _timed("writer"):
+        nar = write_narrative(router, payload, banned, draft=draft if _keepable({"model": (draft or {}).get("model"),
+                                                                                 "paragraphs": [1]}) else None,
+                              report_text=report_text, bar=bar)
     drafted = nar.pop("drafted", None)
     essay_good = essay_ok(nar, payload, bar) and _keepable(nar)
     dossier.record(store, story_id, "writer", {"model": nar.get("model"), "essay_good": bool(essay_good), "bar": bar,
@@ -915,9 +949,10 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         news = items_.get((payload.get("news") or [None])[0])
         lead_ids = payload.get("lead") or []                     # the news, and the fact of the day if another
         latest = items_.get(lead_ids[1]) if len(lead_ids) > 1 else None
-        payload["headline"] = write_headline(router, news, items_, lead, banned, payload.get("_thread_ctx") or "",
-                                             latest=latest, taken=recent_headlines(store, story_id),
-                                             parents=[x["headline"] for x in payload.get("parents") or []])
+        with _timed("headline"):
+            payload["headline"] = write_headline(router, news, items_, lead, banned, payload.get("_thread_ctx") or "",
+                                                 latest=latest, taken=recent_headlines(store, story_id),
+                                                 parents=[x["headline"] for x in payload.get("parents") or []])
     headline_missing = essay_good and not payload.get("headline")
     if not essay_good or headline_missing:
         # which check failed, with the numbers (owner, Oct 11 2026, story 16981): kept with the failure and in the log
@@ -951,7 +986,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     from .style import polish
     polish(payload)                         # surnames after the first mention; varied "he said" (by code)
     from .categories import for_payload
-    cat = for_payload(router, payload)     # the site's sections; never holds the article back
+    with _timed("categories"):
+        cat = for_payload(router, payload)     # the site's sections; never holds the article back
     if cat is not None:                     # not asked (quota): categories.fill_live asks on a later run
         from .categories import take_places
         payload["places"] = take_places(cat, payload)   # where it happens, checked by code (places.py)
@@ -960,7 +996,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     payload["people"] = people_of(payload)   # who it is about, by code (people.py): readers follow them
     now = utcnow()
     payload["written_at"] = now.isoformat(timespec="seconds")
-    hi = translate_payload(store, router, payload)
+    with _timed("translate"):
+        hi = translate_payload(store, router, payload)
     payload["version"] = hi["version"] = 1
     store.exec(insert(published).values(story_id=story_id, version=1, updated_at=now, headline_en=payload["headline"],
                                         headline_hi=hi["headline"], payload_en=payload, payload_hi=hi))

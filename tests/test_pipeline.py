@@ -1748,60 +1748,6 @@ def test_later_reports_of_a_published_story_gather_in_a_follow_up_candidate(stor
     assert store.rows(select(story_links.c.parent_id, story_links.c.child_id)) == [{"parent_id": parent, "child_id": cand}]
 
 
-def _fu_payload(texts, minor=()):
-    items = [{"id": n + 1, "text": t, "kind": "event", "minor": t in minor, "role": "core"} for n, t in enumerate(texts)]
-    return {"timeline": [], "undated": [], "established": [], "contested": items, "context": []}
-
-
-def test_follow_up_needs_a_lot_of_new_or_a_major_development(store, monkeypatch):
-    """Against its parent: 4+ new statements carried by 3+ independent outlets, or a major development
-    carried by 3+; on the parent's own date only a major development carried by 5+."""
-    import nishpaksh.verify as V
-    from nishpaksh import editions
-    parent_items = ["A bridge collapsed in Kesarganj", "Four people died", "Police arrested the site engineer"]
-    store.exec(insert(published).values(story_id=1, version=1, updated_at=NOW - dt.timedelta(days=1),
-                                        headline_en="Bridge collapses", headline_hi="h",
-                                        payload_en=dict(_fu_payload(parent_items), written_at=(NOW - dt.timedelta(days=1)).isoformat()),
-                                        payload_hi={}))
-    reach = {}
-    monkeypatch.setattr(V, "_story_context", lambda store, sid: (None, {}, {}, None, None, {}))
-    monkeypatch.setattr(V, "support_summary", lambda cid, *a: {"support_groups": reach.get(cid, [])})
-
-    def check(sid, texts, groups, now=NOW):
-        store.exec(insert(stories).values(id=sid, created_at=NOW, updated_at=NOW, dirty=False, qualifies=True, analysis={}))
-        reach.clear()
-        reach.update({n + 1: g for n, g in enumerate(groups)})
-        return editions.follow_up_ok(store, _router(store, FakeBackend()), sid, _fu_payload(texts), [1], now)
-
-    old = parent_items[:2]
-    # repeats plus two small new facts: not enough
-    assert not check(10, old + ["Rescue work ended", "Traffic was diverted"], [["a", "b", "c"]] * 4)
-    # four new facts carried by three independent outlets: a follow-up
-    four = ["Rescue work ended", "Traffic was diverted", "An inquiry panel was formed", "The contractor was blacklisted"]
-    assert check(11, old + four, [["a"], ["b"], ["c"], ["a"], ["b"], ["c"]])
-    # ... but not when only two outlets carry them
-    assert not check(12, old + four, [["a"], ["b"], ["a"], ["b"], ["a"], ["b"]])
-    # one major development carried by three outlets
-    assert check(13, old + ["A court granted bail to the site engineer"], [["a"], ["b"], ["a", "b", "c"]])
-    # on the parent's own date the same bar applies (no one-per-day limit)
-    same_day = NOW - dt.timedelta(days=1)
-    t = same_day + dt.timedelta(minutes=1)
-    assert not check(14, old + ["Rescue work ended", "Traffic was diverted"], [["a", "b", "c"]] * 4, now=t)
-    assert check(15, old + four, [["a"], ["b"], ["c"], ["a"], ["b"], ["c"]], now=t)
-    assert check(16, old + ["A court granted bail to the site engineer"], [[], [], ["a", "b", "c"]], now=t)
-    # the judgement is kept per statement set: no second model call for the same statements
-    calls = []
-
-    class Counting(FakeBackend):
-        def generate(self, model, prompt, json_mode, grounded):
-            calls.append(1)
-            return super().generate(model, prompt, json_mode, grounded)
-    reach.update({1: [], 2: [], 3: ["a", "b", "c"]})
-    assert editions.follow_up_ok(store, _router(store, Counting()), 13,
-                                 _fu_payload(old + ["A court granted bail to the site engineer"]), [1], NOW)
-    assert calls == []
-
-
 def test_published_articles_move_to_the_archive_branch_and_stay_findable(store, tmp_path, monkeypatch):
     """After 3 days a published article is written to the archive branch; only once it is committed
     does it leave the database. Follow-ups still find it there, and read its page."""

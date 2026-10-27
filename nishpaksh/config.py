@@ -116,8 +116,8 @@ class Settings:
     embed_reserve_per_run: int = 40        # kept back for each later run today (new arrivals)
 
     # editions (owner, Oct 5 2026): an article is written once, when its coverage has settled, and is
-    # never changed again (only its colours mature by code). Later reporting becomes a follow-up only
-    # if it carries a lot of new information or a major development.
+    # never changed again (only its colours mature by code). Later reporting becomes a follow-up like any story
+    # (owner, Oct 27 2026): what the parent already told is left out, and it waits only while nothing in it is new.
     # Oct 16 2026 (owner): no settling wait. A story is written once the rule is met and what it already has is read
     # (editions.settle_decision); `read_wait_hours` after the rule was met it is written with what is read. The three
     # settings below are no longer used (kept so old configs and tools still load).
@@ -127,9 +127,8 @@ class Settings:
     settle_early_outlets: int = 8
     settle_early_min_minutes: float = 60
     stale_after_hours: float = 36          # a story whose newest source is older than this is not written (old news)
-    followup_min_outlets: int = 3          # independent outlets carrying the new information
-    followup_min_new: int = 4              # "a lot of new": this many new non-minor core statements...
-    followup_new_share: float = 0.5        # ...or this share of the parent's, whichever is more
+    followup_min_new: int = 1              # a follow-up needs this many new non-minor core statements (it was 4 or half the parent's,
+                                           # carried by 3 outlets, or a major development, until Oct 27 2026)
 
     # extraction: only stories covered by >= 2 independent sources; at most this many articles each
     max_extract_per_story: int = 8

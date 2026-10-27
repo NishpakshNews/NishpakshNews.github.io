@@ -481,7 +481,7 @@ def group_stories(store: Store, router: Router | None, embed_seconds: float = 36
 
     def follow_up_story(parent: int, i: int) -> int:
         """Later reports about a published story gather in one candidate story of their own: it is
-        published only if it earns a follow-up (editions.follow_up_ok)."""
+        judged like any story, only on what is new (editions.judge_follow_up, followup.py)."""
         if parent not in candidate_of:
             an = analyses.get(parent)
             if an is None:

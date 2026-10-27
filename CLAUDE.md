@@ -83,6 +83,38 @@ went). DONE Oct 26 (merge audit, runner): `tools/merge_audit.py` showed code's "
 `consolidate` through `dupescore.order`); E23 evidence weight per pair in the side table `story_pair_weights` (in `TABLES` of `newsroom.sh`;
 `perspectives.pair_means` weights each story by it, a pair stored before counts as 1).
 **Review questions never silently cut (Oct 27 2026, owner: E100 article, story 46120 wrote one event 4-5 times).** Root cause (story_check + merge_audit on the runner): the local reader judged most of the paraphrases "one says the other" (score ~1.0 one way), but `SAME_ASK_MAX` 80 cut the questions, the covers list was unordered with the soft pairs appended last, and a pair cut by the cap was not counted as unanswered (`unanswered_asks` 0, so the review looked finished and the desk wrote). Now: cap 400 (local reader, no quota), both lists ordered by `dupescore.order`, pairs over the cap count as unanswered, a review with unanswered questions is not stored as done (re-reviewed next call), and `desk._review_open` holds a story for at most `REVIEW_HOLDS` (2) desk looks while questions are open. Read next: desk skipped "review not finished", `analysis.unanswered_asks`, whether the E100-style duplicates fold. Untuned: the 400 cap vs time.
+**Follow-ups are judged like any story; vector cache; stage timers (Oct 27 2026, owner: "the follow up decisions we made, the cache, and the incremental check").**
+(1) *The follow-up gate is gone* (`editions.follow_up_ok` deleted; `editions.judge_follow_up` + `followup.py`). A story that develops a published one
+(route A candidate or route B `find_parents` link) is classified against its latest parent by the same page-tier question as before (`_classify`: new /
+same_as / updates / major), then: `told` = judged not new AND the model named the parent line that says it AND it replaces nothing (`updates`); a statement
+the model cannot point a parent line for is KEPT (nothing is lost on a guess), a statement it did not answer is `new: None` (neither new nor told). `followup.drop_told`
+leaves told lines out of the payload (never one others lean on: `followup.partnered` = disputed / false / conflicts / answers / old-and-new figure / detail-of;
+`trim_to_cap` uses the same test), BEFORE `trim_to_cap`, `unify_payload` and the lead/news pick, so the lead is chosen from what is new. The story waits only
+while no non-minor core statement is judged new (`followup_min_new` 1; was 4 or half the parent's, carried by 3 outlets, or a major development; the outlet
+count and the major kind are gone from the decision, `major` is only recorded) or while the model could not answer (also when its reply covers no statement at
+all). Outcomes: "nothing new yet" (record `ok: False` + `at`: `desk.ready` skips it until a new outlet joins), "follow-up not judged yet", "parent unreachable".
+Twins / updates / colours are saved as before (`threads.save_links`). *Parent lines for coherence* (owner: no hard no-repeat): `followup.choose_background` replaces
+"the parent's first four lines" with a greedy choice (`selection.greedy`, budget `BUDGET` 4) of a monotone submodular score: `RESTATED` credit for a parent line the
+later reports restate (the `same_as` of a dropped line), + `ENTITY_WEIGHT` x idf weight of each name of the new part that no chosen line explains (weighted coverage),
++ facility-location closeness (embedding cosine above `SERVICE_FLOOR` per new statement, counted once however many chosen lines reach it); never offered: a near copy
+of a new statement (`REPEAT_SIM`), a line a new statement replaces, a line a kept statement already says; a gain under `MIN_GAIN` is not offered; the lines come back in
+the parents' own order. If the choice fails the default lines stand. The dossier gets a "followup" stage (dropped ids, kept-told ids, each chosen line with why).
+Record `edition.followup` has `v` 2 (`editions.RECORD_VERSION`): records without it (the old gate's refusals) are NOT honoured by `desk.ready`, so the stuck follow-ups
+are looked at again and re-judged once. Untuned: `followup.RESTATED / ENTITY_WEIGHT / SERVICE_FLOOR / REPEAT_SIM / MIN_GAIN / BUDGET`, `followup_min_new`.
+Read next: desk `skipped` ("nothing new yet", "follow-up not judged yet"), `dossiers.data.followup`, whether follow-up articles repeat their parent, how short they are.
+Minor (one-article) core statements are not classified (as before), so a repeat that only one article carries can still be written.
+(2) *Vector cache* (`embed._encode_cached`): the bi-encoder's rows are kept per process by (model name, text), least recently used first (`CACHE_MAX` 8000); TF-IDF and
+test backends are never cached (TF-IDF rows depend on the whole list). `threads.find_parents` embedded the headline and opening of every published page of the last 60
+days for each story the desk looked at, and again after every publication: now each page is encoded once per desk run and a new page costs only itself. Not on disk
+(a new process starts empty; a cross-run file in `.newsroom/cache` is possible if the first look of each run is still slow: read `embed_cache` below).
+(3) *The incremental thread check* needs no separate logic: with cached rows a recheck after a publication encodes only the new page, and `find_parents` returns the
+same parents with a warm cache as with none (`tests/test_threads_cache.py`). An exact per-pair shortcut was NOT built: idf weights and the top-6 cut depend on the
+whole corpus, so it could change which stories are linked.
+(4) *Stage timers* (nothing was measured before): the desk record now has `stage_seconds` {thread_check, follow_up, writer, headline, categories, translate},
+`step_seconds` {translated, sectioned, placed, videos, notify} and `embed_cache` {hit, miss, encode_seconds, held}. READ THESE FIRST next time the desk is slow: the claim
+that the thread check's re-embedding was the main cost is a hypothesis from reading the code, not a measurement. Tests: `tests/test_followup.py`, `tests/test_embed_cache.py`,
+`tests/test_threads_cache.py`. Three tests flip with the hash seed before and after this change (set order upstream; `test_published_articles_move_to_the_archive_branch_and_stay_findable`,
+`test_published_article_is_closed_and_only_its_colours_mature`, `test_a_later_development_links_to_its_story_and_gets_background`); `test_hygiene` fails where ftfy is a newer version.
 **Desk time, length cap, hidden "Also" section (Oct 27 2026, owner: few articles, "too long", "I never see Also in these reports").** (1) Desk
 runs hit their 28 minutes every hour: the full review (cap 400) used the whole budget before the writer. Now `desk.REVIEW_SHARE` 0.6: reviews get at most
 60% of the desk's time (`consolidate_story(until=)` asks in batches of 50 and leaves the rest unasked = unanswered); a story whose review is
@@ -233,7 +265,8 @@ stories, and tune settings then.
     colours mature by code (`editions.mature`: the 6-hour clock on the evidence it was written with).
     The parent is never corrected: a follow-up carries any dispute.
   - Later reports of a published event go to a CANDIDATE story (`stories.py` redirects joins;
-    `analysis.edition.follows`). It is read like any story and published only as a follow-up when,
+    `analysis.edition.follows`). **The gate below is GONE since Oct 27 2026 (see "Follow-ups are judged like any story"
+    in the rebuild notes above); kept here as history.** It was published only as a follow-up when,
     against its parent (`follow_up_ok`, one Flash-Lite call per statement set): 4+ new non-minor core
     statements (or half the parent's) carried by 3+ independent outlets, or a MAJOR development
     (arrest, FIR/charges, court order/verdict/bail, deaths, resignation/sacking, official decision,

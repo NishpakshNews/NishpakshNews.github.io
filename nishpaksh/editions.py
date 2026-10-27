@@ -12,11 +12,11 @@ Like a newspaper:
     spent on it again; no new report joins it. Only its colours mature, by code (`mature`): the
     6-hour clock turns "developing" into "established" from the evidence it was written with.
   * Reports about a published event that arrive later gather in a fresh candidate story (grouping
-    redirects them, stories.py). The candidate is read like any story, and is published as a
-    follow-up only if, against its parent, it carries a lot of new information or a major
-    development (`follow_up_ok`). The same bar holds on the parent's own date: there is no limit of
-    one article per topic per day (owner, Oct 10 2026); the desk only writes a topic not yet covered
-    today first (desk.ready).
+    redirects them, stories.py). The candidate is read and judged like any story (owner, Oct 27 2026: the
+    follow-up gate is gone). Against its parent `judge_follow_up` only says which of its statements the parent
+    already told; those are left out (followup.py), the rest is written under the usual publishing rules, and the
+    story waits only while nothing in it is new. There is no limit of one article per topic per day (owner,
+    Oct 10 2026); the desk only writes a topic not yet covered today first (desk.ready).
   * A follow-up says what the parent already disputed or got wrong itself; the parent is never touched.
 """
 from __future__ import annotations
@@ -25,8 +25,8 @@ import datetime as dt
 import hashlib
 import json
 import logging
-import math
 import re
+from dataclasses import dataclass, field
 from zoneinfo import ZoneInfo
 
 from .config import SETTINGS
@@ -275,7 +275,7 @@ def _classify(router: Router, parent: dict, items: list[dict]) -> dict[int, dict
                                     headline=parent.get("headline_en") or pp.get("headline") or "",
                                     earlier=earlier, later=later, kinds=kinds)
     try:
-        res = router.call("page", prompt, json_out=True, max_output_tokens=1500)
+        res = router.call("page", prompt, json_out=True, max_output_tokens=min(4000, max(1500, 300 + 45 * len(items))))
     except QuotaExhausted:
         return None
     except Exception as e:  # noqa: BLE001
@@ -291,7 +291,7 @@ def _classify(router: Router, parent: dict, items: list[dict]) -> dict[int, dict
         except (TypeError, ValueError, AttributeError):
             continue
         if 0 <= n < len(items):
-            new = r.get("new") is True
+            new = r.get("new") if isinstance(r.get("new"), bool) else None      # anything but true / false: not answered
             major = r.get("major") if new and r.get("major") in MAJOR_KINDS else None
 
             def earlier_id(v):
@@ -300,58 +300,78 @@ def _classify(router: Router, parent: dict, items: list[dict]) -> dict[int, dict
                 return olds[k]["id"] if 0 <= k < len(olds) else None
             out[items[n]["id"]] = {"new": new, "major": major, "same_as": earlier_id(r.get("same_as")),
                                    "updates": earlier_id(r.get("updates"))}
-    # an unanswered statement counts as not new: when unsure, no follow-up
-    return {i["id"]: out.get(i["id"], {"new": False, "major": None}) for i in items}
+    # a statement the model did not answer is NOT judged ("new": None): it is neither counted as new nor left out as told
+    # (it used to count as "not new", which now would drop it from the article)
+    return {i["id"]: out.get(i["id"], {"new": None, "major": None}) for i in items}
 
 
-def follow_up_ok(store: Store, router: Router | None, sid: int, payload: dict, parent_ids: list[int],
-                 now: dt.datetime | None = None) -> bool:
-    """Is this story worth publishing as a follow-up of its (latest) parent? Either a lot of new
-    information (`followup_min_new` new non-minor statements, or `followup_new_share` of the parent's,
-    whichever is more) carried by `followup_min_outlets` independent outlets, or a major development
-    carried by that many, on the parent's own IST date as on any other (no per-day limit). The decision is kept per statement set, so it costs one cheap model
-    call per change in the story, not one per run."""
-    from .verify import _story_context, support_summary
+@dataclass
+class FollowUp:
+    """What the follow-up check found about a story that develops published ones (`judge_follow_up`).
+    state: "own"      no parent page could be read (the archive said: no such page): the story stands on its own
+           "unjudged" the model did not answer (or none was given): the check is asked again next run
+           "judged"   `told` are the statements the parent already says (leave out), `new` the ones it does not;
+                      `ok` is False while nothing in the story is new."""
+    state: str
+    ok: bool = False
+    parent_id: int | None = None
+    parents: dict = field(default_factory=dict)       # every parent page that was read: {story id: page}
+    judged: dict = field(default_factory=dict)        # {statement id: {"new", "major", "same_as", "updates"}}
+    new: list = field(default_factory=list)
+    told: list = field(default_factory=list)
+
+
+RECORD_VERSION = 2      # 1: an unanswered statement was stored as "not new"; 2: stored as unjudged ("new": None)
+
+
+def judge_follow_up(store: Store, router: Router | None, sid: int, payload: dict, parent_ids: list[int],
+                    now: dt.datetime | None = None) -> FollowUp:
+    """Against its (latest) parent, which statements of this story are new? It is NOT a gate (owner, Oct 27 2026): the
+    follow-up is written like any story, from what is new; this says what to leave out and whether anything is new.
+    `told`: judged "not new" AND the model named the parent's statement that says it (a statement it cannot point to is
+    kept: nothing is lost on a guess); a statement that replaces a parent's line (`updates`) is never told. The judgement
+    is kept per statement set (one cheap model call per change in the story, not one per run), and its twins and updates
+    are saved so the same fact has one colour on every page of the thread (threads.save_links)."""
     now = now or utcnow()
     parents = parent_pages(store, parent_ids, strict=True)   # raises Unreachable: the caller waits, never "no parents"
     if not parents:
-        return True     # the archive answered "no such page" for every parent: judged as a story of its own
+        return FollowUp("own")     # the archive answered "no such page" for every parent: judged as a story of its own
     pid, parent = max(parents.items(), key=lambda kv: str(kv[1].get("written_at") or ""))
     items = _core_major(payload)
     an, ed = _edition(store, sid)
     key = hashlib.sha256(json.dumps([pid, sorted(i["id"] for i in items)]).encode()).hexdigest()[:16]
     rec = ed.get("followup") or {}
-    if rec.get("key") != key:
-        if router is None or not items:
-            return False
-        judged = _classify(router, parent, items)
-        if judged is None:
-            return False                     # no answer: wait, ask again next run
-        rec = {"key": key, "parent": pid, "judged": {str(k): v for k, v in judged.items()}}
+    if rec.get("key") != key or rec.get("v") != RECORD_VERSION:
+        if router is None:
+            return FollowUp("unjudged", parent_id=pid, parents=parents)
+        judged = _classify(router, parent, items) if items else {}
+        if judged is None or (items and all((judged.get(i["id"]) or {}).get("new") is None for i in items)):
+            return FollowUp("unjudged", parent_id=pid, parents=parents)      # no answer at all: wait, ask again next run
+        rec = {"v": RECORD_VERSION, "key": key, "parent": pid, "judged": {str(k): v for k, v in judged.items()}}
     judged = {int(k): v for k, v in (rec.get("judged") or {}).items()}
 
-    _, agroup, gpersp, _, _, members = _story_context(store, sid)
-    groups = {i["id"]: set(support_summary(i["id"], members, agroup, gpersp)["support_groups"]) for i in items}
-    new = [i["id"] for i in items if (judged.get(i["id"]) or {}).get("new")]
-    carried = set().union(*(groups[x] for x in new)) if new else set()
-    major_reach = max((len(groups[x]) for x in new if (judged.get(x) or {}).get("major")), default=0)
-    need_new = max(SETTINGS.followup_min_new,
-                   math.ceil(SETTINGS.followup_new_share * len(_core_major(parent["payload_en"]))))
+    new = [i["id"] for i in items if (judged.get(i["id"]) or {}).get("new") is True]
+    told = [i["id"] for i in items if (judged.get(i["id"]) or {}).get("new") is False
+            and (judged[i["id"]].get("same_as") is not None) and (judged[i["id"]].get("updates") is None)]
+    need = SETTINGS.followup_min_new
     written = _parse(parent.get("written_at"))
     same_day = written is not None and ist_date(written) == ist_date(now)
-    ok = ((len(new) >= need_new and len(carried) >= SETTINGS.followup_min_outlets)
-          or major_reach >= SETTINGS.followup_min_outlets)
-    rec.update(new=len(new), need_new=need_new, outlets=len(carried), major_outlets=major_reach,
-               same_day=same_day, ok=ok, at=now.isoformat(timespec="minutes"))
+    ok = len(new) >= need
+    major = sorted({judged[x]["major"] for x in new if judged[x].get("major")})
+    rec.update(new=len(new), told=len(told), unjudged=sum(1 for i in items if (judged.get(i["id"]) or {}).get("new") is None),
+               major=major, same_day=same_day, ok=ok, at=now.isoformat(timespec="minutes"))
+    for gone in ("need_new", "outlets", "major_outlets"):
+        rec.pop(gone, None)                              # fields of the old gate
     _save(store, sid, an, dict(ed, followup=rec))
     try:
         from . import threads
         threads.save_links(store, pid, judged)        # the same facts share their evidence; updates mark the old line
     except Exception as e:  # noqa: BLE001 - links improve colours, never block a follow-up
         log.warning("thread links of story %s not saved: %s", sid, str(e)[:150])
-    log.info("story %s as a follow-up of %s: %s (%d new of %d needed, %d outlets, major in %d, same day %s)",
-             sid, pid, "yes" if ok else "not yet", len(new), need_new, len(carried), major_reach, same_day)
-    return ok
+    log.info("story %s as a follow-up of %s: %d new, %d already told, %d not judged of %d; %s (same day %s, major %s)",
+             sid, pid, len(new), len(told), rec["unjudged"], len(items), "written" if ok else "nothing new yet", same_day,
+             major or "none")
+    return FollowUp("judged", ok=ok, parent_id=pid, parents=parents, judged=judged, new=new, told=told)
 
 
 # ---------------------------------------------------------------------------- published pages

@@ -205,8 +205,11 @@ def ready(store: Store, now: dt.datetime | None = None) -> list[int]:
         sid = r["id"]
         if sid in closed or not editions.settled(store, sid, now):
             continue
-        # a follow-up refused and no new outlet since: it waits for coverage, not for another look
+        # a follow-up with nothing new in it and no new outlet since: it waits for coverage, not for another look.
+        # A refusal recorded under the old gate (no `v`; Oct 27 2026) is not one: those stories are looked at again.
         fu = ((r["analysis"] or {}).get("edition") or {}).get("followup") or {}
+        if fu.get("v") != editions.RECORD_VERSION:
+            fu = {}
         if fu.get("ok") is False and fu.get("at"):
             last = editions.last_new_source(store, sid)
             try:
@@ -246,6 +249,7 @@ def refused_last_run(store: Store, now: dt.datetime | None = None) -> set[str]:
 def work(store: Store, router: Router, now: dt.datetime | None = None, until: float | None = None) -> dict:
     from . import compose, consolidate, verify
     now = now or utcnow()
+    compose.STAGE_SECONDS.clear()
     stats = {"already_this_hour": published_this_hour(store, now), "tried": 0, "published": []}
     room, beat_room = seats(store, now)
     room, beat_room = max(0, room), max(0, beat_room)
@@ -319,6 +323,7 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
         else:
             stats["skipped"][why] = stats["skipped"].get(why, 0) + 1
     stats["review_seconds"], stats["write_seconds"] = round(review_s), round(write_s)
+    stats["stage_seconds"] = dict(compose.STAGE_SECONDS)      # where the write time went: thread_check, follow_up, writer, headline, ...
     if beat_room > 0:       # the seat stays empty (owner): say why
         why = "empty: no Domains or Sport story ready" if not beats else "empty: none could be written"
         if stats.get("beat_seat"):
@@ -347,9 +352,17 @@ def main() -> None:
     router.skip_models(skipping)
     stats = work(store, router, until=t0 + a.minutes * 60)
     from .compose import finish_translations
-    stats["translated"] = finish_translations(store, router)    # half-translated Hindi pages (story 15429)
+    steps: dict[str, int] = {}                                   # seconds of each step after the writing, to see where the rest of the run went
+
+    def timed(name, fn):
+        t = time.time()
+        try:
+            return fn()
+        finally:
+            steps[name] = round(time.time() - t)
+    stats["translated"] = timed("translated", lambda: finish_translations(store, router))    # half-translated Hindi pages (story 15429)
     from .categories import fill_live
-    stats["sectioned"] = fill_live(store, router)                # live articles from before sections (Oct 9 2026)
+    stats["sectioned"] = timed("sectioned", lambda: fill_live(store, router))                # live articles from before sections (Oct 9 2026)
     # readers (owner, Oct 9 2026): places and people of older live articles, videos of new ones, then notifications
     # and the day's recap. None of these may stop the desk's record from being written.
     from . import notify, videos
@@ -358,10 +371,12 @@ def main() -> None:
                        ("videos", lambda: videos.fetch_new(store, router=router)),
                        ("notify", lambda: notify.run(store, router=router, send=False))):
         try:
-            stats[name] = step()
+            stats[name] = timed(name, step)
         except Exception as e:  # noqa: BLE001
             log.warning("%s failed: %s", name, e)
             stats[name] = f"failed: {str(e)[:200]}"
+    from . import embed
+    stats.update(step_seconds=steps, embed_cache=embed.cache_stats())
     stats.update(seconds=round(time.time() - t0), trigger=os.environ.get("RUN_TRIGGER", "manual"),
                  tier_calls={k: dict(v) for k, v in sorted(router.tier_log.items())},
                  dropped=sorted(router.dropped), rested=sorted(router.rested), skipping=sorted(skipping))
