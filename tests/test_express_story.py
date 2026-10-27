@@ -37,10 +37,27 @@ def test_how_an_attribution_reads():
 
 
 def test_another_media_house_is_not_an_origin(monkeypatch):
-    monkeypatch.setattr(express, "cfg", lambda: {"media_words": ["bloomberg", "report"]})
+    """The registry decides (ownership.yaml / feeds.yaml), not a list of words kept in express.yaml."""
+    from nishpaksh import nlp
+    nlp.set_backend(lambda text: [nlp.Ent(w, "ORG", text.find(w), text.find(w) + len(w))
+                                  for w in ("Bloomberg", "Mint", "Hindustan Unilever", "Tata Motors") if w in text])
+    try:
+        assert express.attribution_kind("Bloomberg") == "media"
+        assert express.attribution_kind("Mint") == "media"
+        assert express.attribution_kind("a Bloomberg report") == "media"            # an organisation found in it is a known outlet
+        assert express.attribution_kind("according to Mint") == "media"
+        assert express.attribution_kind("Tata Motors") == "named"
+        assert express.attribution_kind("Hindustan Unilever") == "named"          # shares a word with an outlet, is not one
+        assert "media_words" not in express.cfg()
+    finally:
+        nlp.set_backend(None)
+
+
+def test_no_entity_reader_only_a_whole_outlet_name_counts(monkeypatch):
+    from nishpaksh import nlp
+    monkeypatch.setattr(nlp, "ents", lambda text: (_ for _ in ()).throw(RuntimeError("no model")))
     assert express.attribution_kind("Bloomberg") == "media"
-    assert express.attribution_kind("a Bloomberg report") == "media"
-    assert express.attribution_kind("Tata Motors") == "named"
+    assert express.attribution_kind("a Bloomberg report") == "named"               # as far as it can tell without the reader
 
 
 def test_a_named_event_qualifies_and_an_unnamed_one_does_not():
@@ -130,3 +147,14 @@ def test_a_member_judged_not_significant_keeps_the_story_out_and_the_sig_of_a_st
     assert express.story_sig([a]) == "world" and express.story_sig([a, b]) == "india"
     old = {"title": "Tata Motors opens plant", "url": "https://x/a", "extraction": {"express": {"v": 1, "verdict": "yes", "lane": "companies"}}}
     assert express.story_lane([old]) == (None, "no_lane")        # a "yes" from before the question never met the bar
+
+
+def test_a_member_the_model_cannot_read_keeps_the_story_waiting(monkeypatch):
+    from nishpaksh import nli
+    nli.set_backend(lambda pairs: [None] * len(pairs))
+    assert express.story_lane([yes()]) == (None, "risk_unread")
+
+
+def test_a_member_that_fits_a_concern_still_wins_over_an_unreadable_one():
+    arrested = {"title": "Founder arrested", "url": "u"}
+    assert express.story_lane([yes(), arrested]) == (None, "member_excluded")

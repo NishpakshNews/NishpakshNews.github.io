@@ -94,7 +94,7 @@ def test_intake_keeps_main_feeds_whole_and_excludes_before_fetching():
     assert [en["url"] for _, en in mine] == ["u2"]
     assert express.STATS["taken"] == 1 and express.STATS["intake_excluded"] == 2
     assert express.STATS["excluded"] == {"harm": 1, "government": 1}
-    assert express.STATS["excluded_terms"]["harm:arrested"] == 1
+    assert express.STATS["excluded_terms"]["harm:crime"] == 1
 
 
 def test_intake_caps_per_feed_and_per_run(monkeypatch):
@@ -164,14 +164,14 @@ def test_gate_passes_a_lane_headline_and_keeps_the_rest_out(monkeypatch):
     s = express.STATS
     assert (s["asked"], s["passed"], s["not_lane"], s["unreadable"], s["passed_sport"]) == (2, 1, 1, 1, 1)
     assert s["excluded"] == {"harm": 1}
-    assert "Founder arrested" not in "".join(r.prompts)                     # a code-excluded headline reaches no model
+    assert "Founder arrested" not in "".join(r.prompts)                     # an excluded headline reaches no lane model
 
 
 def test_the_lane_s_own_exclusions_run_after_the_model_names_the_lane(monkeypatch):
     saved = setup(monkeypatch)
-    # in a companies feed, but the model calls it tech; "tipster" is a speculation word for every lane
+    # in a companies feed, but the model calls it tech; a share-price move is a market concern in both lanes
     held, first = express.gate(None, FakeRouter(), [art(1, "Xiaomi launches phone at Rs 20,000 amid rally", feed=1)], NOW)
-    assert saved[1]["verdict"] == "excluded" and saved[1]["why"].startswith("market:")     # market list: companies, tech
+    assert saved[1]["verdict"] == "excluded" and saved[1]["why"].startswith("market:")     # market concern: companies, tech
     assert held == {1} and first == set()
 
 
@@ -302,3 +302,60 @@ def test_the_significance_check_can_be_switched_off(monkeypatch):
     monkeypatch.setattr(express, "setting", lambda name, default: False if name == "significance_enabled" else default)
     held, first = express.gate(None, FakeRouter(sig_none=("plant",)), [art(1, "Tata Motors opens plant in Sanand")], NOW)
     assert first == {1}
+
+
+# --- a headline the model cannot read stays undecided (risk.py: never passed on a guess) -----------------------------
+
+def _no_model():
+    from nishpaksh import nli
+    nli.set_backend(lambda pairs: [None] * len(pairs))
+
+
+def test_gate_holds_an_unread_headline_and_saves_nothing(monkeypatch):
+    saved = setup(monkeypatch)
+    _no_model()
+    r = FakeRouter()
+    held, first = express.gate(None, r, [art(1, "India win by six wickets", feed=2)], NOW)
+    assert held == {1} and first == set()
+    assert saved == {}                                   # no verdict: judged again next run
+    assert r.prompts == []                               # and the lane model was not spent on it
+    assert express.STATS["risk_held"] == 1
+
+
+def test_gate_asks_again_once_the_model_reads(monkeypatch):
+    saved = setup(monkeypatch)
+    from nishpaksh import nli
+    working = nli._backend
+    _no_model()
+    a = art(1, "India win by six wickets", feed=2)
+    express.gate(None, FakeRouter(), [a], NOW)
+    nli.set_backend(working)
+    held, first = express.gate(None, FakeRouter(), [a], NOW)
+    assert first == {1} and saved[1]["verdict"] == "yes"
+
+
+def test_intake_lets_an_unread_headline_through_to_the_gate(monkeypatch):
+    express.reset()
+    _no_model()
+    f_biz = {"id": 11, "url": HT_BUSINESS, "name": "HT"}
+    rest, mine = express.take_intake([(f_biz, {"title": "Founder arrested over fund diversion", "summary": "", "url": "u3"})])
+    assert [en["url"] for _, en in mine] == ["u3"]       # not excluded here: the gate will not embed it without reading it
+    assert express.STATS["intake_unread"] == 1 and "intake_excluded" not in express.STATS
+
+
+def test_the_lane_named_by_the_model_is_checked_with_its_own_concerns(monkeypatch):
+    saved = setup(monkeypatch)
+    # the second look (lane named) cannot be read although the first look (feed lane) could
+    from nishpaksh import nli
+    working = nli._backend
+    calls = []
+
+    def flaky(pairs):
+        calls.append(1)
+        return working(pairs) if len(calls) == 1 else [None] * len(pairs)
+    nli.set_backend(flaky)
+    # a sport feed, the model says companies: the market concern is new for it and could not be read
+    held, first = express.gate(None, FakeRouter(), [art(1, "Tata opens plant in Pune", feed=2)], NOW)
+    assert len(calls) == 2
+    assert held == {1} and 1 not in saved                 # undecided, asked next run
+    assert express.STATS["risk_held"] == 1

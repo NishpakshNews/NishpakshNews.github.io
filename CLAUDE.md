@@ -115,6 +115,24 @@ whole corpus, so it could change which stories are linked.
 that the thread check's re-embedding was the main cost is a hypothesis from reading the code, not a measurement. Tests: `tests/test_followup.py`, `tests/test_embed_cache.py`,
 `tests/test_threads_cache.py`. Three tests flip with the hash seed before and after this change (set order upstream; `test_published_articles_move_to_the_archive_branch_and_stay_findable`,
 `test_published_article_is_closed_and_only_its_colours_mature`, `test_a_later_development_links_to_its_story_and_gets_background`); `test_hygiene` fails where ftfy is a newer version.
+**Express lane: no word lists (Oct 27 2026, owner: "why do we still use hand written list in express.yaml"; fakes only until the audit).**
+The ~300 hand-written exclusion words (`exclude:` harm / government / market / speculation / gossip / service), `allow_phrases`, the listicle `patterns` and
+`media_words` are gone. (1) `risk.py`: each CONCERN is a few DEFINITION sentences in `config/express.yaml` (`concerns:`, e.g. harm.crime "The news is about a crime,
+an arrest, a police case or a case in a court."); the headline + first 300 characters of the page are the premise, the sentence the hypothesis, read by the local
+NLI model (multilingual, no quota); a concern FIRES when P(entailment) >= `concern_min` (0.5, untuned), the strongest definition gives the reason (`harm:crime`,
+counted by the ledger as before). `apply:` still says which lanes a concern counts in. One batch per call (`express.excluded_many`; `excluded` = one item).
+(2) A headline the model could not read is `risk.UNREAD`, never "fine": the gate holds it unsaved (`risk_held`, asked again next run, the lane model is not spent on
+it), the intake lets the link through for the gate to judge (`intake_unread`), `story_lane` returns "risk_unread" (the story waits; `revoke_stale` does NOT revoke
+it for that, `UNREAD_STORIES`). One definition that fires is enough even if another pair was unread. (3) `attribution_kind` MEDIA = the attribution is a known outlet
+(`ownership.is_known_outlet`: ownership.yaml + feeds.yaml) or an organisation the entity reader finds in it is one; the generic words (news, media, post, tweet) no
+longer count, so an unnamed "social media post" is NAMED now (a loosening; rare). (4) Kept on purpose: `exclude_url` (path pieces such as /opinion/ are page structure, not
+language), the lane few-shot examples, the significance prompt and the `media`-free `own_voice_lanes`. (5) `express_replay` is now an AUDIT (read-only): stored
+verdicts of the old word lists against the definitions (what they excluded and the definitions would pass, what passed and they would exclude, the strongest score per
+group in tenths to read `concern_min`); it is also the `express_concerns` section of `tools/evaluate.py` (the single audit), with `express.concern_min`, `risk.DEFAULT_MIN` and the
+follow-up constants in `thresholds`. Funnel keys: `risk_texts`, `risk_unread`, `risk_seconds`, `risk_held`, `intake_unread` (READ `risk_seconds` first: the intake scores every new
+express link, ~8 pairs each, on CPU). Untuned: `concern_min`, every definition sentence. Hindi headlines are read against English definitions (multilingual NLI; unchecked).
+Tests: conftest scripts the definitions by words (`_RISK_WORDS`, a stand-in for the model's judgement, like the other scripted pairs); `tests/test_express.py`, `test_express_gate.py`
+(unread paths), `test_express_story*.py`, `test_express_replay.py`. The Oct 12-13 text below that talks of exclusion lists / `harm:detained` is history.
 **Desk time, length cap, hidden "Also" section (Oct 27 2026, owner: few articles, "too long", "I never see Also in these reports").** (1) Desk
 runs hit their 28 minutes every hour: the full review (cap 400) used the whole budget before the writer. Now `desk.REVIEW_SHARE` 0.6: reviews get at most
 60% of the desk's time (`consolidate_story(until=)` asks in batches of 50 and leaves the rest unasked = unanswered); a story whose review is

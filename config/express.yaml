@@ -3,7 +3,7 @@
 #
 # The lane is strict at the door and honest in the colours:
 #   - a story enters a lane only if its headline names one of the lanes below (asked of a small model twice, order
-#     swapped, "unsure" = not express) AND none of the exclusions below matches (code, `express.excluded`);
+#     swapped, "unsure" = not express) AND none of the concerns below fits it (read by the local entailment model, `risk.py`);
 #   - express articles are purple ("one outlet only") and are NEVER green: green needs 3 independent outlets,
 #     2 origins and 6 hours, so an express story cannot reach it. No colour rule was changed for it;
 #   - a main fact must trace to a NAMED origin (the company, the league, an official), not "sources said".
@@ -63,264 +63,54 @@ filter_examples:
   - '"Why Indian start-ups are struggling to hire" -> none (analysis)'
   - '"10 best phones under Rs 20,000" -> none (a list)'
 
-# --- Exclusions (code, applied BEFORE any model sees the headline) ----------------------------------------------
-# A match on the headline or the feed's summary keeps the story out of the express lane, whatever the model says.
-# These are case-insensitive whole words (or, for Hindi, plain fragments). One reason name per list: the ledger
-# counts them, so you can see which ones do the work and which are too strict.
-# Writing rule for these lists: an entry in lower case matches the whole word (or phrase) in any case; an entry
-# written in UPPER CASE (ED, RBI, FIR) matches only as written, so "ED" is the agency and "Ed Sheeran" is not.
-# Hindi entries match as fragments. Which lanes each list applies to is the `apply` map below the lists.
-exclude:
-  # crime, harm and accusation: where one source is dangerous. Applies to every lane.
+# --- Concerns (the local NLI model reads each headline BEFORE any other model does) ---------------------------------
+# Owner, Oct 27 2026: no word lists. A word list says what a story is about by the words it happens to use ("court" is
+# a tennis word, "ED" an agency and a singer, "May" a month) and needs a person to patch it for each case. Each concern
+# below is instead a DEFINITION, a plain sentence the local entailment model (nishpaksh/nli.py, English and Hindi) is
+# asked about: "does this headline and its opening say that?" The headline is the premise, the sentence the hypothesis.
+# A concern fires when the model's entailment probability reaches `concern_min`. A headline the model could not read
+# is never passed (nishpaksh/risk.py): it is asked again on the next run. The reason kept with the article is
+# `concern:definition` ("harm:crime"), which the ledger counts, so you can see which definition does the work.
+# To change what is kept out, change a SENTENCE here, not a word; `python -m nishpaksh.express_replay` shows, on stored
+# headlines, what each sentence catches and where it disagrees with what the first (word-list) design decided.
+#
+# Several sentences per concern, because one sentence joining several ideas ("a crime or an accident or a fraud")
+# is read poorly by a small model; any one of them reaching the bar fires the concern.
+concern_min: 0.5            # entailment probability that counts as "the headline says this" (untuned: read it in the audit)
+
+concerns:
+  # where one source is dangerous: crime, harm and accusation. Applies to every lane.
   harm:
-    - arrest
-    - arrested
-    - arrests
-    - detained
-    - custody
-    - bail
-    - jail
-    - jailed
-    - FIR
-    - chargesheet
-    - charge sheet
-    - lawsuit
-    - sued
-    - sues
-    - court
-    - tribunal
-    - verdict
-    - judge
-    - murder
-    - murdered
-    - killed
-    - kills
-    - dead
-    - dies
-    - died
-    - death
-    - deaths
-    - dies at
-    - suicide
-    - accident
-    - crash
-    - crashed
-    - injured
-    - rape
-    - assault
-    - molest
-    - harassment
-    - abuse
-    - fraud
-    - scam
-    - scandal
-    - cheating
-    - raid
-    - raids
-    - probe
-    - accused
-    - accuses
-    - accusation
-    - alleged
-    - allegedly
-    - alleges
-    - allegation
-    - allegations
-    - doping
-    - dope
-    - match-fixing
-    - banned
-    - suspended
-    - terror
-    - riot
-    - violence
-    - hate
-    - communal
-    - boycott
-    - fake
-    - hoax
-    - defamation
-    - "गिरफ्तार"
-    - "हत्या"
-    - "मौत"
-    - "मृत"
-    - "दुर्घटना"
-    - "हादसा"
-    - "अदालत"
-    - "कोर्ट"
-    - "आरोप"
-    - "एफआईआर"
-    - "धोखाधड़ी"
-    - "घोटाला"
-    - "छापा"
-    - "बलात्कार"
-    - "आत्महत्या"
+    crime: "The news is about a crime, an arrest, a police case or a case in a court."
+    death: "Someone has died, been killed or been injured in an accident, an attack or a disaster."
+    accusation: "Someone is accused of fraud, cheating, abuse or another wrong."
+    ban: "A person or a team has been banned, suspended or punished for breaking rules."
+    unrest: "The news is about violence, a riot, terror, hate or a communal clash."
   # a government, ministry or regulator acts on or speaks about the story (the same interference problem as markets)
   government:
-    - government
-    - govt
-    - ministry
-    - minister
-    - ministers
-    - parliament
-    - lok sabha
-    - rajya sabha
-    - budget
-    - policy
-    - regulator
-    - RBI
-    - SEBI
-    - CCI
-    - CBI
-    - ED
-    - DGCA
-    - TRAI
-    - NCLT
-    - IRDAI
-    - tax
-    - taxes
-    - GST
-    - customs
-    - duty
-    - tariff
-    - tariffs
-    - subsidy
-    - subsidies
-    - PLI
-    - licence
-    - license
-    - penalty
-    - fined
-    - fines
-    - ban
-    - bans
-    - notice
-    - election
-    - elections
-    - BJP
-    - congress party
-    - congress leader
-    - congress mp
-    - congress mla
-    - modi
-    - "सरकार"
-    - "मंत्री"
-    - "मंत्रालय"
+    acts: "A government, a ministry, a regulator or a public authority has taken a decision, issued an order or made a rule."
+    policy: "The news is about a law, a government scheme, a tax, a tariff or an official policy."
   # economy and markets (government figures, share prices, tips): left out of round one by the owner
   market:
-    - GDP
-    - inflation
-    - sensex
-    - nifty
-    - stock
-    - stocks
-    - share price
-    - shares
-    - rally
-    - plunge
-    - surge
-    - slump
-    - crash
-    - IPO
-    - rupee
-    - forex
-    - crypto
-    - bitcoin
-    - gold rate
-    - petrol price
-    - diesel price
-    - mutual fund
-    - target price
-    - buy rating
+    prices: "The news is about share prices, an index, a currency, or the price of gold, oil or fuel moving."
+    economy: "The news is about inflation, interest rates, growth figures, or the state of the economy."
+    advice: "The news advises people what to buy, sell or invest in."
   # something said only by unnamed people, or that has not happened
   speculation:
-    - reportedly
-    - rumour
-    - rumours
-    - rumor
-    - rumors
-    - leak
-    - leaks
-    - leaked
-    - tipped
-    - tipster
-    - speculation
-    - speculated
-    - sources
-    - insiders
-    - in talks
-    - mulls
-    - mulling
-    - eyes
-    - likely
-    - may
-    - could
-    - might
-    - predicted
-    - prediction
-    - predictions
-    - predicts
-    - odds
-    - dream11
-    - fantasy
-    - betting
-    - "अफवाह"
-    - "कथित"
-    - "संभावना"
+    rumour: "The news is a rumour, a leak, or something said by unnamed people."
+    forecast: "The news is a guess or a prediction about what may happen, or a talk that has not led to a decision."
   # film and celebrity gossip, and the numbers producers inflate
   gossip:
-    - dating
-    - affair
-    - divorce
-    - breakup
-    - pregnant
-    - pregnancy
-    - spotted
-    - trolled
-    - slams
-    - slammed
-    - controversy
-    - feud
-    - clash
-    - "box office"
-    - collection
-    - collections
-    - crore club
-    - worldwide gross
-    - opening day
+    private_life: "The news is about the private life, relationship, looks or social media post of a celebrity."
+    box_office: "The news is about how much money a film has earned."
   # service pieces, live blogs and filler: nothing to check, nothing worth the seat
   service:
-    - live
-    - live updates
-    - live score
-    - live streaming
-    - where to watch
-    - how to watch
-    - horoscope
-    - panchang
-    - wordle
-    - quiz
-    - "price today"
-    - "rate today"
-    - explained
-    - "what is"
-    - "all you need to know"
-    - "things to know"
-    - "how to"
-    - review
-    - preview
-    - sponsored
-    - advertorial
-    - "brand studio"
-    - "partner content"
-    - "presented by"
-    - opinion
-    - editorial
-    - column
-    - analysis
+    list: "The article is a list, a ranking, a buying guide or a set of tips."
+    live: "The article is a live blog, a live score page, or a daily rate or horoscope."
+    view: "The article is an opinion, an editorial, an explainer or a sponsored post."
 
-# Which lanes each list applies to. A word that is ordinary in one lane is a warning in another: "clash" is a
-# match in sport and a feud in film gossip; "rally" is a tennis term and a share-price move.
+# Which lanes each concern applies to. A concern that is ordinary in one lane is a warning in another: a share-price
+# move is the news in markets but "a rally" is a tennis term; a clash is a match in sport and a feud in film gossip.
 apply:
   harm: all
   government: all
@@ -328,14 +118,6 @@ apply:
   service: all
   market: [companies, tech]
   gossip: [entertainment]
-
-# Regular expressions (case-insensitive) for pieces that are lists, not reports
-patterns:
-  listicle:
-    - '^\s*\d+\s+(best|top|things|ways|reasons|tips|tricks|facts|movies|shows|phones|apps|stocks|songs|players|films)\b'
-    - '\btop\s+\d+\b'
-    - '\bbest\b.{0,40}\b(under|for|of the year|in india)\b'
-    - '\b(vs|versus)\b.{0,40}\b(which|should you)\b'
 
 # URL path pieces that mark a page that is not a news report (opinion, photos, video, web stories, sponsored)
 exclude_url:
@@ -362,31 +144,10 @@ exclude_url:
   - /live-updates/
   - /liveblog/
 
-# Phrases that look like an exclusion word but are the ordinary thing (removed before the check):
-# a sport's "court", a month named May.
-allow_phrases:
-  - on court
-  - off court
-  - tennis court
-  - badminton court
-  - basketball court
-  - squash court
-  - volleyball court
-  - centre court
-  - clay court
-  - grass court
-  - hard court
-  - indoor court
-  - may day
-
 # Part 3: reading and qualifying
 wait_for_second_hours: 0    # no settling wait (owner, Oct 16 2026): two outlets are read (min_outlets) before an express story qualifies
 normal_route_outlets: 3     # a story with this many independent outlets is not express: the normal rule decides
 own_voice_lanes: [sport]    # lanes where the outlet's own voice may stand for a named origin (a match result)
-# an attribution containing one of these is another media house, not an origin ("Bloomberg reported", "according to Mint")
-media_words: [reuters, bloomberg, pti, ani, ians, afp, ap, bbc, cnbc, ndtv, mint, moneycontrol, livemint, "economic times",
-  "times of india", "hindustan times", "hindu", "indian express", news, report, reports, reported, sources, media, tweet, post]
-
 # Part 5 (owner, Oct 13 2026): the bar of significance and the strict order.
 # After the lane, a second question: does a reader of a national app NEED this? (express.SIG_PROMPT: "india", "world" or
 # "none"; asked twice, second time reversed, both must agree, unsure = none). Only "india" and "world" are embedded and read.
