@@ -64,17 +64,38 @@ def _same_act(pi, pj) -> bool:
     return bool(pi.nums & pj.nums) or bool(pi.names & pj.names and len(pi.roots & pj.roots) >= 0.5 * small)
 
 
-def pick_news(items: list[dict]) -> list[int]:
-    return _pick(items)[0]
+def pick_news(items: list[dict], titles: list[str] | None = None) -> list[int]:
+    return _pick(items, titles)[0]
 
 
-def lead_news(items: list[dict]) -> list[int]:
+def _title_words(text: str) -> set[str]:
+    from .relate import Profile
+    p = Profile(text or "")
+    return set(p.roots) | {w.lower() for n in p.names for w in str(n).split()}
+
+
+def head_support(items: list[dict], titles: list[str] | None) -> dict[int, int]:
+    """For each statement, how many of the outlets' own headlines share 2+ content words with it. The headlines are what the
+    outlets themselves say the story is; a statement no headline echoes is setting or detail, not the news (Oct 27 2026,
+    story 46081: a rainfall figure folded from four outlets led a story whose seven headlines all said "4 districts declared
+    drought-hit"). Empty when fewer than 2 headlines can be read (e.g. Hindi only)."""
+    words = [w for w in (_title_words(t) for t in titles or []) if len(w) >= 2]
+    if len(words) < 2:
+        return {}
+    out = {}
+    for i in items:
+        iw = _title_words(i.get("text") or "")
+        out[i["id"]] = sum(1 for w in words if len(w & iw) >= 2)
+    return out
+
+
+def lead_news(items: list[dict], titles: list[str] | None = None) -> list[int]:
     """The facts the lead is written from: the news, and the fact of the day when it is a different one."""
-    out, today = _pick(items)
+    out, today = _pick(items, titles)
     return out[:1] + ([today] if today is not None else [])
 
 
-def _pick(items: list[dict]) -> tuple[list[int], int | None]:
+def _pick(items: list[dict], titles: list[str] | None = None) -> tuple[list[int], int | None]:
     """The ids of the news, best first (the first is THE news). Code only. Ranked:
       not old    never told as the past ("previously", an older year)
       2 outlets  a fact two or more outlets tell over a one-outlet line, whatever its verb
@@ -95,6 +116,12 @@ def _pick(items: list[dict]) -> tuple[list[int], int | None]:
     if not core:
         return [], None
     prof = {i["id"]: Profile(i["text"]) for i in core}
+    hs = head_support(core, titles)
+    hmax = max(hs.values(), default=0)
+
+    def topical(i) -> bool:
+        """Echoed by at least half as many headlines as the most echoed statement (all pass when headlines say too little)."""
+        return hmax < 2 or hs.get(i["id"], 0) >= (hmax + 1) // 2
     from . import events
     verbs = {i["id"]: ({events.verb_lemma(i["text"])} - {None}) for i in core}
     dates = [d for d in (_start(i) for i in core) if d]
@@ -131,7 +158,7 @@ def _pick(items: list[dict]) -> tuple[list[int], int | None]:
         p = prof[i["id"]]
         # one outlet's line never leads over a fact two or more outlets tell (Oct 9 2026, story 13058: "Nana
         # Patekar ... won millions of hearts", one outlet, led a story four outlets told; "won" read as an act)
-        return (recent > 0, min(c, 2), act_score(i["text"]), c, recent, central(i), len(p.names) + len(p.nums),
+        return (recent > 0, topical(i), min(c, 2), act_score(i["text"]), c, recent, central(i), len(p.names) + len(p.nums),
                 i.get("n_articles") or 0, -i["id"])
     ranked = sorted(core, key=key, reverse=True)
     out = [i["id"] for i in ranked]
@@ -141,7 +168,7 @@ def _pick(items: list[dict]) -> tuple[list[int], int | None]:
     if newest is not None and day(first) != newest:
         def same_act(j) -> bool:
             return bool(verbs[first["id"]] & verbs[j["id"]]) and _same_act(prof[first["id"]], prof[j["id"]])
-        today = next((j for j in ranked[1:] if day(j) == newest and key(j)[:2] >= key(first)[:2] and act_score(j["text"]) > 0
+        today = next((j for j in ranked[1:] if day(j) == newest and key(j)[:3] >= key(first)[:3] and act_score(j["text"]) > 0
                       and not same_act(j)), None)
         if today is not None:
             out.remove(today["id"])

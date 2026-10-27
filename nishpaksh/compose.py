@@ -315,7 +315,7 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
     banned = {w.lower() for i in items.values() for ws in i["framing"].values() for w in ws if len(w) >= 4}
     # the news, chosen once by code (news.py): the lead and the headline are written from it
     from . import importance as imp, news as news_, threads
-    news_ids = news_.pick_news(list(items.values()))
+    news_ids = news_.pick_news(list(items.values()), [a["title"] for a in full_arts.values() if a.get("lang") == "en"])
     by_support = sorted(items.values(), key=lambda i: (-i["n_sources"], -i["n_articles"], i["id"]))
     summary = [items[n]["text"] for n in news_ids[:1]] + [i["text"] for i in by_support if i["id"] not in news_ids[:1]]
     from .editions import link_candidate, parent_pages
@@ -870,9 +870,10 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     payload["trimmed"] = trim_to_cap(payload)         # a very large story: the best-supported statements are written
     unify_payload(payload)                  # one spelling per name, before the writer sees the statements
     from .news import pick_news
-    payload["news"] = pick_news(ordered_items(payload))[:3]   # again: folding can remove a statement
+    en_titles = [x["title"] for x in payload.get("sources") or [] if x.get("lang") == "en" and x.get("title")]
+    payload["news"] = pick_news(ordered_items(payload), en_titles)[:3]   # again: folding can remove a statement
     from .news import lead_news
-    payload["lead"] = lead_news(ordered_items(payload))       # the news, and the fact of the day if another
+    payload["lead"] = lead_news(ordered_items(payload), en_titles)       # the news, and the fact of the day if another
     parents = [x["story_id"] for x in payload.get("parents") or []]
     if parents and not follow_up_ok(store, router, story_id, payload, parents):
         return _outcome(story_id, "not a follow-up yet")

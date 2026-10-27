@@ -92,6 +92,12 @@ the writer its best-supported ones; context lines first, then one-report core li
 `payload["also"]` (tag "cap"). `payload.trimmed` counts them. (3) The slim story files (`feed.slim_payload`) never carried `narrative.other_coverage`,
 so the site's "Also in these reports" dropdown could not show since it was built (13 Oct); fixed, visible from the next feed export.
 Untuned: REVIEW_SHARE, MAX_WRITTEN. Tests: `tests/test_trim_cap.py`.
+**The news follows the outlets' headlines (Oct 27 2026, owner: story 46081 led with a rainfall figure under "150 work days").** Root: `news._pick`
+ranked by how many outlets tell a fact; folding (`fold_covered`) had piled four outlets' rainfall lines onto one setting statement, so it out-counted
+the actual news (4 districts declared drought-hit, which all seven headlines said). Now `news.head_support`: for each statement, how many of the
+outlets' own English headlines share 2+ content words with it (`compose` passes `payload.sources` titles); a statement echoed by fewer than half as many
+headlines as the most echoed one is not `topical` and ranks below every topical one (also for the lead's "fact of the day"). Fewer than 2 readable
+headlines (Hindi only) = no change. Untuned: the half threshold. Tests: `tests/test_news_headlines.py` (this story's real lines).
 **Model check (Oct 26 2026, owner: "how can we check models get loaded, not just NLI, rather than waiting for runs"):** `tools/model_check.py`
 (workflow `audit`, tool `model_check`, diagnostics kind 'model_check') calls the pipeline's OWN entry points (nli, embed, nlp, lemminflect,
 langcheck, bodies/Wikidata, coref, focus/YuNet, HF cache) and reports ok / fallback / seconds per component; a TF-IDF embedding or the small
