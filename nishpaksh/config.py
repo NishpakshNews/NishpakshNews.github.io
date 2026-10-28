@@ -129,6 +129,7 @@ class Settings:
     stale_after_hours: float = 36          # a story whose newest source is older than this is not written (old news)
     followup_min_new: int = 1              # a follow-up needs this many new non-minor core statements (it was 4 or half the parent's,
                                            # carried by 3 outlets, or a major development, until Oct 27 2026)
+    followup_min_new_minor: int = 2        # ...or this many new one-article statements (owner, Oct 28 2026: they were never judged)
 
     # extraction: only stories covered by >= 2 independent sources; at most this many articles each
     max_extract_per_story: int = 8

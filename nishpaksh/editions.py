@@ -256,6 +256,13 @@ def _core_major(p: dict) -> list[dict]:
             and i.get("kind") != "relation"]
 
 
+def _core_all(p: dict) -> list[dict]:
+    """Every statement of the story's own event, one-article ones included (owner, Oct 28 2026: a development that only
+    single articles carry yet was never judged, so 'nothing new yet' held back 7 of 9 ready stories)."""
+    return [i for i in _all_items(p) if (i.get("role") or "core") == "core" and i.get("kind") != "relation"
+            and i.get("id") is not None]
+
+
 def _classify(router: Router, parent: dict, items: list[dict]) -> dict[int, dict] | None:
     pp = parent["payload_en"]
     olds = [i for i in _all_items(pp) if i.get("kind") != "relation" and i.get("id") is not None]
@@ -321,7 +328,7 @@ class FollowUp:
     told: list = field(default_factory=list)
 
 
-RECORD_VERSION = 2      # 1: an unanswered statement was stored as "not new"; 2: stored as unjudged ("new": None)
+RECORD_VERSION = 3      # 1: an unanswered statement was stored as "not new"; 2: stored as unjudged ("new": None); 3: one-article statements are judged too (Oct 28 2026)
 
 
 def judge_follow_up(store: Store, router: Router | None, sid: int, payload: dict, parent_ids: list[int],
@@ -337,7 +344,7 @@ def judge_follow_up(store: Store, router: Router | None, sid: int, payload: dict
     if not parents:
         return FollowUp("own")     # the archive answered "no such page" for every parent: judged as a story of its own
     pid, parent = max(parents.items(), key=lambda kv: str(kv[1].get("written_at") or ""))
-    items = _core_major(payload)
+    items = _core_all(payload)
     an, ed = _edition(store, sid)
     key = hashlib.sha256(json.dumps([pid, sorted(i["id"] for i in items)]).encode()).hexdigest()[:16]
     rec = ed.get("followup") or {}
@@ -351,12 +358,14 @@ def judge_follow_up(store: Store, router: Router | None, sid: int, payload: dict
     judged = {int(k): v for k, v in (rec.get("judged") or {}).items()}
 
     new = [i["id"] for i in items if (judged.get(i["id"]) or {}).get("new") is True]
+    minor_ids = {i["id"] for i in items if i.get("minor")}
+    new_minor = [x for x in new if x in minor_ids]
     told = [i["id"] for i in items if (judged.get(i["id"]) or {}).get("new") is False
             and (judged[i["id"]].get("same_as") is not None) and (judged[i["id"]].get("updates") is None)]
     need = SETTINGS.followup_min_new
     written = _parse(parent.get("written_at"))
     same_day = written is not None and ist_date(written) == ist_date(now)
-    ok = len(new) >= need
+    ok = (len(new) - len(new_minor)) >= need or len(new_minor) >= SETTINGS.followup_min_new_minor
     major = sorted({judged[x]["major"] for x in new if judged[x].get("major")})
     rec.update(new=len(new), told=len(told), unjudged=sum(1 for i in items if (judged.get(i["id"]) or {}).get("new") is None),
                major=major, same_day=same_day, ok=ok, at=now.isoformat(timespec="minutes"))

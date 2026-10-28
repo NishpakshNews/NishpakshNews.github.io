@@ -85,6 +85,25 @@ def test_nothing_new_waits_and_the_desk_is_told_when(store):
     assert rec["ok"] is False and rec["at"]            # desk.ready skips it until a new outlet joins
 
 
+def test_new_statements_only_single_articles_carry_are_judged_and_two_are_enough(store):
+    """Owner, Oct 28 2026: a development that one-article statements alone carry was never judged ('0 new of 0')."""
+    _publish_parent(store)
+    _candidate(store, 14)
+    p = _payload(PARENT[:2] + ["Traffic was diverted", "Rescue work ended"], minor=True)
+    fu = editions.judge_follow_up(store, _router(store), 14, p, [1], NOW)
+    assert fu.state == "judged" and fu.new == [3, 4] and fu.ok
+    assert fu.told == [1, 2]            # a one-article repeat of the parent is left out like any other
+
+
+def test_one_single_article_statement_alone_is_not_enough(store):
+    _publish_parent(store)
+    _candidate(store, 15)
+    p = _payload(PARENT[:2], minor=True)
+    p["contested"].append(_item(3, "Traffic was diverted", minor=True))
+    fu = editions.judge_follow_up(store, _router(store), 15, p, [1], NOW)
+    assert fu.new == [3] and not fu.ok
+
+
 def test_the_judgement_is_kept_per_statement_set(store):
     _publish_parent(store)
     _candidate(store, 13)
