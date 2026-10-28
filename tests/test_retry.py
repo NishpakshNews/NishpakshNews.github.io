@@ -89,6 +89,6 @@ def test_only_a_coverage_shortfall_is_retried(monkeypatch):
     assert len(calls) == 1
 
 
-def test_no_retry_when_the_run_is_nearly_over(monkeypatch):
-    ok, calls, stats = _run(monkeypatch, [SHORT(0.8), SHORT(0.75)], [1, 2], until=time.time() + 60)
+def test_no_retry_when_the_run_time_is_over(monkeypatch):
+    ok, calls, stats = _run(monkeypatch, [SHORT(0.8), SHORT(0.75)], [1, 2], until=time.time() - 1)
     assert len(calls) == 1 and "retries" not in stats
