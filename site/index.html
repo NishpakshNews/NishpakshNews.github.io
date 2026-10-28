@@ -273,6 +273,15 @@
   @keyframes rtopen { 0%, 12% { max-width: 0; margin-left: 0; opacity: 0; }
                       26%, 90% { max-width: 200px; margin-left: 9px; opacity: 1; }
                       100% { max-width: 200px; margin-left: 9px; opacity: 0; } }
+  /* new stories while the app is open (owner, Oct 29 2026): the deck is not moved; a pill at the bottom of the card, above the
+     sections bar, and a dot on the refresh button. Tapping either reads the feed again. Same place as the "Up to date" pill. */
+  .ntip { position: fixed; left: 50%; bottom: 96px; z-index: 20; display: flex; align-items: center; gap: 9px; height: 44px; padding: 0 20px; border: 0;
+          border-radius: 999px; background: #1f2550; color: #fff; font: 800 16px/1 "Nunito", var(--body); white-space: nowrap; cursor: pointer;
+          box-shadow: 0 8px 22px rgba(22,26,56,0.28); opacity: 0; visibility: hidden; transform: translate(-50%, 14px);
+          transition: opacity 220ms ease, transform 300ms var(--ease), visibility 0s linear 300ms; }
+  .ntip.on { opacity: 1; visibility: visible; transform: translate(-50%, 0); transition-delay: 0s; }
+  html.hi .ntip { font-size: 17px; }
+  .rbtn.dot::after { content: ""; position: absolute; top: 2px; right: 4px; width: 7px; height: 7px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px #2f3a72; }
   @keyframes rtfade { 0% { opacity: 0; } 9%, 91% { opacity: 1; } 100% { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .rtip.on { animation: rtfade 3s both; transform: translate(-50%, 0); } .rtip.on .tx { animation: none; max-width: 200px; margin-left: 9px; opacity: 1; } }
   #sheet.open .hbox .meta { opacity: .92; }
@@ -1421,6 +1430,7 @@
 </div>
 <!-- the refresh tooltip lives out here, not inside #sheet: #sheet is visibility:hidden until an article opens, and a child cannot show through that -->
 <div class="rtip" id="rtip" role="status" aria-live="polite"></div>
+<button type="button" class="ntip" id="ntip" aria-live="polite"></button>
 <script>
 "use strict";
 const SUPABASE_URL = "https://mmjojuccdgmmiwyzypvh.supabase.co";
@@ -1494,7 +1504,7 @@ const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;      // the long names
 const GLYPH = {established: "✓", developing: "…", partial: "½", single: "1", disputed: "≠", false: "✕", unverified: "?"};
 const BAR2ST = {e: "established", v: "developing", p: "partial", o: "single", d: "disputed", r: "false", u: "unverified"};
 Object.assign(T.en, {
-  updated: "Updated",
+  updated: "Updated", newStories: "New stories",
   unseenCount: (a, b) => [a ? `${a} new` : "", b ? `${b} updated` : ""].filter(Boolean).join(" · "),
   howTo: "How to read the colours", backed: "Independent sources, in colour", gsum: (e, n) => `${e} of ${n} statements confirmed`,
   kShort: {established: "Confirmed", developing: "Developing", unverified: "Not confirmed", partial: "Partly confirmed", single: "Single source", disputed: "Disputed", false: "False"},
@@ -1519,7 +1529,7 @@ Object.assign(T.en, {
     h3: "Tap a colour to see why.", p3: "The key sits under every headline and stays pinned as you read. Tap a colour to light up just those sentences."}
 });
 Object.assign(T.hi, {
-  updated: "अपडेट",
+  updated: "अपडेट", newStories: "नई खबरें",
   unseenCount: (a, b) => [a ? `${a} नई` : "", b ? `${b} अपडेट` : ""].filter(Boolean).join(" · "),
   howTo: "रंग कैसे पढ़ें", backed: "स्वतंत्र स्रोत, रंगों में", gsum: (e, n) => `${n} में से ${e} कथन पुष्ट`,
   kShort: {established: "पुष्ट", developing: "विकसित", unverified: "अपुष्ट", partial: "आंशिक पुष्टि", single: "एक ही स्रोत", disputed: "विवादित", false: "असत्य"},
@@ -2489,6 +2499,7 @@ async function openStory(id, fromCard, opts = {}) {
   const card = cards.find(c => String(c.id) === id);
   openId = id;
   clearTimeout(dwellTimer); clearTimeout(pillTimer);
+  ntip.classList.remove("on");
   { const oc = card || (cardCache[lang] || []).find(c => String(c.id) === id); if (oc) markSeen(oc, true); }
   try { if (!tidied) tidy(); } catch (e) { /* not ready yet (a story link at start-up) */ }   // design pass: the article's header is the tidied home header
   sheet.classList.add("hasrail");      // room for the section names from the start; taken back if the article has none
@@ -2545,6 +2556,7 @@ function closeStory(animate = true) {
   tkLeave();                       // the floating button fades and the conversation closes with the article
   const id = openId;
   openId = null;
+  syncNew();
   watchCurrent();
   collapseHint(); spot = null; paintSpot(); $("pin").classList.remove("on");
   document.title = "Nishpaksh · निष्पक्ष";
@@ -2921,6 +2933,7 @@ new ResizeObserver(() => { const h = slotHeight(); if (h !== lastH) { lastH = h;
 // when the network returns, and every 3 minutes while it is looked at (a few hundred bytes: newerThanFeed).
 let hiddenAt = 0, freshWhileAway = false, freshTimer = null;
 function refreshDeck() {
+  clearNew();
   const keep = cards[current] && cards[current].id;
   delete cardCache.en; delete cardCache.hi;
   if (openId) return;                       // an open article is not moved under the reader: the deck is read again on closing
@@ -2933,12 +2946,33 @@ function refreshDeck() {
 // that finds none makes it again.
 const rtip = $("rtip");
 let rtipTimer = null;
+// the bottom edge of a pill that sits over the card, above the sections bar (and the audio player when it is open). The measure is
+// only trusted when it lands in the lower half of the screen: a bar that is hidden or not laid out yet gave a huge value, which
+// put the pill up over the header and the brand name (owner, Oct 29 2026).
+function placeTip(el, lift) {
+  const barTop = $("sections").getBoundingClientRect().top;
+  let b = Math.round(innerHeight - barTop + lift + (pbar.classList.contains("on") ? 68 : 0));
+  if (!(barTop > innerHeight * 0.5) || b > innerHeight * 0.5) b = 96 + (pbar.classList.contains("on") ? 68 : 0);
+  el.style.bottom = `${b}px`;
+}
+const ntip = $("ntip");
+let newWaiting = false;
+function showNew() {            // stories arrived while the deck is in use: say so, and leave the order alone
+  newWaiting = true; rbtn.classList.add("dot");
+  ntip.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>${esc(T[lang].newStories)}`;
+  syncNew();
+}
+function syncNew() {            // visible only on the deck, never over an article
+  if (newWaiting && !openId) placeTip(ntip, 62);
+  ntip.classList.toggle("on", newWaiting && !openId);
+}
+function clearNew() { newWaiting = false; rbtn.classList.remove("dot"); ntip.classList.remove("on"); }
+ntip.addEventListener("click", () => manualRefresh());
 function showRefreshTip(msg) {
   if (openId) return;
   rtip.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span class="tx">${esc(msg)}</span>`;
   // measured from the top of the sections bar (card foot, 24px above the bar, then 46px up into the card), above the audio player when it is open
-  const barTop = $("sections").getBoundingClientRect().top;
-  rtip.style.bottom = `${Math.round(innerHeight - barTop + 70 + (pbar.classList.contains("on") ? 68 : 0))}px`;
+  placeTip(rtip, 70);
   rtip.classList.remove("on"); void rtip.offsetWidth; rtip.classList.add("on");      // pressed again: it comes again
   clearTimeout(rtipTimer); rtipTimer = setTimeout(() => rtip.classList.remove("on"), 3000);
 }
@@ -2966,6 +3000,7 @@ let refreshing = false;
 async function manualRefresh() {
   if (refreshing || openId) return;
   refreshing = true; rbtn.classList.add("spin");
+  clearNew();
   takeSeenSnapshot();
   const t0 = Date.now();
   let outcome = null;                                     // "new", "none", or null: it failed, or there was nothing to compare with
@@ -3018,7 +3053,7 @@ setInterval(async () => {
   if (document.hidden || openId || !cardCache[lang] || !cardCache[lang].length) return;
   try {
     const newest = Math.max(...cardCache[lang].map(c => utcMs(c.at)));
-    if ((await newerThanFeed(lang, newest)).length) refreshDeck();
+    if ((await newerThanFeed(lang, newest)).length) showNew();      // not refreshDeck(): the deck is not rearranged while it is read
   } catch (e) { /* try again in 3 minutes */ }
 }, 3 * 60000);
 // "x min ago" stays live while the page is open (owner, Oct 11 2026: it stopped at what it said when the card was made)
