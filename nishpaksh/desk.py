@@ -254,15 +254,15 @@ def _write_with_retries(store: Store, router: Router, sid: int, until: float | N
     draft is continued, never started again (publish_story resumes it), and the failed try has lowered the bar one step
     (narrative.publish_bar; the first draft's bar stays 80%). Basic rules, a retry is made only while:
     the story is short on coverage (a lower bar can help it), the bar can still go lower than the one just tried
-    (not at the floor, and not after a model error that used no try), it has had fewer than RUN_TRIES tries, and the run's
-    time is not over (the desk's own rule for starting work). Retries are counted apart from the desk's tries
+    (not at the floor, and not after a model error that used no try), it has had fewer than RUN_TRIES tries (the run may overrun its
+    time for this: owner, Oct 28 2026, pace matters more than the clock). Retries are counted apart from the desk's tries
     (`stats["retries"]`), so they do not crowd other stories out. When the tries are used the draft is kept and the story
     waits for the next run, as before."""
     from . import compose
     from .narrative import publish_bar
     ok = compose.publish_story(store, router, sid)
     tries = 1
-    while not ok and tries < RUN_TRIES and not (until and time.time() > until):
+    while not ok and tries < RUN_TRIES:
         out = compose.LAST_OUTCOME
         short = out.get("detail") or {}
         if out.get("outcome") != "written short" or short.get("why") != "coverage":
