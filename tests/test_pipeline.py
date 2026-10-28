@@ -2169,8 +2169,12 @@ def test_a_short_article_is_finished_next_time_not_thrown_away(store, monkeypatc
             if "Write the story below as ONE news article" in prompt:
                 calls.append("draft")
             return super().generate(model, prompt, json_mode, grounded)
-    # below 80% an article that reads badly is not published (owner, Oct 28 2026): this tiny one has a one-sentence
-    # paragraph, so the try ends "written short" with the reason, and its draft is kept
+    # below 80% an article that reads badly is not published (owner, Oct 28 2026): here the tiny article carries all five
+    # statements, so with the 80% check made to say no it relies on the lowered bar; it has a one-sentence paragraph,
+    # so the try ends "written short" with the reason, and its draft is kept
+    real_ok = narrative.essay_ok
+    monkeypatch.setattr(narrative, "essay_ok", lambda nar, payload, bar=None: real_ok(nar, payload, bar)
+                        and (bar is not None and bar < narrative.PUBLISH_MIN - 1e-9))
     assert not compose.publish_story(store, _router(store, Fills()), sid)
     assert compose.LAST_OUTCOME["outcome"] == "written short" and "coherence guard" in compose.LAST_OUTCOME["detail"]["why"]
     assert store.rows(select(published)) == []

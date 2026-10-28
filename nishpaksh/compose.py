@@ -963,10 +963,12 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     # an article may publish at a LOWERED bar (below 80%) only if it reads well (owner, Oct 28 2026): lone one-sentence
     # paragraphs are first joined into their neighbour of the same section by code (no sentence changed), then no
     # one-sentence paragraph (except the lead), cut-off sentence or repeated run may remain. The 80% bar is untouched.
-    lowered = bar < PUBLISH_MIN - 1e-9
+    # "published at a lowered bar" = it passes the lowered bar but would not pass 80%; an article that carries 80% anyway
+    # is a normal article, whatever its earlier failed tries (they may have been a refused model, not a short draft)
+    lowered = bool(essay_good) and bar < PUBLISH_MIN - 1e-9 and not essay_ok(nar, payload, PUBLISH_MIN)
     guard: list[str] = []
     joined = 0
-    if essay_good and lowered:
+    if lowered:
         nar["paragraphs"], nar["section_keys"], joined = merge_lone_paragraphs(nar["paragraphs"], nar.get("section_keys") or [])
         guard = lowered_bar_problems(nar["paragraphs"])
         if joined:
