@@ -36,22 +36,12 @@ test("a changed version goes back to the top with a pill", () => {
   const recs = { th1: rec(cs[0]), th2: rec(cs[1], { v: "t2" }) };
   const r = rankCards(cs, recs, verOf);
   assert.deepEqual(ids(r), [2, 1]);
-  assert.deepEqual(plain(cs[1].upd), { r: "established", n: 1 });
+  assert.deepEqual(plain(cs[1].upd), { r: "updated", n: 0 });
   assert.equal(r.counts.upd, 1);
 });
-test("more disputed lines wins over more established", () => {
-  const c = card(1, { at: "n", bar: { e: 3, d: 2 } });
-  rankCards([c], { th1: rec(c, { v: "old" }) }, verOf);
-  assert.deepEqual(plain(c.upd), { r: "disputed", n: 2 });
-});
-test("a different story id on the same thread is a follow-up", () => {
-  const c = card(7, { thread: "th1" });
+test("a different story id on the same thread (a follow-up) is updated too", () => {
+  const c = card(7, { thread: "th1", at: "n" });
   rankCards([c], { th1: rec(c, { i: 1, v: "old" }) }, verOf);
-  assert.equal(c.upd.r, "followup");
-});
-test("changed version with the same counts is a plain update", () => {
-  const c = card(1, { at: "n" });
-  rankCards([c], { th1: rec(c, { v: "old" }) }, verOf);
   assert.equal(c.upd.r, "updated");
 });
 test("annotation is reset on every call", () => {

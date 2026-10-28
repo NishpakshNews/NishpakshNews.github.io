@@ -1494,7 +1494,7 @@ const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;      // the long names
 const GLYPH = {established: "✓", developing: "…", partial: "½", single: "1", disputed: "≠", false: "✕", unverified: "?"};
 const BAR2ST = {e: "established", v: "developing", p: "partial", o: "single", d: "disputed", r: "false", u: "unverified"};
 Object.assign(T.en, {
-  updWhy: {followup: "New development", updated: "Updated", established: n => `${n} line${n > 1 ? "s" : ""} now established`, disputed: n => `${n} line${n > 1 ? "s" : ""} now disputed`},
+  updated: "Updated",
   unseenCount: (a, b) => [a ? `${a} new` : "", b ? `${b} updated` : ""].filter(Boolean).join(" · "),
   howTo: "How to read the colours", backed: "Independent sources, in colour", gsum: (e, n) => `${e} of ${n} statements confirmed`,
   kShort: {established: "Confirmed", developing: "Developing", unverified: "Not confirmed", partial: "Partly confirmed", single: "Single source", disputed: "Disputed", false: "False"},
@@ -1519,7 +1519,7 @@ Object.assign(T.en, {
     h3: "Tap a colour to see why.", p3: "The key sits under every headline and stays pinned as you read. Tap a colour to light up just those sentences."}
 });
 Object.assign(T.hi, {
-  updWhy: {followup: "नया घटनाक्रम", updated: "अपडेट", established: n => `${n} पंक्ति अब पुष्ट`, disputed: n => `${n} पंक्ति अब विवादित`},
+  updated: "अपडेट",
   unseenCount: (a, b) => [a ? `${a} नई` : "", b ? `${b} अपडेट` : ""].filter(Boolean).join(" · "),
   howTo: "रंग कैसे पढ़ें", backed: "स्वतंत्र स्रोत, रंगों में", gsum: (e, n) => `${n} में से ${e} कथन पुष्ट`,
   kShort: {established: "पुष्ट", developing: "विकसित", unverified: "अपुष्ट", partial: "आंशिक पुष्टि", single: "एक ही स्रोत", disputed: "विवादित", false: "असत्य"},
@@ -1559,15 +1559,6 @@ function readSeen(now = Date.now()) {
   rows.sort((a, b) => Math.max(b[1].s || 0, b[1].o || 0) - Math.max(a[1].s || 0, a[1].o || 0));
   return Object.fromEntries(rows.slice(0, SEEN_MAX));
 }
-// what changed since the reader last saw the story; null when it is just unseen
-function whyUpdated(c, rec) {
-  if (String(rec.i) !== String(c.id)) return {r: "followup", n: 0};
-  const b = c.bar || {}, o = rec.b || [], k = ["e", "v", "p", "o", "d", "r", "u"];
-  const dd = (b.d || 0) - (o[4] || 0), de = (b.e || 0) - (o[0] || 0);
-  if (dd > 0) return {r: "disputed", n: dd};
-  if (de > 0) return {r: "established", n: de};
-  return {r: "updated", n: 0};
-}
 // tier 0 unseen or updated, 1 seen not opened, 2 opened; inside a tier the order given stays (newest first)
 function rankCards(cards, records, verOf) {
   const tiers = [[], [], []], counts = {fresh: 0, upd: 0};
@@ -1576,7 +1567,7 @@ function rankCards(cards, records, verOf) {
     c.upd = null;
     let t = 0;
     if (rec) {
-      if (rec.v !== verOf(c)) { c.upd = whyUpdated(c, rec); counts.upd++; }
+      if (rec.v !== verOf(c)) { c.upd = {r: "updated", n: 0}; counts.upd++; }
       else t = rec.o ? 2 : 1;
     }
     if (t === 0 && !c.upd) counts.fresh++;
@@ -1773,8 +1764,7 @@ function edgeHtml(b) {
 const UPD_ICON = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-8-8"/><path d="M9.5 1.5 12.5 4 9.5 6.5"/></svg>`;
 function updPill(u) {
   if (!u) return "";
-  const w = T[lang].updWhy[u.r], txt = typeof w === "function" ? (u.n ? w(u.n) : T[lang].updWhy.updated) : w;
-  return `<span class="upd">${UPD_ICON}${esc(txt)}<i class="gs"></i></span>`;
+  return `<span class="upd">${UPD_ICON}${esc(T[lang].updated)}<i class="gs"></i></span>`;
 }
 function kickerHtml(b, u) {     // the best grade the story has, then disputed / false when there are any
   const t = T[lang].kShort, n = k => b[k] || 0;
