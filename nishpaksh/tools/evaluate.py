@@ -206,6 +206,7 @@ def systems_audit(pages: list[dict]) -> dict:
     return {"texts": texts, "counts": dict(seen),
             "top_disagreements": {k: [[w, d, n] for (w, d), n in c.most_common(25)] for k, c in words.items()},
             "runtime_counts": auditcount.snapshot(),
+            "titles_examples": __import__("nishpaksh.titlesys", fromlist=["x"]).snapshot_examples(),
             "note": "system:name = the analyser calls it a name and the list called it common (or the list has no entry); read the "
                     "words: a common word the analyser called a name, or a name it called common, is the system being wrong."}
 

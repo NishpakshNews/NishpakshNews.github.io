@@ -90,7 +90,11 @@ def _clean(phrase: str, text: str | None = None, at: int = 0) -> str:
         words, nn = words[:-1], nn[:-1]
     if words and words[-1].endswith("'s"):
         words[-1] = words[-1][:-2]
-    return " ".join(words)
+    listed = " ".join(words)
+    if text is not None:                   # the analyser's PERSON entity answers first; the title list above is the fallback
+        from . import titlesys
+        return titlesys.compare_name(titlesys.person_name(phrase, text, at), listed)
+    return listed
 
 
 def _candidates(items: list[dict]) -> list[str]:

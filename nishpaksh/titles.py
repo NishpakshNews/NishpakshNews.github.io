@@ -208,6 +208,15 @@ def title_start(prefix: str, max_words: int = 7, extra: frozenset | set = frozen
     return take[0][1]
 
 
+def title_start_in(text: str, a: int, max_words: int = 7, extra: frozenset | set = frozenset(),
+                   extra_person: frozenset | set = frozenset()) -> int:
+    """`title_start` for the name that starts at `a` in `text`: the analyser answers first (titlesys.py), the title list when it
+    cannot, and every disagreement is counted (owner, Oct 28 2026)."""
+    from . import titlesys
+    listed = title_start(text[:a], max_words, extra, extra_person)
+    return titlesys.compare_title(titlesys.title_start(text, a), listed, text, a)
+
+
 def title_before(text: str, name: str, max_words: int = 7) -> str:
     """The title phrase written directly before `name` in `text` ("Assam Chief Minister" before "Himanta Biswa
     Sarma"), or "". See `title_start` for how the phrase is found."""
@@ -215,8 +224,9 @@ def title_before(text: str, name: str, max_words: int = 7) -> str:
     if not m:
         return ""
     prefix = m.group(1)
-    start = title_start(prefix, max_words)
-    return prefix[start:].strip()
+    a = m.end(1)
+    start = title_start_in(text, a, max_words)
+    return text[start:a].strip()
 
 
 _OPENERS = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "january", "february",

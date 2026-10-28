@@ -130,7 +130,7 @@ def shorten_names(paragraphs: list[list[dict]], speakers: list[str] | tuple = ()
             # the title written in front of the name, taken WHOLE or not at all (owner, Oct 12 2026: a title of
             # the form \"Leader of Opposition\" lost only its end and read \"Lok Sabha Leader of Gandhi\")
             prefix = t[:a]
-            at = _titles.title_start(prefix, extra=TITLES, extra_person=PERSON_TITLES)
+            at = _titles.title_start_in(t, a, extra=TITLES, extra_person=PERSON_TITLES)
             if at < len(prefix) and re.search(r"(?i)\bthe\s+$", prefix[:at]):
                 at = re.search(r"(?i)\bthe\s+$", prefix[:at]).start()
             at = max(at, last)
