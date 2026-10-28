@@ -567,10 +567,12 @@
   .s.partial { --sc: var(--bar-p); --st: var(--par); }
   .s.disputed { --sc: var(--bar-d); --st: var(--dis); }
   .s.false { --sc: var(--bar-r); --st: var(--fal); }
-  .essay .s.struck, .card .text .s.struck { color: #8a8d91; background: transparent; text-decoration: line-through;
-                                            text-decoration-color: #8a8d91; }
+  /* a struck line looks the same wherever it stands: essay, quote, tile, lead, card (the tile / quote wash needs --sc,
+     which a struck line does not have, so it was left plain there) */
+  .s.struck, .tile .s.struck, .quote .s.struck, #sheet[data-spot] .s.struck {
+    color: #8a8d91; background: transparent; box-shadow: none; text-decoration: line-through; text-decoration-color: #8a8d91; }
   .updates .uline { margin: 0 0 8px; }
-  .essay .s.struck[data-struck] { cursor: pointer; }
+  .s.struck[data-struck] { cursor: pointer; }
   .updates .uline.flash .s { animation: npflash 1400ms ease; }
   /* "Latest in this story" (owner, Oct 25 2026, design "2e"): a thread rail between the colour key and the headline card.
      A node and a line run from the newest follow-up down to this article's card; no box, the card is not split. */
@@ -1574,6 +1576,7 @@ function api(path, ms = 12000) {
 /* ---------- data: the feed first, Supabase if the feed is missing ---------- */
 let feedNonce = "";           // set by the refresh button: a new address, so no cache answers with an older feed
 const cardCache = {};          // lang -> every card (one per thread, newest first); the deck shows a section's first MAX_CARDS
+const storyVer = new Map();      // id -> the version its cached copy was asked for
 const storyCache = new Map();  // id -> Promise<row|null>
 
 function cardText(paras, keys, limit = 9) {       // as nishpaksh/feed.py _card_text: in the page's section order
@@ -1656,7 +1659,7 @@ async function loadCards(l, feedOnly = false) {      // feedOnly (the refresh bu
     const rows = await api(`published?select=${ROW_SELECT}&order=updated_at.desc&limit=200`);
     stories = rows.filter(r => r.pe && r.pe.length).map(r => rowCard(r, l));
   }
-  for (const s of stories) knownAt.set(String(s.id), s.at);
+  for (const s of stories) knownAt.set(String(s.id), s.v ? s.at + "-" + s.v : s.at);
   // one card per thread: its latest development, newest first (owner, Oct 6 2026)
   const byThread = new Map();
   for (const s of stories) {
@@ -1681,7 +1684,12 @@ async function fromArchive(id) {
 }
 function loadStory(id) {
   id = String(id);
+  // the story's address carries a fingerprint of its colours: a changed colour or struck line is a new address, so a copy
+  // held from before (in this page or on the CDN) is never shown instead of it
+  const ver = knownAt.get(id) || "";
+  if (storyCache.has(id) && storyVer.get(id) !== ver) storyCache.delete(id);
   if (!storyCache.has(id)) {
+    storyVer.set(id, ver);
     const p = (async () => {
       // ?v=: the story's own stamp, else the minute. A file asked for before it reached the CDN is answered "missing"
       // from the cache for minutes; a new address is not (owner, Oct 11 2026). no-cache: a story's colours mature

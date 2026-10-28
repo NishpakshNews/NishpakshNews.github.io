@@ -136,6 +136,20 @@ def slim_payload(p: dict | None, who: list | None = None) -> dict | None:
     return out
 
 
+def _fingerprint(pe: dict) -> str:
+    """Changes whenever a line's colour or struck state does (the row's updated_at does not), so the site's story file
+    address changes with it and a colour change is never hidden behind a cached copy."""
+    import hashlib
+    bits = []
+    for para in (pe.get("narrative") or {}).get("paragraphs") or []:
+        for x in para or []:
+            parts = x.get("parts") or []
+            bits.append(",".join((p.get("class") or "") + ("!" if p.get("struck") else "") for p in parts)
+                        + "|" + (x.get("class") or "") + ("!" if x.get("struck") else ""))
+    bits.append(str(len(pe.get("updates") or [])))
+    return hashlib.md5(";".join(bits).encode()).hexdigest()[:8]
+
+
 def card(row: dict, lang: str) -> dict | None:
     pe = row.get("payload_en") or {}
     p = (row.get("payload_hi") if lang == "hi" else None) or pe
@@ -146,6 +160,7 @@ def card(row: dict, lang: str) -> dict | None:
         return None                       # a page still waiting for its first essay is not shown
     head = (row.get("headline_hi") if lang == "hi" else None) or row.get("headline_en") or p.get("headline")
     return {"id": row["story_id"], "at": row["updated_at"].isoformat(timespec="seconds"),
+            "v": _fingerprint(pe),
             "thread": pe.get("thread") or row["story_id"], "ongoing": bool(pe.get("parents")),
             "h": head, "paras": _card_text(paras, keys),
             "bar": bar_counts((pe.get("narrative") or {}).get("paragraphs")),
@@ -161,7 +176,7 @@ def words(paragraphs: list) -> int:
 
 
 MANIFEST = "manifest.json"
-FEED_VERSION = 4          # part of every article's stamp: raising it rewrites every article file once
+FEED_VERSION = 5          # part of every article's stamp: raising it rewrites every article file once
 NOT_SPEAKERS = {"", "article", "-", "none", "unknown", "reporter", "the article"}
 
 
