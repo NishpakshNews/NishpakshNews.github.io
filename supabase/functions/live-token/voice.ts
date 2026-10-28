@@ -67,6 +67,16 @@ export function voiceBlock(s: Style): string {
   ].join("\n");
 }
 
+/** The accent rule on its own, for the very top and the very bottom of the instruction. A line in the middle of a long
+ *  instruction (rules, an article, 40 headlines) is forgotten: the voice drifts to an American or British accent whenever it
+ *  starts, answers or carries on after listening. The model weighs the first and the last lines most, so the rule is there twice.
+ *  Empty for the neutral accent. */
+export function accentAnchor(s: Style, last = false): string {
+  if (s.accent !== "indian") return "";
+  const core = "Every word you say aloud must have an Indian accent: Indian English when you speak English, and Indian Hindi when you speak Hindi (English words inside Hindi are said the Indian way). This holds in EVERY turn: when you start, when you answer, when you carry on after the reader has spoken, and after you have used a function. Never slip into an American or British accent, not even for one word or one sentence.";
+  return last ? `FINAL REMINDER, the last thing you read, true for every turn: ${core}` : `YOUR ACCENT, THE FIRST RULE: ${core}`;
+}
+
 /** How much the model may "think" before it speaks (the secret LIVE_THINKING_CONFIG, JSON, for example {"thinkingBudget":0}).
  *  Long, multi-part questions are slow mostly because the model reasons silently first. The field names differ between Live
  *  models and are NOT verified for ours, so nothing is sent unless the secret is set; only these keys, with these types, are

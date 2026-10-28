@@ -14,7 +14,7 @@
 // is not in the recap is ignored (LiveProtocol.validId), exactly as for an article.
 
 import { clean, STATUS, status } from "./brief.ts";
-import { DEFAULT_STYLE, voiceBlock, type Style } from "./voice.ts";
+import { DEFAULT_STYLE, accentAnchor, voiceBlock, type Style } from "./voice.ts";
 
 export type RecapSentence = { t?: string; c?: string; id?: number | string };
 export type RecapStory = { id?: number | string; h?: string; n?: number; lead?: { t?: string; c?: string }[]; sx?: number };
@@ -144,6 +144,8 @@ export function buildRecapBrief(row: RecapRow, requested: string, style: Style =
 
   const dayWords = clean(row.day || p.day);
   const instruction = [
+    accentAnchor(style),
+    "",
     RULES,
     suicide ? SUICIDE : "",
     "",
@@ -155,6 +157,8 @@ export function buildRecapBrief(row: RecapRow, requested: string, style: Style =
     "",
     "STATUSES (what each label means)",
     ...Object.values(STATUS).map((v) => `- ${v.label}: ${v.means}.`),
-  ].join("\n");
+    "",
+    accentAnchor(style, true),
+  ].join("\n").trimEnd();
   return { instruction, sentenceIds: ids, headline: lang === "hi" ? "आज का सार" : "Daily recap", lang };
 }

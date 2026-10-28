@@ -6,7 +6,7 @@
 // (CLAUDE.md, "The models are simple"). Sentence ids are `p<paragraph>s<sentence>` (`p2s0.1` for a part of a
 // sentence), the same (p, s) numbering as nishpaksh/audio.py's timing files, so the site can light the sentence up.
 
-import { DEFAULT_STYLE, voiceBlock, type Style } from "./voice.ts";
+import { DEFAULT_STYLE, accentAnchor, voiceBlock, type Style } from "./voice.ts";
 
 export type Part = { text?: string; class?: string };
 export type Sentence = { text?: string; class?: string; sources?: number[]; parts?: Part[] };
@@ -201,6 +201,8 @@ export function buildBrief(story: Story, requested: string, style: Style = DEFAU
     : ["OTHER STORIES TODAY: (the list is not available right now, so you cannot open other articles; say so if asked)", ""];
 
   const instruction = [
+    accentAnchor(style),
+    "",
     RULES,
     (payload?.suicide || earlier.some((e) => e?.payload_en?.suicide || e?.payload_hi?.suicide)) ? SUICIDE : "",
     "",
@@ -217,7 +219,9 @@ export function buildBrief(story: Story, requested: string, style: Style = DEFAU
     ...othersBlock,
     "STATUSES (what each label means)",
     ...statusLines,
-  ].join("\n");
+    "",
+    accentAnchor(style, true),
+  ].join("\n").trimEnd();
   return { instruction, sentenceIds: ids, headline, lang };
 }
 

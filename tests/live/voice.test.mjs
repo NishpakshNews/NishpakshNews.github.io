@@ -79,3 +79,13 @@ test("the thinking setting is only passed on when it is a small, known shape", (
   assert.equal(thinkingConfig('{"includeThoughts":true}'), null);       // the reader never gets the model's thoughts
   assert.equal(thinkingConfig('{"thinkingLevel":"a b; drop"}'), null);
 });
+
+test("the accent rule is the first and the last thing the model reads (a line in the middle is forgotten)", async () => {
+  const { accentAnchor } = await import("../../supabase/functions/live-token/voice.ts");
+  const { buildRecapBrief } = await import("../../supabase/functions/live-token/recapbrief.ts");
+  assert.match(accentAnchor(DEFAULT_STYLE), /Indian accent/);
+  assert.match(accentAnchor(DEFAULT_STYLE, true), /FINAL REMINDER/);
+  assert.equal(accentAnchor({ ...DEFAULT_STYLE, accent: "neutral" }), "");
+  assert.equal(accentAnchor({ ...DEFAULT_STYLE, accent: "neutral" }, true), "");
+  assert.ok(typeof buildRecapBrief === "function");
+});

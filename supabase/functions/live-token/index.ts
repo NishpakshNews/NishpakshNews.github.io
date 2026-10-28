@@ -61,7 +61,7 @@ async function me(req: Request) {
   return data?.user || null;
 }
 
-async function mint(key: string, instruction: string, voice: string, kind: "article" | "recap"): Promise<string> {
+async function mint(key: string, instruction: string, voice: string, kind: "article" | "recap", languageCode: string | null = null): Promise<string> {
   const now = Date.now();
   const r = await fetch(GEMINI, {
     method: "POST",
@@ -78,7 +78,7 @@ async function mint(key: string, instruction: string, voice: string, kind: "arti
         model: `models/${MODEL}`,
         generationConfig: {
           responseModalities: ["AUDIO"],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } }, ...(languageCode ? { languageCode } : {}) },
           ...(THINKING ? { thinkingConfig: THINKING } : {}),
         },
         systemInstruction: { parts: [{ text: instruction }] },
@@ -250,7 +250,7 @@ async function begin(reader: string, story: number, brief: { instruction: string
   // spread over the keys by how many conversations the day has had; a key that refuses hands over to the next
   let token = "", last = "";
   for (let k = 0; k < KEYS.length && !token; k++) {
-    try { token = await mint(KEYS[(Number(data.n) + k) % KEYS.length], brief.instruction, style.voice, kind); }
+    try { token = await mint(KEYS[(Number(data.n) + k) % KEYS.length], brief.instruction, style.voice, kind, SEND_LANGUAGE_CODE ? languageCode(brief.lang, style.accent) : null); }
     catch (e) { last = String((e as Error).message || e); console.error("live-token mint failed:", last); }
   }
   tm.mint = Date.now() - t0;
