@@ -1814,6 +1814,9 @@ function whereHtml() {
   return `<div class="glass where" aria-hidden="true"><span class="wn">${names.map((x, i) => i === names.length - 1 ? `<b>${esc(x)}</b>` : esc(x)).join("<i>›</i>")}</span>` +
          `<span class="dots">${[0, 1, 2].map(k => `<u${k < d ? ' class="f"' : ""}></u>`).join("")}</span></div>`;
 }
+function deckSig() {
+  return [lang, fKey, secDepth(), ...cards.map(c => [c.id, c.at, c.h, (c.img || {}).src || "", JSON.stringify(c.bar || {}), JSON.stringify(c.paras || []).length, c.upd ? c.upd.r + c.upd.n : ""].join("|"))].join("\n");
+}
 function renderDeck(keepId) {
   if (!cards.length && fKey !== "all") {
     const t = T[lang];
@@ -1830,7 +1833,7 @@ function renderDeck(keepId) {
   // optimisation pass (owner, Oct 16 2026): a refresh with nothing new rebuilt every card, so their painted washes and
   // pictures were thrown away and redrawn (the smooth background went sharp, then came back) and the deck froze. The
   // same cards in the same language and order are left exactly as they are; only their "x min ago" is brought up to date.
-  const sig = [lang, fKey, secDepth(), ...cards.map(c => [c.id, c.at, c.h, (c.img || {}).src || "", JSON.stringify(c.bar || {}), JSON.stringify(c.paras || []).length, c.upd ? c.upd.r + c.upd.n : ""].join("|"))].join("\n");
+  const sig = deckSig();
   if (track.dataset.sig === sig && track.querySelector("a.card")) {
     track.querySelectorAll("a.card").forEach(a => { const c = cards.find(x => String(x.id) === a.dataset.id), g = a.querySelector(".ago"); if (c && g) g.textContent = ago(c.at); });
     if (keepId != null) { const k = cards.findIndex(c => String(c.id) === String(keepId)); if (k >= 0 && k !== current) jumpTo(k); }
@@ -1947,11 +1950,18 @@ track.addEventListener("error", e => {
 }, true);
 track.addEventListener("pointerdown", e => { const a = e.target.closest("a.card"); if (a) loadStory(a.dataset.id); }, {passive: true});
 
-async function showDeck(keepId, feedOnly = false) {
+async function showDeck(keepId, feedOnly = false, soft = false) {
   try {
     pool = await loadCards(lang, feedOnly);
     cards = sectionCards();
-    renderDeck(keepId);
+    // the refresh button (owner, Oct 29 2026): when the deck will change, it dips and comes back instead of snapping
+    if (soft && track.dataset.sig && deckSig() !== track.dataset.sig && !STILL.matches) {
+      track.classList.add("swap");
+      await new Promise(r => setTimeout(r, 180));
+      renderDeck(keepId);
+      void track.offsetWidth;
+      track.classList.remove("swap");
+    } else renderDeck(keepId);
     buildBar();
     return true;
   } catch (e) {
@@ -3036,7 +3046,7 @@ async function manualRefresh() {
     const keep = cards[current] && cards[current].id;
     const had = cardCache[lang] && cardCache[lang].length ? newestAt(cardCache[lang]) : 0;   // what the reader has been shown
     if (st) cardCache[lang] = st.cards; else { delete cardCache.en; delete cardCache.hi; }   // new cards already read: no waiting
-    const ok = await showDeck(keep, true);      // the feed alone: the tooltip does not depend on Supabase
+    const ok = await showDeck(keep, true, true);      // the feed alone: the tooltip does not depend on Supabase
     if (ok && had) {
       const isNew = newestAt(cardCache[lang]) > had;
       outcome = isNew ? "new" : "none";

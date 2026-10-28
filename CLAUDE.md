@@ -2319,7 +2319,7 @@ and paragraphs mixed unrelated facts. Rebuilt, keeping the Oct 8 rule (never los
   name), one cautious split left (story 40418: "Lokesh Shatrujeet Kapoor" cannot be "Shatrujeet Singh Kapoor"). NOT adopted
   yet: `voice.speaker_key` (context-free, used in ~30 places; the table's `speaker_key` needs a per-story table passed in).
 
-## Unseen first: the default home order (owner, Oct 29 2026; built on branch `unseen-first`, NOT live; sw.js np-main-81)
+## Unseen first: the default home order (owner, Oct 29 2026; built on branch `unseen-first`, NOT live; sw.js np-main-82)
 - Menu > Sort gains "Unseen first" at the top, selected by default, with "N new · M updated" beside it. Tiers: 0 unseen or updated, 1 seen but not opened, 2 opened. Inside a tier the order stays newest first. The lead story is not pinned.
 - Seen = the card settled in view for 1.5 s (`DWELL_MS`; the deck is one full-screen card per swipe). Opened = `openStory`. Stored on this device only, `localStorage["np-seen"]`, one record per thread `{v, i, b, s, o}`; records older than 4 days (the app keeps 3) and beyond 500 are dropped.
 - A story whose version stamp changed since it was seen (colours changed, or a follow-up) goes back to tier 0 with a plain 'Updated' pill (owner: the pill says only that, no reasons).
@@ -2328,4 +2328,5 @@ and paragraphs mixed unrelated facts. Rebuilt, keeping the Oct 8 rule (never los
 - Pill: solid indigo, open-arc arrow turns once (1 s), then one light sweep; played about 0.3 s after the card settles; none under prefers-reduced-motion. Lives inside `.kk` (the article morph reads `.kk`).
 - Code: the block between `UNSEEN-START` and `UNSEEN-END` in `site/index.html` (`rankCards`, `readSeen`) is tested by `tests/seen/rank.test.mjs` (`node --test tests/seen/rank.test.mjs`). Hindi wording ("अनदेखी पहले", "अपडेट", "N नई · M अपडेट") awaits the owner's review.
 - The header refresh icon is now an open arc (not joined end to end), like the Updated pill's arrow.
+- The refresh button re-sorts the deck (what you have seen sinks), so when the refreshed deck differs from the one on screen it dips and returns (`showDeck(..., soft)`: the track's `swap` class, 180 ms, off for reduced motion); an unchanged deck is left alone.
 - "Latest" now returns to the top card, which is not necessarily the newest story.
