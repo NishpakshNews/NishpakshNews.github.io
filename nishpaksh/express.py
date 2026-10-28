@@ -116,6 +116,9 @@ def excluded_many(items: list[tuple[str, str, str, str | None]]) -> list:
             out[i] = r
         bump("risk_texts", len(todo))
         bump("risk_unread", sum(1 for r in got if r is UNREAD))
+        if not _QUIET[0]:
+            for k, v in risk.STATS.items():
+                STATS[f"risk_{k}"] = v
         STATS["risk_seconds"] = round(STATS.get("risk_seconds", 0.0) + time.monotonic() - started, 2) if not _QUIET[0] else STATS.get("risk_seconds", 0.0)
     return out
 
@@ -135,6 +138,33 @@ def reason_group(reason: str | None) -> str | None:
 def reset() -> None:
     """A new run (ingest calls it first)."""
     STATS.clear()
+    risk.set_budget(float(setting("risk_seconds_per_run", 300)))
+
+
+CACHE_NAME = "risk_cache"
+
+
+def load_cache(store) -> None:
+    """The scores of earlier runs (risk.py): a headline is read by the model once, not every hour."""
+    try:
+        from sqlalchemy import select
+        from .db import model_state
+        row = store.one(select(model_state.c.data).where(model_state.c.name == CACHE_NAME))
+        risk.load_cache(row.get("data") if row else None)
+    except Exception as e:  # noqa: BLE001 - no cache only costs time
+        log.info("risk cache not loaded (%s)", str(e)[:80])
+
+
+def save_cache(store) -> None:
+    try:
+        from sqlalchemy import delete, insert
+        from .db import model_state
+        now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+        with store.route(insert(model_state)).engine.begin() as c:
+            c.execute(delete(model_state).where(model_state.c.name == CACHE_NAME))
+            c.execute(insert(model_state).values(name=CACHE_NAME, data=risk.dump_cache(), updated_at=now))
+    except Exception as e:  # noqa: BLE001
+        log.info("risk cache not saved (%s)", str(e)[:80])
 
 
 _QUIET = [0]     # >0 while `still_holds` re-checks a story: the funnel counts each story once, in the run's own check

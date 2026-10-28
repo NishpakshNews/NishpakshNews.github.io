@@ -113,6 +113,7 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     from . import express as _express
     if _express.STATS:
         stats["express"] = {k: (dict(v) if isinstance(v, dict) else v) for k, v in _express.STATS.items()}
+    _express.save_cache(store)          # what the model read this run is not read again next hour
     stats["embedding"] = dict(story_mod.EMBED_STATS)     # what grouping did with the embedding quota (ledger.py records it)
     # only the stories worth writing are read and analysed (priority.py, owner Oct 6 2026): each story
     # with 3+ sources is rated from its headlines; the best `prep_queue` of them are prepared
@@ -249,6 +250,7 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
                  claims_checked=checked, colours_matured=matured,
                  live_pages=len(store.rows(select(_published.c.story_id))),
                  left_for_next_run=len(dirty) - len(analysed))
+    _express.save_cache(store)
     if _express.STATS:      # the funnel again: the story stage added its own counts (express.py)
         stats["express"] = {k: (dict(v) if isinstance(v, dict) else v) for k, v in _express.STATS.items()}
     from . import when as _when

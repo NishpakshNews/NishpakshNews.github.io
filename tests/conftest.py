@@ -275,7 +275,9 @@ def local_ner(monkeypatch):
     nlp.set_parser(fake_parser)
     from nishpaksh import nlp
     nlp.set_backend(fake_ner)
-    from nishpaksh import auditcount, langid
+    from nishpaksh import auditcount, langid, risk
+    risk.load_cache(None)                     # the express reader's remembered scores and time budget start empty
+    risk.set_budget(None)
     langid.set_backend(lambda text: None)     # no language model in tests: the word lists answer (langid.py)
     auditcount.reset()
     yield

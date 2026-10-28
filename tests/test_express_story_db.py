@@ -200,6 +200,8 @@ def test_a_headline_the_model_cannot_read_pauses_the_story_but_does_not_revoke_i
     _claim(store, sid, aid, "Tata Motors")
     assert express.qualify(store, sid)
     working = nli._backend
+    from nishpaksh import risk
+    risk.load_cache(None)                    # the scores of the working reader are remembered; this run cannot read at all
     nli.set_backend(lambda pairs: [None] * len(pairs))
     assert express.still_holds(store, sid) is False
     assert express.revoke_stale(store) == []

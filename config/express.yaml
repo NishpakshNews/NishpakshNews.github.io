@@ -39,6 +39,7 @@ lanes:
 embed_daily_cap: 400        # embedding texts an express article may use per quota day (spread by the day's pacing curve)
 filter_batch: 20            # headlines per cheap model question
 filter_calls_per_run: 6     # first-asking calls per run (a headline is asked about once; undecided ones wait for the next run)
+risk_seconds_per_run: 480   # the local reader may spend this long a run on express headlines (risk.py); the rest is read next run
 intake_per_run: 120         # new express-feed links taken per run, apart from the 400 the main feeds share
 intake_per_feed: 12         # ... and at most this many from one express feed
 reads_per_run: 3            # express stories read (Flash-Lite) per run
