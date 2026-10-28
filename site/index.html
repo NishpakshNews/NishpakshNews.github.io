@@ -1683,8 +1683,8 @@ async function newerThanFeed(l, newestMs) {
   const rows = await api(`published?select=${ROW_SELECT}&updated_at=gt.${since}&order=updated_at.desc&limit=30`, 4000);
   return rows.filter(r => r.pe && r.pe.length).map(r => rowCard(r, l));
 }
-async function loadCards(l, feedOnly = false) {      // feedOnly (the refresh button): never ask the database for newer rows
-  if (cardCache[l]) return cardCache[l];
+async function loadCards(l, feedOnly = false, stage = false) {      // feedOnly (the refresh button): never ask the database for newer rows; stage: read the newest cards but leave cardCache (what is on screen) alone
+  if (cardCache[l] && !stage) return cardCache[l];
   let stories = null;
   try {
     // the minute in the address: GitHub's cache keeps a file up to 5 minutes, so a new article showed up to 5
@@ -1721,7 +1721,7 @@ async function loadCards(l, feedOnly = false) {      // feedOnly (the refresh bu
     else { cur.size += 1; if (utcMs(s.at) > utcMs(cur.at)) byThread.set(k, {...s, size: cur.size}); }
   }
   const all = [...byThread.values()].sort((a, b) => utcMs(b.at) - utcMs(a.at));
-  cardCache[l] = all;
+  if (!stage) cardCache[l] = all;
   return all;
 }
 async function fromArchive(id) {
@@ -2933,7 +2933,7 @@ new ResizeObserver(() => { const h = slotHeight(); if (h !== lastH) { lastH = h;
 // when the network returns, and every 3 minutes while it is looked at (a few hundred bytes: newerThanFeed).
 let hiddenAt = 0, freshWhileAway = false, freshTimer = null;
 function refreshDeck() {
-  clearNew();
+  clearNew(); staged = null;
   const keep = cards[current] && cards[current].id;
   delete cardCache.en; delete cardCache.hi;
   if (openId) return;                       // an open article is not moved under the reader: the deck is read again on closing
@@ -2965,6 +2965,23 @@ function showNew() {            // stories arrived while the deck is in use: say
 function syncNew() {            // visible only on the deck, never over an article
   if (newWaiting && !openId) placeTip(ntip, 62);
   ntip.classList.toggle("on", newWaiting && !openId);
+}
+// the new cards are read in the background as soon as they are known: their pictures and stories are fetched too, so the
+// press on refresh shows them at once (owner, Oct 29 2026, like the pull-to-refresh on YouTube)
+let staged = null;
+async function stageFresh(l, rows) {
+  const top = Math.max(...rows.map(r => utcMs(r.at)));
+  if (staged && staged.lang === l && newestAt(staged.cards) >= top) return;
+  const nonce = feedNonce; feedNonce = String(Date.now());
+  let cs;
+  try { cs = await loadCards(l, false, true); } finally { feedNonce = nonce; }
+  const shown = newestAt(cardCache[l]);
+  for (const c of cs.filter(c => utcMs(c.at) > shown).slice(0, 6)) {
+    loadStory(c.id);
+    const src = c.img && safeUrl(c.img.src) ? c.img.src : null;
+    if (src) { const im = new Image(); im.referrerPolicy = "no-referrer"; im.src = src; if (im.decode) im.decode().catch(() => {}); }
+  }
+  staged = {lang: l, cards: cs};
 }
 function clearNew() { newWaiting = false; rbtn.classList.remove("dot"); ntip.classList.remove("on"); }
 ntip.addEventListener("click", () => manualRefresh());
@@ -3001,16 +3018,17 @@ async function manualRefresh() {
   if (refreshing || openId) return;
   refreshing = true; rbtn.classList.add("spin");
   clearNew();
+  const st = staged && staged.lang === lang ? staged : null; staged = null;
   takeSeenSnapshot();
   const t0 = Date.now();
   let outcome = null;                                     // "new", "none", or null: it failed, or there was nothing to compare with
   try {
     feedNonce = String(t0);
-    storyCache.clear();
+    if (!st) storyCache.clear();                          // new cards already read keep the stories fetched with them
     if ("serviceWorker" in navigator) navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {});   // a newer page is picked up too
     const keep = cards[current] && cards[current].id;
     const had = cardCache[lang] && cardCache[lang].length ? newestAt(cardCache[lang]) : 0;   // what the reader has been shown
-    delete cardCache.en; delete cardCache.hi;
+    if (st) cardCache[lang] = st.cards; else { delete cardCache.en; delete cardCache.hi; }   // new cards already read: no waiting
     const ok = await showDeck(keep, true);      // the feed alone: the tooltip does not depend on Supabase
     if (ok && had) {
       const isNew = newestAt(cardCache[lang]) > had;
@@ -3053,7 +3071,8 @@ setInterval(async () => {
   if (document.hidden || openId || !cardCache[lang] || !cardCache[lang].length) return;
   try {
     const newest = Math.max(...cardCache[lang].map(c => utcMs(c.at)));
-    if ((await newerThanFeed(lang, newest)).length) showNew();      // not refreshDeck(): the deck is not rearranged while it is read
+    const l0 = lang, rows = await newerThanFeed(l0, newest);
+    if (rows.length && l0 === lang) { try { await stageFresh(l0, rows); } catch (e) { /* the press reads them itself */ } showNew(); }      // not refreshDeck(): the deck is not rearranged while it is read
   } catch (e) { /* try again in 3 minutes */ }
 }, 3 * 60000);
 // "x min ago" stays live while the page is open (owner, Oct 11 2026: it stopped at what it said when the card was made)
