@@ -842,7 +842,7 @@ stories, and tune settings then.
   (slim pages) to the `feed` branch after every desk and pipeline run (`.github/scripts/publish_feed.sh`,
   one commit force-pushed, `continue-on-error`); the site reads them from raw.githubusercontent.com and falls
   back to Supabase, then the archive branch. Service worker keeps the page and last news offline.
-- **Site sections (owner, Oct 9 2026; `categories.py`).** Five primary sections, five secondary under each, chosen
+- **Site sections (owner, Oct 9 2026; `categories.py`). The TREE is superseded Oct 28 2026 by "Sections: three levels of three" below; the bar's behaviour described here still holds.** Five primary sections, five secondary under each, chosen
   with the owner from ~490 rated stories (politics ~30%, crime/courts ~25%, world ~11%, accidents/weather ~8%,
   business ~7%, health/education ~7%, defence ~5%, films ~3%, sport ~1%: sport is too thin for its own section):
   Politics (Elections, Parties, Government, Parliament, Protests) · Justice (Crime, Police, Courts, Corruption,
@@ -1459,6 +1459,25 @@ stories, and tune settings then.
   Rejected on the way (owner): the path or a depth line in the header (dilutes the name), greetings that rise, dissolve,
   wipe, cascade or track in ("cheap"). `sw.js` np-main-72. Checked in headless Chromium on the real feed (stand-in pictures),
   English and Hindi; not yet on a phone. The 3·3·3 section tree is still to be agreed and built.
+
+- **Sections: three levels of three (owner, Oct 28 2026; "not 5 or 6 or like domains, 3 and 3 only, in all levels").** Replaces the
+  five-by-five tree and the Domains lens of Oct 9 (`categories.py`, key lists there): **India** (Politics: Government · Parties ·
+  Elections; Justice: Crime · Courts · Probes; Life: Health & schools · Sport & films · Weather & accidents), **World** (Diplomacy:
+  India abroad · Indians abroad · Global; Conflicts: Wars · Defence · Terror; Abroad: Politics · Disasters · Other news), **Business**
+  (Economy: Policy · Data · Jobs & work; Companies: Results & deals · Launches & tech · Leaders; Markets: Stocks · Rupee & commodities ·
+  Your money). Keys are unique across all levels (the site filters one flat set); records carry `"v": 2`. The owner kept Sport & films
+  three taps deep knowingly (it was ~14% of live articles via the express lane, Business ~11%; the Life-at-top alternative was offered).
+  **Published articles move by code**, no model call, no page rewritten, reversible: a record without `v` is mapped key by key
+  (`normalize`, `OLD_PRIMARY / OLD_SECONDARY / OLD_TERTIARY`; Parliament -> Government, Protests -> Politics only, Police and Corruption
+  -> Probes, India's own terror cases -> Crime, Education -> Health & schools, Accidents and Environment -> Weather & accidents, HR ->
+  Jobs & work, Finance -> Results & deals, Marketing and Analytics -> Launches & tech, Operations -> Companies only); `fill_live` then
+  asks the new question for those live articles, 5 per desk run, so their third level fills in (no answer: the mapped record with `v`).
+  Readers' follows keep their stored keys and map at read time (`follow_path`; the site's `followPath`, `followKeys` remembers the
+  stored key so unfollowing deletes the right row). The site's twin of the mapping (`normCat`, `secChain`) is generated from the
+  Python tables; it uses a feed's `sections` only when they are this tree. The daily brief keeps five groups: India's Politics,
+  Justice, Life, then World and Business (`RECAP_LABELS`). The bar code needed no change: every secondary now opens its three the
+  way Domains did. The Following sheet still offers two levels (top, then its three); a tertiary is followed only through an
+  earlier path. `sw.js` np-main-73.
 
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →

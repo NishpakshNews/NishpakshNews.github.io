@@ -232,7 +232,7 @@ def test_end_to_end(store):
     assert hi["headline"].startswith("[हिं]") and hi["translation_complete"]
     # the site's sections (owner, Oct 9 2026): the model's picks checked by code (an unknown key dropped),
     # the same keys on the Hindi page
-    assert en["category"] == {"primary": ["life", "justice"], "secondary": ["accidents", "police"]}
+    assert en["category"] == {"v": 2, "primary": ["india"], "secondary": ["life", "justice"], "tertiary": ["weather", "probes"]}
     assert hi["category"] == en["category"]
 
     # another run with nothing new: nothing is reprocessed or rewritten
@@ -2449,8 +2449,8 @@ def test_feed_writes_the_reading_site_files(store, tmp_path):
         (c,) = data["stories"]
         assert c["id"] == row["story_id"] and c["h"] and c["paras"] and c["paras"][0][0]["t"]
         assert sum(c["bar"].values()) == len(feed._sentence_classes(row["payload_en"]["narrative"]["paragraphs"]))
-        assert c["cat"]["primary"] == ["life", "justice"]
-        assert data["sections"]["primary"]["life"] == ("Life" if lang == "en" else "जीवन")
+        assert c["cat"]["primary"] == ["india"] and c["cat"]["secondary"] == ["life", "justice"]
+        assert data["sections"]["secondary"]["life"] == ("Life" if lang == "en" else "जीवन")
     page = json.loads((out / "story" / f"{row['story_id']}.json").read_text(encoding="utf-8"))
     nar = page["payload_en"]["narrative"]
     assert nar["paragraphs"] == row["payload_en"]["narrative"]["paragraphs"] and nar["sources"]
@@ -2919,21 +2919,24 @@ def test_paragraphs_are_shaped_and_past_schedules_left_out_story_13792():
 
 
 def test_sections_are_checked_by_code_and_filled_for_live_articles(store):
-    """The site's sections (owner, Oct 9 2026): five primary, five secondary under each. Code keeps only listed
-    keys, at most two of each; a secondary brings its primary; a secondary under the wrong primary is dropped.
-    Live articles from before sections get theirs on a desk run; only the section is added."""
+    """The site's sections (owner, Oct 28 2026): three levels of three. Code keeps only listed keys, at most two of
+    each level; a lower level brings its parents; a key off its stated path is dropped. Live articles get the question
+    on desk runs; only the section is added."""
     from nishpaksh import categories as C
     from nishpaksh.config import load_yaml
-    assert len(C.SECTIONS) == 5 and all(len(v) == 5 for v in C.SECTIONS.values())
-    assert C.parse(["justice/courts", "politics/elections"]) == {"primary": ["justice", "politics"],
-                                                                "secondary": ["courts", "elections"]}
-    assert C.parse(["Life"]) == {"primary": ["life"], "secondary": []}               # unsure: the primary alone
-    assert C.parse(["defence"]) == {"primary": ["world"], "secondary": ["defence"]}   # its primary is known
-    assert C.parse(["business/courts", "World / Indians abroad"]) == {"primary": ["world"],
-                                                                     "secondary": ["indians-abroad"]}
-    assert C.parse(["life/health", "justice/crime", "business/money"])["primary"] == ["life", "justice"]
+    assert len(C.SECTIONS) == 3 and all(len(v) == 3 for v in C.SECTIONS.values())
+    assert len(C.TERTIARY) == 9 and all(len(v) == 3 for v in C.TERTIARY.values())
+    keys = list(C.SECTIONS) + list(C.PARENT) + list(C.PARENT3)
+    assert len(keys) == len(set(keys)) == 39                      # one flat set of keys on the site
+    assert C.parse(["india/justice/courts", "india/politics/elections"]) == {
+        "v": 2, "primary": ["india"], "secondary": ["justice", "politics"], "tertiary": ["courts", "elections"]}
+    assert C.parse(["Life"]) == {"v": 2, "primary": ["india"], "secondary": ["life"]}     # unsure: one level up
+    assert C.parse(["defence"]) == {"v": 2, "primary": ["world"], "secondary": ["conflicts"], "tertiary": ["defence"]}
+    assert C.parse(["business/courts", "World / Diplomacy / Diaspora"]) == {
+        "v": 2, "primary": ["world"], "secondary": ["diplomacy"], "tertiary": ["diaspora"]}
+    assert C.parse(["india/life/health", "india/justice/crime", "business/markets/money", "world"])["primary"] == ["india", "business"]
     assert C.parse(["sports"]) is None and C.parse(None) is None
-    assert C.labels("hi")["secondary"]["sport-films"] == "खेल और फ़िल्में"
+    assert C.labels("hi")["tertiary"]["sport-films"] == "खेल और फ़िल्में"
 
     _seed(store)
     _run_twice(store)
@@ -2944,7 +2947,7 @@ def test_sections_are_checked_by_code_and_filled_for_live_articles(store):
     router = Router(load_yaml("models.yaml")["tiers"], FakeBackend(), store)
     assert C.fill_live(store, router) == [row["story_id"]]
     after = store.one(select(published).where(published.c.story_id == row["story_id"]))
-    assert after["payload_en"]["category"]["primary"] == ["life", "justice"]
+    assert after["payload_en"]["category"]["secondary"] == ["life", "justice"]
     assert {k: v for k, v in after["payload_en"].items() if k != "category"} == old_en
     assert after["payload_hi"]["category"] == after["payload_en"]["category"]
     assert C.fill_live(store, router) == []                  # asked once
@@ -3092,19 +3095,27 @@ def test_a_story_no_indian_outlet_covers_needs_global_impact(store):
 
 # ---------------------------------------------------------------- Domains and Sport (owner, Oct 9 2026)
 
-def test_sections_have_domains_as_a_third_level():
-    from nishpaksh.categories import labels, normalize, parse
-    assert parse(["politics/protests", "business/domains/hr"]) == {
-        "primary": ["politics", "business"], "secondary": ["protests", "domains"], "tertiary": ["hr"]}
-    assert parse(["operations"]) == {"primary": ["business"], "secondary": ["domains"], "tertiary": ["operations"]}
-    assert parse(["business/domains"]) == {"primary": ["business"], "secondary": []}   # which domain? the primary alone
-    assert parse(["business/domains/sport"]) is None
-    # live articles keep their place: Jobs and Tech are now HR and Analytics
+def test_the_earlier_tree_maps_into_three_by_three():
+    """Oct 28 2026: articles and follows from the five-by-five tree (and its Domains lens) land in today's tree by code,
+    with no model call and no stored page rewritten; fill_live later asks the new question for them."""
+    from nishpaksh.categories import follow_path, labels, normalize
+    assert normalize({"primary": ["life", "justice"], "secondary": ["accidents", "police"]}) == {
+        "v": 2, "primary": ["india"], "secondary": ["life", "justice"], "tertiary": ["weather", "probes"]}
+    assert normalize({"primary": ["politics", "business"], "secondary": ["protests", "domains"], "tertiary": ["hr"]}) == {
+        "v": 2, "primary": ["india", "business"], "secondary": ["politics", "economy"], "tertiary": ["jobs"]}
     assert normalize({"primary": ["business"], "secondary": ["tech"]}) == {
-        "primary": ["business"], "secondary": ["domains"], "tertiary": ["analytics"]}
+        "v": 2, "primary": ["business"], "secondary": ["companies"], "tertiary": ["launches"]}
+    assert normalize({"primary": ["world"], "secondary": ["defence"]})["tertiary"] == ["defence"]
+    assert normalize({"primary": ["justice"], "secondary": ["terror"]})["tertiary"] == ["crime"]   # India's own cases
+    assert normalize({}) == {} and normalize({"v": 2}) == {}
+    assert normalize({"v": 2, "primary": ["world"], "secondary": ["conflicts"], "tertiary": ["terror"]})["tertiary"] == ["terror"]
+    assert [follow_path(k) for k in ("justice/courts", "business/domains/hr", "world", "politics", "world/defence",
+                                     "india/justice/courts", "world/diplomacy")] == [
+        "india/justice/courts", "business/economy/jobs", "world", "india/politics", "world/conflicts/defence",
+        "india/justice/courts", "world/diplomacy"]
     lab = labels("en")
-    assert lab["tree"]["business"] == ["economy", "companies", "markets", "money", "domains"]
-    assert lab["tree3"]["domains"] == ["hr", "finance", "marketing", "analytics", "operations"]
+    assert lab["tree"]["india"] == ["politics", "justice", "life"]
+    assert lab["tree3"]["markets"] == ["stocks", "rupee", "money"]
 
 
 def test_beat_stories_get_reserved_reading_places(store, monkeypatch):

@@ -257,9 +257,9 @@ def test_feed_card_carries_length_places_and_people():
 
 
 def test_section_paths_cover_every_level():
-    assert notify.section_paths({"primary": ["business"], "secondary": ["domains"], "tertiary": ["hr"]}) == \
-        {"business", "business/domains", "business/domains/hr"}
-    assert "business/domains/hr" in notify.section_paths({"primary": ["business"], "secondary": ["jobs"]})  # old key
+    assert notify.section_paths({"v": 2, "primary": ["business"], "secondary": ["economy"], "tertiary": ["jobs"]}) == \
+        {"business", "business/economy", "business/economy/jobs"}
+    assert "business/economy/jobs" in notify.section_paths({"primary": ["business"], "secondary": ["jobs"]})  # old key
 
 
 def test_the_refresh_buttons_next_article_alert_is_sent_once_then_spent(tmp_path):

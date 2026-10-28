@@ -253,7 +253,7 @@ class FakeBackend:
             items = re.findall(r"^(\d+)\. (.*)$", prompt, flags=re.M)
             return json.dumps({"items": [{"n": int(n), "en": f"concept-{n}"} for n, _ in items]}), [], 50
         if "Put this Indian news article in the sections" in prompt:
-            return json.dumps({"sections": ["life/accidents", "justice/police", "nonsense/x"]}), [], 30
+            return json.dumps({"sections": ["india/life/weather", "india/justice/probes", "nonsense/x"]}), [], 30
         if "Write THREE different headlines" in prompt:
             news = re.search(r"^THE NEWS: (.*)$", prompt, flags=re.M).group(1)
             news = re.sub(r"\s*\(dated: [^)]*\)\s*$", "", news)      # the prompt's date note, not part of the fact

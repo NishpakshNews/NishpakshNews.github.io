@@ -74,20 +74,10 @@ def _naive(t):
 
 # -- matching -----------------------------------------------------------------------------------------------
 def section_paths(cat: dict | None) -> set[str]:
-    """Every section key an article is in, as readers follow them: "justice", "justice/courts",
-    "business/domains/hr". Primary and secondary both count (owner)."""
-    from .categories import PARENT, PARENT3, normalize
-    cat = normalize(cat)
-    out = set(cat.get("primary") or [])
-    for s in cat.get("secondary") or []:
-        if s in PARENT:
-            out.add(f"{PARENT[s]}/{s}")
-            out.add(PARENT[s])
-    for t in cat.get("tertiary") or []:
-        if t in PARENT3:
-            s = PARENT3[t]
-            out |= {f"{PARENT[s]}/{s}/{t}", f"{PARENT[s]}/{s}", PARENT[s]}
-    return out
+    """Every section path an article is in, as readers follow them: "india", "india/justice",
+    "india/justice/courts". Every level counts (owner). An earlier tree's record is mapped first."""
+    from .categories import paths
+    return paths(cat)
 
 
 def article_text(*payloads: dict | None) -> str:
@@ -128,11 +118,16 @@ def reasons(article: dict, rows: list[dict], text: str | None = None,
             if at is None or made is None or at > made:
                 out.setdefault(str(r["reader"]), []).append((k, key))
             continue
-        hit = (k == "section" and key in secs) or (k == "place" and key in places) \
+        hit = (k == "section" and _follow_path(key) in secs) or (k == "place" and key in places) \
             or (k == "entity" and (name_matches(key, names) or word_in(key, text))) or (k == "story" and key in parents)
         if hit:
             out.setdefault(str(r["reader"]), []).append((k, key))
     return out
+
+
+def _follow_path(key: str) -> str:
+    from .categories import follow_path      # a follow made in the earlier tree (Oct 28 2026) maps to today's path
+    return follow_path(key)
 
 
 def _share(bar: dict) -> int:
@@ -154,7 +149,7 @@ def _label(kind: str, key: str, lang: str, article: dict) -> str:
     from .places import labels as place_labels
     if kind == "section":
         sl = sec_labels(lang)
-        last = key.split("/")[-1]
+        last = _follow_path(key).split("/")[-1]
         return sl["primary"].get(last) or sl["secondary"].get(last) or sl["tertiary"].get(last) or key
     if kind == "place":
         return place_labels(lang).get(key, key)

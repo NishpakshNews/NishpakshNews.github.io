@@ -1468,7 +1468,7 @@ const KEYCOLOR = {established: "var(--est)", developing: "var(--dev)", unverifie
 const VERDICT = {corroborated: "established", confirmed: "established", established: "established", developing: "developing",
                  disputed: "disputed", false: "false", partial: "partial", single: "single", unverified: "unverified", pending: "unverified"};
 // the sections' names (nishpaksh/categories.py labels); the feed's en.json / hi.json carry the same
-const SECTIONS = {"en": {"primary": {"politics": "Politics", "justice": "Justice", "business": "Business", "world": "World", "life": "Life"}, "secondary": {"elections": "Elections", "parties": "Parties", "government": "Government", "parliament": "Parliament", "protests": "Protests", "crime": "Crime", "police": "Police", "courts": "Courts", "corruption": "Corruption", "terror": "Terror", "economy": "Economy", "companies": "Companies", "markets": "Markets", "money": "Your money", "domains": "Domains", "diplomacy": "Diplomacy", "indians-abroad": "Indians abroad", "conflicts": "Conflicts", "defence": "Defence", "abroad": "Abroad", "health": "Health", "education": "Education", "accidents": "Accidents", "environment": "Environment", "sport-films": "Sport & films"}, "tertiary": {"hr": "HR", "finance": "Finance", "marketing": "Marketing", "analytics": "Analytics", "operations": "Operations"}, "tree": {"politics": ["elections", "parties", "government", "parliament", "protests"], "justice": ["crime", "police", "courts", "corruption", "terror"], "business": ["economy", "companies", "markets", "money", "domains"], "world": ["diplomacy", "indians-abroad", "conflicts", "defence", "abroad"], "life": ["health", "education", "accidents", "environment", "sport-films"]}, "tree3": {"domains": ["hr", "finance", "marketing", "analytics", "operations"]}}, "hi": {"primary": {"politics": "राजनीति", "justice": "न्याय", "business": "बिज़नेस", "world": "दुनिया", "life": "जीवन"}, "secondary": {"elections": "चुनाव", "parties": "दल", "government": "सरकार", "parliament": "संसद", "protests": "प्रदर्शन", "crime": "अपराध", "police": "पुलिस", "courts": "अदालत", "corruption": "भ्रष्टाचार", "terror": "आतंक", "economy": "अर्थव्यवस्था", "companies": "कंपनियां", "markets": "बाज़ार", "money": "आपका पैसा", "domains": "क्षेत्र", "diplomacy": "कूटनीति", "indians-abroad": "विदेश में भारतीय", "conflicts": "संघर्ष", "defence": "रक्षा", "abroad": "विदेश", "health": "सेहत", "education": "शिक्षा", "accidents": "हादसे", "environment": "पर्यावरण", "sport-films": "खेल और फ़िल्में"}, "tertiary": {"hr": "एचआर", "finance": "फ़ाइनेंस", "marketing": "मार्केटिंग", "analytics": "एनालिटिक्स", "operations": "ऑपरेशंस"}, "tree": {"politics": ["elections", "parties", "government", "parliament", "protests"], "justice": ["crime", "police", "courts", "corruption", "terror"], "business": ["economy", "companies", "markets", "money", "domains"], "world": ["diplomacy", "indians-abroad", "conflicts", "defence", "abroad"], "life": ["health", "education", "accidents", "environment", "sport-films"]}, "tree3": {"domains": ["hr", "finance", "marketing", "analytics", "operations"]}}};
+const SECTIONS = {"en": {"primary": {"india": "India", "world": "World", "business": "Business"}, "secondary": {"politics": "Politics", "justice": "Justice", "life": "Life", "diplomacy": "Diplomacy", "conflicts": "Conflicts", "abroad": "Abroad", "economy": "Economy", "companies": "Companies", "markets": "Markets"}, "tertiary": {"government": "Government", "parties": "Parties", "elections": "Elections", "crime": "Crime", "courts": "Courts", "probes": "Probes", "health": "Health & schools", "sport-films": "Sport & films", "weather": "Weather & accidents", "visits": "India abroad", "diaspora": "Indians abroad", "global": "Global", "wars": "Wars", "defence": "Defence", "terror": "Terror", "foreign-politics": "Politics", "disasters": "Disasters", "other": "Other news", "policy": "Policy", "data": "Data", "jobs": "Jobs & work", "results": "Results & deals", "launches": "Launches & tech", "leaders": "Leaders", "stocks": "Stocks", "rupee": "Rupee & commodities", "money": "Your money"}, "tree": {"india": ["politics", "justice", "life"], "world": ["diplomacy", "conflicts", "abroad"], "business": ["economy", "companies", "markets"]}, "tree3": {"politics": ["government", "parties", "elections"], "justice": ["crime", "courts", "probes"], "life": ["health", "sport-films", "weather"], "diplomacy": ["visits", "diaspora", "global"], "conflicts": ["wars", "defence", "terror"], "abroad": ["foreign-politics", "disasters", "other"], "economy": ["policy", "data", "jobs"], "companies": ["results", "launches", "leaders"], "markets": ["stocks", "rupee", "money"]}}, "hi": {"primary": {"india": "भारत", "world": "दुनिया", "business": "बिज़नेस"}, "secondary": {"politics": "राजनीति", "justice": "न्याय", "life": "जीवन", "diplomacy": "कूटनीति", "conflicts": "संघर्ष", "abroad": "विदेश", "economy": "अर्थव्यवस्था", "companies": "कंपनियां", "markets": "बाज़ार"}, "tertiary": {"government": "सरकार", "parties": "दल", "elections": "चुनाव", "crime": "अपराध", "courts": "अदालत", "probes": "जांच", "health": "सेहत और शिक्षा", "sport-films": "खेल और फ़िल्में", "weather": "मौसम और हादसे", "visits": "विदेश में भारत", "diaspora": "प्रवासी भारतीय", "global": "वैश्विक", "wars": "युद्ध", "defence": "रक्षा", "terror": "आतंक", "foreign-politics": "राजनीति", "disasters": "आपदाएं", "other": "अन्य ख़बरें", "policy": "नीति", "data": "आंकड़े", "jobs": "नौकरी और काम", "results": "नतीजे और सौदे", "launches": "लॉन्च और टेक", "leaders": "लीडर", "stocks": "शेयर", "rupee": "रुपया और कमोडिटी", "money": "आपका पैसा"}, "tree": {"india": ["politics", "justice", "life"], "world": ["diplomacy", "conflicts", "abroad"], "business": ["economy", "companies", "markets"]}, "tree3": {"politics": ["government", "parties", "elections"], "justice": ["crime", "courts", "probes"], "life": ["health", "sport-films", "weather"], "diplomacy": ["visits", "diaspora", "global"], "conflicts": ["wars", "defence", "terror"], "abroad": ["foreign-politics", "disasters", "other"], "economy": ["policy", "data", "jobs"], "companies": ["results", "launches", "leaders"], "markets": ["stocks", "rupee", "money"]}}};
 const BARKEY = {established: "e", corroborated: "e", confirmed: "e", partial: "p", single: "o", disputed: "d", false: "r", unverified: "u", pending: "u", developing: "v"};
 /* the grading made obvious (owner, Oct 15 2026): names, short names and one-line meanings of the seven colours, in the
    bar's order. The meanings are the rules in README.md ("What a story page shows"). */
@@ -1633,7 +1633,7 @@ async function loadCards(l, feedOnly = false) {      // feedOnly (the refresh bu
     const u = `${FEED_URL}/${l}.json?m=${Math.floor(Date.now() / 60000)}${feedNonce ? `&n=${feedNonce}` : ""}`;
     const d = await getJSON(u, {cache: "no-cache"}, 15000).catch(() => getJSON(u, {cache: "no-cache"}, 15000));
     if (d && Array.isArray(d.stories) && d.stories.length) stories = d.stories;
-    if (d && d.sections && d.sections.tree3) SECTIONS[l] = d.sections;   // a feed from before Domains: the built-in names
+    if (d && d.sections && d.sections.tree3 && (d.sections.primary || {}).india) SECTIONS[l] = d.sections;   // a feed from before the 3·3·3 tree (Oct 28 2026): the built-in names
   } catch (e) { /* the feed is missing or slow: read the database */ }
   if (stories) {
     // whatever the database has newer than the feed (see newerThanFeed); a failure only means the feed's view
@@ -2540,17 +2540,39 @@ let pool = [], level = null, sec = null, sub = null, ter = null, fKey = "all", s
 function secLabels() { return SECTIONS[lang] || SECTIONS.en; }
 function tree3() { return secLabels().tree3 || {}; }
 function secLabel(k) { const s = secLabels(); return (s.primary || {})[k] || (s.secondary || {})[k] || (s.tertiary || {})[k] || ""; }
-// keys live articles still carry (Jobs and Tech became Domains > HR and Analytics; categories.normalize)
-const OLD_KEYS = {jobs: ["business", "domains", "hr"], tech: ["business", "domains", "analytics"]};
+// the 3·3·3 tree (owner, Oct 28 2026). A record from the earlier tree (no "v": Politics, Justice, Business, World, Life and
+// the Domains lens) is mapped key by key, as categories.normalize does: secondaries first, then tertiaries, then a primary
+// left without a secondary; at most two of each level, a lower level only with its parents.
+const OLD_PRIMARY = {"politics": ["india", "politics", null], "justice": ["india", "justice", null], "life": ["india", "life", null], "business": ["business", null, null], "world": ["world", null, null]};
+const OLD_SECONDARY = {"elections": ["india", "politics", "elections"], "parties": ["india", "politics", "parties"], "government": ["india", "politics", "government"], "parliament": ["india", "politics", "government"], "protests": ["india", "politics", null], "crime": ["india", "justice", "crime"], "police": ["india", "justice", "probes"], "courts": ["india", "justice", "courts"], "corruption": ["india", "justice", "probes"], "terror": ["india", "justice", "crime"], "economy": ["business", "economy", null], "companies": ["business", "companies", null], "markets": ["business", "markets", null], "money": ["business", "markets", "money"], "domains": ["business", null, null], "diplomacy": ["world", "diplomacy", null], "indians-abroad": ["world", "diplomacy", "diaspora"], "conflicts": ["world", "conflicts", null], "defence": ["world", "conflicts", "defence"], "abroad": ["world", "abroad", null], "health": ["india", "life", "health"], "education": ["india", "life", "health"], "accidents": ["india", "life", "weather"], "environment": ["india", "life", "weather"], "sport-films": ["india", "life", "sport-films"], "jobs": ["business", "economy", "jobs"], "tech": ["business", "companies", "launches"]};
+const OLD_TERTIARY = {"hr": ["business", "economy", "jobs"], "finance": ["business", "companies", "results"], "marketing": ["business", "companies", "launches"], "analytics": ["business", "companies", "launches"], "operations": ["business", "companies", null]};
+function secChain(k) {
+  const s = SECTIONS.en, p3 = Object.keys(s.tree3).find(x => s.tree3[x].includes(k));
+  if (p3) return [Object.keys(s.tree).find(p => s.tree[p].includes(p3)), p3, k];
+  const p2 = Object.keys(s.tree).find(p => s.tree[p].includes(k));
+  return p2 ? [p2, k] : s.tree[k] ? [k] : [];
+}
+function buildCat(paths) {
+  const p = [], s = [], t = [];
+  for (const [a, b, c] of paths) {
+    if (!p.includes(a)) { if (p.length >= 2) continue; p.push(a); }
+    if (b && !s.includes(b)) { if (s.length >= 2) continue; s.push(b); }
+    if (c && s.includes(b) && !t.includes(c) && t.length < 2) t.push(c);
+  }
+  return p.length ? {v: 2, primary: p, secondary: s, tertiary: t} : {primary: [], secondary: [], tertiary: []};
+}
 function normCat(cat) {
   cat = cat || {};
-  const p = [...(cat.primary || [])], s = [...(cat.secondary || [])], t = [...(cat.tertiary || [])];
-  for (const [old, [a, b, c]] of Object.entries(OLD_KEYS)) {
-    const i = s.indexOf(old);
-    if (i < 0) continue;
-    s[i] = b; if (!p.includes(a)) p.push(a); if (!t.includes(c)) t.push(c);
-  }
-  return {primary: p, secondary: [...new Set(s)], tertiary: t};
+  const p = cat.primary || [], s = cat.secondary || [], t = cat.tertiary || [];
+  if (cat.v === 2) return buildCat([...t, ...s, ...p].map(secChain).filter(c => c.length).map(c => [c[0], c[1] || null, c[2] || null]));
+  return buildCat([...s.map(k => OLD_SECONDARY[k]), ...t.map(k => OLD_TERTIARY[k]), ...p.map(k => OLD_PRIMARY[k])].filter(Boolean));
+}
+// a reader's followed section path from the earlier tree, as today's path (categories.follow_path)
+function followPath(key) {
+  const parts = String(key || "").split("/").filter(Boolean), last = parts[parts.length - 1] || "";
+  if (parts.length && secChain(last).join("/") === parts.join("/")) return parts.join("/");
+  const old = parts.length === 3 ? OLD_TERTIARY[last] : parts.length === 2 ? OLD_SECONDARY[last] : OLD_PRIMARY[last];
+  return old ? old.filter(Boolean).join("/") : String(key || "");
 }
 function inSection(c, k) {
   if (k === "all") return true;
@@ -3747,10 +3769,18 @@ const STATES = [["andhra-pradesh", "Andhra Pradesh", "आंध्र प्र�
 const stateLabel = k => { const s = STATES.find(x => x[0] === k); return s ? s[lang === "hi" ? 2 : 1] : k; };
 
 /* the reader's follows: "kind|key" -> label; saved straight to the database */
-let follows = new Map(), unread = 0, followSub = null, followBusy = false;
+let follows = new Map(), followKeys = new Map(), unread = 0, followSub = null, followBusy = false;   // followKeys: shown key -> stored key
 async function loadFollows() {
   if (!me) { follows = new Map(); return; }
-  try { follows = new Map((await rest("follows?select=kind,key,label")).map(r => [`${r.kind}|${r.key}`, r.label || r.key])); } catch (e) { /* offline */ }
+  try {
+    const rows = await rest("follows?select=kind,key,label");
+    followKeys = new Map();
+    follows = new Map(rows.map(r => {                      // a section followed in the earlier tree shows at today's place
+      const key = r.kind === "section" ? followPath(r.key) : r.key;
+      followKeys.set(`${r.kind}|${key}`, r.key);
+      return [`${r.kind}|${key}`, r.label || r.key];
+    }));
+  } catch (e) { /* offline */ }
 }
 const isF = (kind, key) => follows.has(`${kind}|${key}`);
 async function setFollow(kind, key, on, label) {
@@ -3761,7 +3791,9 @@ async function setFollow(kind, key, on, label) {
     await rest("follows", {method: "POST", headers: {Prefer: "resolution=ignore-duplicates"}, body: JSON.stringify({reader: myId(), kind, key, label: label || key})});
   } else {
     follows.delete(k);
-    await rest(`follows?kind=eq.${encodeURIComponent(kind)}&key=eq.${encodeURIComponent(key)}`, {method: "DELETE"});
+    const stored = followKeys.get(k) || key;                // the key as stored (an earlier tree's path)
+    followKeys.delete(k);
+    await rest(`follows?kind=eq.${encodeURIComponent(kind)}&key=eq.${encodeURIComponent(stored)}`, {method: "DELETE"});
   }
 }
 async function countUnread() {

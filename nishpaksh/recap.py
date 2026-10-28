@@ -15,13 +15,13 @@ import json
 import logging
 import re
 
-from .categories import PRIMARY_LABELS, normalize
+from .categories import RECAP_LABELS as PRIMARY_LABELS, normalize
 from .narrative import CAUSAL, HEDGE_MARKERS
 from .router import QuotaExhausted, Router
 from .voice import ACT, ACT_VERBS
 
 log = logging.getLogger(__name__)
-ORDER = ["politics", "justice", "business", "world", "life", "more"]
+ORDER = ["politics", "justice", "business", "world", "life", "more"]   # RECAP_LABELS keys
 MORE = ("Also today", "और ख़बरें")
 PER_CALL = 10
 MAX_WORDS = 40
@@ -154,8 +154,11 @@ def group(rows: list[dict]) -> dict[str, list[dict]]:
         lead = _lead(pe)
         if not lead:
             continue
-        prim = normalize(pe.get("category")).get("primary") or []
-        sec = prim[0] if prim and prim[0] in PRIMARY_LABELS else "more"
+        cat = normalize(pe.get("category"))
+        prim, secs_ = cat.get("primary") or [], cat.get("secondary") or []
+        # India is told by its three sections (Politics, Justice, Life); World and Business whole (Oct 28 2026)
+        main = (next((x for x in secs_ if x in PRIMARY_LABELS), None) if prim and prim[0] == "india" else prim[0]) if prim else None
+        sec = main if main in PRIMARY_LABELS else "more"
         out.setdefault(sec, []).append({"id": r["story_id"], "lead": lead, "lead_hi": _lead(r["payload_hi"] or {}),
                                         "n": (pe.get("counts") or {}).get("independent_sources") or 0,
                                         "sx": bool(pe.get("suicide")),
