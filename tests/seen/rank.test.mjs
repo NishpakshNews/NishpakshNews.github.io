@@ -13,9 +13,9 @@ let store = "{}";
 const sb = { safeGet: () => store, JSON, Date, Object, String, Math };
 vm.runInNewContext(html.slice(a, b) + "\nthis.api = {rankCards, readSeen, seenKey};", sb);
 const { rankCards, readSeen } = sb.api;
-const verOf = c => c.at;
-const card = (id, o = {}) => ({ id, at: "t" + id, thread: "th" + id, bar: { e: 2, d: 0 }, ...o });
-const rec = (c, o = {}) => ({ v: c.at, i: c.id, b: [2, 0, 0, 0, 0, 0, 0], s: 1, o: 0, ...o });
+const verOf = c => c.v || "";
+const card = (id, o = {}) => ({ id, at: "t" + id, v: "0000000" + id, thread: "th" + id, bar: { e: 2, d: 0 }, ...o });
+const rec = (c, o = {}) => ({ v: c.v, i: c.id, b: [2, 0, 0, 0, 0, 0, 0], s: 1, o: 0, ...o });
 const ids = r => Array.from(r.ordered, c => c.id);
 const plain = x => JSON.parse(JSON.stringify(x));   // objects made inside the vm sandbox have another realm's prototypes
 
@@ -32,21 +32,21 @@ test("unseen, then seen, then opened; newest first inside each", () => {
   assert.deepEqual(ids(rankCards(cs, recs, verOf)), [3, 2, 5, 1, 4]);
 });
 test("a changed version goes back to the top with a pill", () => {
-  const cs = [card(1), card(2, { at: "t2new", bar: { e: 3, d: 0 } })];
-  const recs = { th1: rec(cs[0]), th2: rec(cs[1], { v: "t2" }) };
+  const cs = [card(1), card(2, { v: "ffffffff", bar: { e: 3, d: 0 } })];
+  const recs = { th1: rec(cs[0]), th2: rec(cs[1], { v: "00000002" }) };
   const r = rankCards(cs, recs, verOf);
   assert.deepEqual(ids(r), [2, 1]);
   assert.deepEqual(plain(cs[1].upd), { r: "updated", n: 0 });
   assert.equal(r.counts.upd, 1);
 });
 test("a different story id on the same thread (a follow-up) is updated too", () => {
-  const c = card(7, { thread: "th1", at: "n" });
-  rankCards([c], { th1: rec(c, { i: 1, v: "old" }) }, verOf);
+  const c = card(7, { thread: "th1", v: "ffffffff" });
+  rankCards([c], { th1: rec(c, { i: 1, v: "11111111" }) }, verOf);
   assert.equal(c.upd.r, "updated");
 });
 test("annotation is reset on every call", () => {
-  const c = card(1, { at: "n" });
-  rankCards([c], { th1: rec(c, { v: "old" }) }, verOf);
+  const c = card(1, { v: "ffffffff" });
+  rankCards([c], { th1: rec(c, { v: "11111111" }) }, verOf);
   assert.ok(c.upd);
   rankCards([c], {}, verOf);
   assert.equal(c.upd, null);
@@ -67,4 +67,16 @@ test("at most 500 records, most recent kept", () => {
 test("broken storage reads as empty", () => {
   store = "{not json";
   assert.deepEqual(Array.from(Object.keys(readSeen())), []);
+});
+
+test("a database card (no fingerprint) never gets the pill, and an old time-stamped record is not an update", () => {
+  const c = card(1, { v: "" });
+  rankCards([c], { th1: { v: "2026-10-29T03:00:00", i: 1, s: 1, o: 0 } }, verOf);
+  assert.equal(c.upd, null);
+  const d = card(2);
+  rankCards([d], { th2: { v: "2026-10-29T03:00:00", i: 2, s: 1, o: 0 } }, verOf);
+  assert.equal(d.upd, null);
+  const e = card(3);
+  rankCards([e], { th3: { v: "2026-10-29T03:00:00-00000003", i: 3, s: 1, o: 0 } }, verOf);
+  assert.equal(e.upd, null);
 });

@@ -1508,7 +1508,7 @@ const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;      // the long names
 const GLYPH = {established: "✓", developing: "…", partial: "½", single: "1", disputed: "≠", false: "✕", unverified: "?"};
 const BAR2ST = {e: "established", v: "developing", p: "partial", o: "single", d: "disputed", r: "false", u: "unverified"};
 Object.assign(T.en, {
-  updated: "Updated", newStories: n => n === 1 ? "1 new story" : `${n} new stories`,
+  updated: "Updated", freshHome: "Fresh news ready", newStories: n => n === 1 ? "1 new story" : `${n} new stories`,
   unseenCount: (a, b) => [a ? `${a} new` : "", b ? `${b} updated` : ""].filter(Boolean).join(" · "),
   howTo: "How to read the colours", backed: "Independent sources, in colour", gsum: (e, n) => `${e} of ${n} statements confirmed`,
   kShort: {established: "Confirmed", developing: "Developing", unverified: "Not confirmed", partial: "Partly confirmed", single: "Single source", disputed: "Disputed", false: "False"},
@@ -1533,7 +1533,7 @@ Object.assign(T.en, {
     h3: "Tap a colour to see why.", p3: "The key sits under every headline and stays pinned as you read. Tap a colour to light up just those sentences."}
 });
 Object.assign(T.hi, {
-  updated: "अपडेट", newStories: n => `${n} नई खबर${n === 1 ? "" : "ें"}`,
+  updated: "अपडेट", freshHome: "ताज़ा खबरें तैयार", newStories: n => `${n} नई खबर${n === 1 ? "" : "ें"}`,
   unseenCount: (a, b) => [a ? `${a} नई` : "", b ? `${b} अपडेट` : ""].filter(Boolean).join(" · "),
   howTo: "रंग कैसे पढ़ें", backed: "स्वतंत्र स्रोत, रंगों में", gsum: (e, n) => `${n} में से ${e} कथन पुष्ट`,
   kShort: {established: "पुष्ट", developing: "विकसित", unverified: "अपुष्ट", partial: "आंशिक पुष्टि", single: "एक ही स्रोत", disputed: "विवादित", false: "असत्य"},
@@ -1574,6 +1574,7 @@ function readSeen(now = Date.now()) {
   return Object.fromEntries(rows.slice(0, SEEN_MAX));
 }
 // tier 0 unseen or updated, 1 seen not opened, 2 opened; inside a tier the order given stays (newest first)
+const fpOf = v => { const m = /(?:^|-)([0-9a-f]{8})$/.exec(String(v || "")); return m ? m[1] : ""; };
 function rankCards(cards, records, verOf) {
   const tiers = [[], [], []], counts = {fresh: 0, upd: 0};
   for (const c of cards) {
@@ -1581,7 +1582,8 @@ function rankCards(cards, records, verOf) {
     c.upd = null;
     let t = 0;
     if (rec) {
-      if (rec.v !== verOf(c)) { c.upd = {r: "updated", n: 0}; counts.upd++; }
+      const was = fpOf(rec.v), now = verOf(c);
+      if (was && now && was !== now) { c.upd = {r: "updated", n: 0}; counts.upd++; }
       else t = rec.o ? 2 : 1;
     }
     if (t === 0 && !c.upd) counts.fresh++;
@@ -1687,6 +1689,35 @@ async function newerThanFeed(l, newestMs) {
   const rows = await api(`published?select=${ROW_SELECT}&updated_at=gt.${since}&order=updated_at.desc&limit=30`, 4000);
   return rows.filter(r => r.pe && r.pe.length).map(r => rowCard(r, l));
 }
+/* ---------- the home kept on the device (owner, Oct 29 2026: "pre-store the homepage") ----------
+   Every feed that is read is kept in localStorage, one entry per language. The next start draws the deck from it at once and
+   asks the network afterwards; what the network finds new is offered through the "new stories" pill, never pushed under the reader. */
+const HOME_KEY = l => "np-home-" + l, HOME_KEEP = 80, HOME_MAX_AGE = 3 * 86400000;
+function saveHome(l, d) {
+  try {
+    const stories = d.stories.slice().sort((a, b) => utcMs(b.at) - utcMs(a.at)).slice(0, HOME_KEEP);
+    safeSet(HOME_KEY(l), JSON.stringify({saved: Date.now(), stories, sections: d.sections || null}));
+  } catch (e) { /* storage full or private mode: the next start asks the network, as before */ }
+}
+function readHome(l) {
+  try {
+    const h = JSON.parse(safeGet(HOME_KEY(l)) || "null");
+    if (!h || !Array.isArray(h.stories) || !h.stories.length || Date.now() - h.saved > HOME_MAX_AGE) return null;
+    return h;
+  } catch (e) { return null; }
+}
+function buildCards(stories) {
+  for (const s of stories) knownAt.set(String(s.id), s.v ? s.at + "-" + s.v : s.at);
+  // one card per thread: its latest development, newest first (owner, Oct 6 2026)
+  const byThread = new Map();
+  for (const s of stories) {
+    const k = s.thread || s.id, cur = byThread.get(k);
+    s.cat = normCat(s.cat);
+    if (!cur) byThread.set(k, {...s, size: 1});
+    else { cur.size += 1; if (utcMs(s.at) > utcMs(cur.at)) byThread.set(k, {...s, size: cur.size}); }
+  }
+  return [...byThread.values()].sort((a, b) => utcMs(b.at) - utcMs(a.at));
+}
 async function loadCards(l, feedOnly = false, stage = false) {      // feedOnly (the refresh button): never ask the database for newer rows; stage: read the newest cards but leave cardCache (what is on screen) alone
   if (cardCache[l] && !stage) return cardCache[l];
   let stories = null;
@@ -1697,7 +1728,7 @@ async function loadCards(l, feedOnly = false, stage = false) {      // feedOnly 
     // the feed gets 15 s and a second try first
     const u = `${FEED_URL}/${l}.json?m=${Math.floor(Date.now() / 60000)}${feedNonce ? `&n=${feedNonce}` : ""}`;
     const d = await getJSON(u, {cache: "no-cache"}, 15000).catch(() => getJSON(u, {cache: "no-cache"}, 15000));
-    if (d && Array.isArray(d.stories) && d.stories.length) stories = d.stories;
+    if (d && Array.isArray(d.stories) && d.stories.length) { stories = d.stories; saveHome(l, d); }
     if (d && d.sections && d.sections.tree3 && (d.sections.primary || {}).india) SECTIONS[l] = d.sections;   // a feed from before the 3·3·3 tree (Oct 28 2026): the built-in names
   } catch (e) { /* the feed is missing or slow: read the database */ }
   if (stories) {
@@ -1715,16 +1746,7 @@ async function loadCards(l, feedOnly = false, stage = false) {      // feedOnly 
     const rows = await api(`published?select=${ROW_SELECT}&order=updated_at.desc&limit=200`);
     stories = rows.filter(r => r.pe && r.pe.length).map(r => rowCard(r, l));
   }
-  for (const s of stories) knownAt.set(String(s.id), s.v ? s.at + "-" + s.v : s.at);
-  // one card per thread: its latest development, newest first (owner, Oct 6 2026)
-  const byThread = new Map();
-  for (const s of stories) {
-    const k = s.thread || s.id, cur = byThread.get(k);
-    s.cat = normCat(s.cat);
-    if (!cur) byThread.set(k, {...s, size: 1});
-    else { cur.size += 1; if (utcMs(s.at) > utcMs(cur.at)) byThread.set(k, {...s, size: cur.size}); }
-  }
-  const all = [...byThread.values()].sort((a, b) => utcMs(b.at) - utcMs(a.at));
+  const all = buildCards(stories);
   if (!stage) cardCache[l] = all;
   return all;
 }
@@ -1861,8 +1883,8 @@ function watchCurrent() {
 }
 function markSeen(c, opened) {
   const all = readSeen(), k = seenKey(c), v = verOf(c), old = all[k], b = c.bar || {};
-  const now = Date.now(), same = old && old.v === v;
-  all[k] = {v, i: c.id, b: ["e", "v", "p", "o", "d", "r", "u"].map(x => b[x] || 0), s: same ? old.s : now, o: opened ? now : (same ? old.o || 0 : 0)};
+  const now = Date.now(), same = old && (!fpOf(old.v) || !v || fpOf(old.v) === v);
+  all[k] = {v: v || fpOf(old && old.v), i: c.id, b: ["e", "v", "p", "o", "d", "r", "u"].map(x => b[x] || 0), s: same ? old.s : now, o: opened ? now : (same ? old.o || 0 : 0)};
   safeSet(SEEN_KEY, JSON.stringify(all));
 }
 function takeSeenSnapshot() { seenSnap = readSeen(); }
@@ -1945,6 +1967,13 @@ track.addEventListener("error", e => {
   const img = e.target;
   if (!(img instanceof HTMLImageElement)) return;
   const pic = img.closest(".pic"), card = img.closest("a.card");
+  // a slow line often fails a picture once: it is asked for again twice (3 s, then 8 s) before it is given up (owner, Oct 29 2026)
+  const tries = pic ? Number(pic.dataset.r || 0) : 9;
+  if (pic && tries < 2) {
+    pic.dataset.r = tries + 1;
+    if (!pic.dataset.w) { pic.dataset.w = 1; setTimeout(() => { pic.dataset.w = ""; pic.querySelectorAll("img").forEach(i => { const u = i.getAttribute("src"); i.removeAttribute("src"); i.src = u; }); }, tries ? 5000 : 3000); }
+    return;
+  }
   if (pic) pic.remove();
   if (card) card.classList.remove("has-pic");
 }, true);
@@ -2694,7 +2723,9 @@ function inSection(c, k) {
 // the reader's order (2.1, menu > Sort); ties keep the newest first. Not remembered: the front page opens newest first.
 let sortKey = "unseen";
 let seenSnap = readSeen(), seenCounts = {fresh: 0, upd: 0};   // the order is read from this snapshot; it is retaken only on opening, refresh button, and return after REOPEN_MS away
-const verOf = c => knownAt.get(String(c.id)) || c.at;
+// The version is the colour fingerprint alone (owner, Oct 29 2026: "Updated" only for a colour change). A card from the
+// database has none (""), and a record from before this rule held "time-fingerprint": only the fingerprint is kept.
+const verOf = c => fpOf(c.v);
 const SORTS = {verified: c => -share(c, "e"), contested: c => -share(c, "d"), developing: c => -share(c, "v"),
                outlets: c => -(c.n || 0), shortest: c => c.w || 1e9};
 function share(c, k) { const b = c.bar || {}, tot = Object.values(b).reduce((x, y) => x + y, 0) || 1; return (b[k] || 0) / tot; }
@@ -2971,11 +3002,11 @@ function placeTip(el, lift) {
 }
 const ntip = $("ntip");
 let newWaiting = false;
-function showNew(list) {        // stories arrived while the deck is in use: say so (board P3), and leave the order alone
+function showNew(list, label) {        // stories arrived while the deck is in use: say so (board P3), and leave the order alone
   newWaiting = true; rbtn.classList.add("dot");
   const n = list.length, pics = list.map(c => c.img && safeUrl(c.img.src) ? c.img.src : "").filter(Boolean).slice(0, 2);
   ntip.innerHTML = (pics.length ? `<span class="nth">${pics.map(u => `<img src="${esc(u)}" alt="" referrerpolicy="no-referrer">`).join("")}</span>` : "") +
-    `<span>${esc(T[lang].newStories(n))}</span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>`;
+    `<span>${esc(label || T[lang].newStories(n))}</span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>`;
   ntip.classList.toggle("pics", !!pics.length);
   syncNew();
 }
@@ -4880,7 +4911,27 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) coun
 if (me && "Notification" in window && Notification.permission === "granted") setTimeout(() => subscribePush(Promise.resolve("granted")), 3000);
 applyLang();
 track.innerHTML = loadingHtml();
-showDeck().finally(revealPage);
+// the home kept on this device is drawn at once; the network is asked afterwards and anything new waits behind the pill
+(function start() {
+  const saved = readHome(lang);
+  if (saved) {
+    if (saved.sections && saved.sections.tree3 && (saved.sections.primary || {}).india) SECTIONS[lang] = saved.sections;
+    cardCache[lang] = buildCards(saved.stories);
+  }
+  showDeck().finally(revealPage).then(() => { if (saved) checkAfterSaved(lang, cardCache[lang]); });
+})();
+async function checkAfterSaved(l, shownCards) {
+  try {
+    await stageFresh(l, [{at: "1970-01-01T00:00:00"}]);
+    if (l !== lang || !staged || staged.lang !== l) return;
+    const shown = newestAt(shownCards), have = new Map(shownCards.map(c => [String(c.id), c.v || ""]));
+    const fresh = staged.cards.filter(c => utcMs(c.at) > shown);
+    const changed = staged.cards.some(c => !have.has(String(c.id)) || (c.v || "") !== have.get(String(c.id)));
+    if (fresh.length) showNew(fresh);
+    else if (changed) showNew([], T[lang].freshHome);
+    else staged = null;
+  } catch (e) { /* offline: the saved home stays, as it is */ }
+}
 setTimeout(revealPage, 1600);     // never hold the splash longer than this
 route(false);
 if (/^#\/story\//.test(location.hash)) openedFromDeck = false;
@@ -5346,7 +5397,7 @@ function fillLatest(row) {
 // the kicker's place on the card, and its glide into (and back out of) the article, like the headline's
 const headOffsetKick = headOffset;
 headOffset = function (cardEl) {
-  const o = headOffsetKick(cardEl), kk = cardEl && cardEl.querySelector(".kk");
+  const o = headOffsetKick(cardEl), kk = cardEl && cardEl.querySelector(".kk > :not(.upd)");   // the words only: the article's kicker has no pill, so a pill in front of them must not shift the glide (owner, Oct 29 2026)
   if (kk) { const a = cardEl.getBoundingClientRect(), b = kk.getBoundingClientRect(); o.k = {x: b.left - a.left, y: b.top - a.top}; }
   return o;
 };
