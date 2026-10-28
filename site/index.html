@@ -1341,9 +1341,10 @@
      level of the three). A card with no picture carries the section pill in indigo above its headline. */
   .glass { position: absolute; z-index: 2; top: 10px; left: 12px; max-width: calc(100% - 24px); box-sizing: border-box; pointer-events: none;
            display: flex; align-items: center; gap: 8px; white-space: nowrap; color: #fff; border-radius: 999px;
-           background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.5);
-           -webkit-backdrop-filter: blur(16px) saturate(1.25); backdrop-filter: blur(16px) saturate(1.25);
-           box-shadow: 0 8px 24px -10px rgba(22,26,56,0.35); text-shadow: 0 1px 3px rgba(0,0,0,0.22); }
+           /* smoked glass (owner, Oct 29 2026, "Glass Options" page option 2): the white glass was lost on bright pictures */
+           background: rgba(18,18,22,0.38); border: 1px solid rgba(255,255,255,0.16);
+           -webkit-backdrop-filter: blur(22px) saturate(1.4); backdrop-filter: blur(22px) saturate(1.4);
+           box-shadow: 0 8px 22px -10px rgba(0,0,0,0.4); text-shadow: 0 1px 2px rgba(0,0,0,0.18); }
   .glass.greet { font-family: "Newsreader", Georgia, serif; font-weight: 500; font-size: 19px; line-height: 24px; padding: 7px 16px 6px; opacity: 0; }
   html.hi .glass.greet { font-family: "Tiro Devanagari Hindi", serif; font-size: 18px; }
   .glass.where { font-size: 13.5px; font-weight: 600; line-height: 18px; padding: 6px 12px 5px 14px; max-width: 62%;

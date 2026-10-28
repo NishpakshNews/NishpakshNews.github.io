@@ -1450,7 +1450,7 @@ stories, and tune settings then.
   option 2, sections option B; hold 2 s, fade 0.8 s).** Reviewers could not tell "a primary open with its secondaries shown"
   from "inside a secondary", and the greeting made the header change height. Now the header is TIDIED FROM THE START (58px:
   menu pill, wordmark, language pill; `header.top.tidy` in the markup, `tidied = true`; the greeting row and the tidy glide
-  are never used) and the app speaks on one frosted pill (`.glass`) on the card's picture, top left, beside the photo credit:
+  are never used) and the app speaks on one frosted pill (`.glass`, smoked: dark 38% tint, 22px blur, owner Oct 29 2026) on the card's picture, top left, beside the photo credit:
   (1) the greeting once (`greetSoon` -> `showGreeting`: fades in 0.8 s with a 0.97 -> 1 settle, holds 2 s, fades out 0.8 s;
   the credit fades aside meanwhile; skipped when the card in view has no picture, an article is open, a section is open or
   the first-visit tour shows); (2) while a section is open, every card carries `whereHtml()`: the last two names of the open
