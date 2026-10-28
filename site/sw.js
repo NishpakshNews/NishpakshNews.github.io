@@ -1,7 +1,9 @@
 // Nishpaksh offline support (nishpaksh_version_1.0). The page itself and its icons are kept for
 // offline use; news (the feed, articles) is always asked for fresh and the last copy is used offline;
 // fonts are kept once loaded.
-const VERSION = "np-main-82";
+const VERSION = "np-main-83";
+const IMGS = "np-pictures";           // the outlets' share pictures: linked, shown from this device's own cache (owner, Oct 29 2026)
+const IMG_MAX = 80;
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-maskable-192.png",
                "./icon-maskable-512.png", "./apple-touch-icon.png", "./mark.png"];
 
@@ -9,7 +11,7 @@ self.addEventListener("install", e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
 self.addEventListener("activate", e => {
-  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION).map(k => caches.delete(k))))
+  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION && k !== IMGS).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 // The feed's files are asked for with a changing address (?m=<minute>, ?v=<time>) so a CDN never answers with an old
@@ -32,6 +34,16 @@ async function fresh(req) {           // network first, the saved copy when offl
     throw err;
   }
 }
+async function keptPicture(req) {     // saved copy first; a new picture is kept, the oldest are let go
+  const cache = await caches.open(IMGS);
+  const hit = await cache.match(req);
+  if (hit) return hit;
+  const r = await fetch(req);
+  if (r.ok || r.type === "opaque") {
+    cache.put(req, r.clone()).then(() => cache.keys()).then(ks => Promise.all(ks.slice(0, Math.max(0, ks.length - IMG_MAX)).map(k => cache.delete(k)))).catch(() => {});
+  }
+  return r;
+}
 async function kept(req) {            // saved copy first (fonts never change)
   const cache = await caches.open(VERSION);
   const hit = await cache.match(req);
@@ -46,6 +58,7 @@ self.addEventListener("fetch", e => {
   const u = new URL(req.url);
   if (u.pathname.includes("/audio/")) return;          // audio is read in ranges: straight to the network
   if (u.hostname === "fonts.gstatic.com" || u.hostname === "fonts.googleapis.com") { e.respondWith(kept(req)); return; }
+  if (req.destination === "image" && u.origin !== self.location.origin && u.hostname !== "raw.githubusercontent.com" && u.protocol === "https:") { e.respondWith(keptPicture(req)); return; }
   if (u.hostname === "raw.githubusercontent.com" || u.origin === self.location.origin) { e.respondWith(fresh(req)); return; }
   // Supabase and anything else: straight to the network
 });

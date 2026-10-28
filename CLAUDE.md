@@ -2330,3 +2330,9 @@ and paragraphs mixed unrelated facts. Rebuilt, keeping the Oct 8 rule (never los
 - The header refresh icon is now an open arc (not joined end to end), like the Updated pill's arrow.
 - The refresh button re-sorts the deck (what you have seen sinks), so when the refreshed deck differs from the one on screen it dips and returns (`showDeck(..., soft)`: the track's `swap` class, 180 ms, off for reduced motion); an unchanged deck is left alone.
 - "Latest" now returns to the top card, which is not necessarily the newest story.
+
+## Fast start (owner, Oct 29 2026; branch `fast-start`, NOT on main; sw.js np-main-83)
+- **Saved home:** every feed read is kept in localStorage (`np-home-<lang>`, newest 80 stories, `saveHome`/`readHome`, max age 3 days). The next start draws the deck from it at once (`start()` near the end of the main script), then `checkAfterSaved` stages the fresh feed (`stageFresh`) and shows the "N new stories" pill, or "Fresh news ready" (`T.freshHome`) when only colours/versions changed; the press is instant (staged cards). First-ever open is still network-bound.
+- **Pictures:** `sw.js` keeps outlet pictures in cache `np-pictures` (opaque responses, newest 80; linked, never copied to our servers); a picture that fails is asked again after 3 s and 8 s before it is removed (`track` error handler, `pic.dataset.r`).
+- **"Updated" pill = colour change only:** `verOf` is the feed's colour fingerprint (`c.v`, 8 hex) alone; database cards (no `v`) and old records holding a time never count (`fpOf`). A fresh article used to show "Updated" because it was first seen as a database card (version = time) and later as a feed card (time-fingerprint).
+- **Kicker glide:** `headOffset` measures the kicker's WORDS (`.kk > :not(.upd)`), not the container, so a pill in front no longer shifts the glide (was 100 px off on cards with the pill).
