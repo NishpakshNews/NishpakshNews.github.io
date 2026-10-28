@@ -1333,12 +1333,38 @@
      text-wrap: pretty where the browser supports it */
   .card .text p, #rise .paper.lead p { text-align: justify; text-align-last: start; -webkit-hyphens: auto; hyphens: auto; }
   @media (prefers-reduced-motion: reduce) { canvas.wash { transition: none; } }
+
+  /* the glass (owner, Oct 28 2026; chosen on the "Greeting Motion" page: greeting option 2, sections option B). The header
+     stays tidied (58px) from the start and the greeting no longer lives in it; the app speaks on one frosted pill on the
+     card's picture, top left, beside the photo credit: the greeting once (fades in 0.8 s, holds 2 s, fades out 0.8 s,
+     the credit steps aside meanwhile), and "where you are" while a section is open (its last two names, and one dot per
+     level of the three). A card with no picture carries the section pill in indigo above its headline. */
+  .glass { position: absolute; z-index: 2; top: 10px; left: 12px; max-width: calc(100% - 24px); box-sizing: border-box; pointer-events: none;
+           display: flex; align-items: center; gap: 8px; white-space: nowrap; color: #fff; border-radius: 999px;
+           background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.5);
+           -webkit-backdrop-filter: blur(16px) saturate(1.25); backdrop-filter: blur(16px) saturate(1.25);
+           box-shadow: 0 8px 24px -10px rgba(22,26,56,0.35); text-shadow: 0 1px 3px rgba(0,0,0,0.22); }
+  .glass.greet { font-family: "Newsreader", Georgia, serif; font-weight: 500; font-size: 19px; line-height: 24px; padding: 7px 16px 6px; opacity: 0; }
+  html.hi .glass.greet { font-family: "Tiro Devanagari Hindi", serif; font-size: 18px; }
+  .glass.where { font-size: 13.5px; font-weight: 600; line-height: 18px; padding: 6px 12px 5px 14px; max-width: 62%;
+                 animation: glassIn 800ms cubic-bezier(.45,0,.2,1) both; }
+  .glass.where .wn { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .glass.where b { font-weight: 700; }
+  .glass.where i { font-style: normal; opacity: 0.65; font-weight: 400; margin: 0 0.3em; }
+  .glass .dots { flex: none; display: flex; gap: 4px; }
+  .glass .dots u { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.3); }
+  .glass .dots u.f { background: #fff; }
+  .card.wh { padding-top: 58px; }
+  .card.wh > .glass.where { top: 16px; left: 22px; max-width: calc(100% - 44px); background: rgba(47,58,114,0.92); border-color: rgba(47,58,114,0.92);
+                            -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: none; box-shadow: none; }
+  @keyframes glassIn { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+  @media (prefers-reduced-motion: reduce) { .glass.where { animation-duration: 1ms; } }
 </style>
 </head>
 <body>
 <div id="intro" aria-hidden="true"><div class="intro-in"><img src="mark.png" alt=""><div class="intro-tag" id="introtag">News, in true colours</div></div></div>
 <div id="app">
-  <header class="top" id="top">
+  <header class="top tidy" id="top">
     <div class="hbg" id="hbg" aria-hidden="true"><div class="hbw" id="hbw"><div class="hbgr brand" id="hbgr"></div></div></div>
     <div class="wmrow">
       <div class="cpill"><button type="button" class="mbtn" id="mbtn" aria-label="Menu" aria-haspopup="true" aria-expanded="false"></button><button type="button" class="rbtn" id="rbtn" aria-label="Refresh"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button></div>
@@ -1695,11 +1721,22 @@ function cardHtml(c, i) {
   const picHtml = pic ? `<div class="pic"><img class="soft" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async">
       <img class="sharp" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"><div class="wash"></div>
       <span class="pic-credit">${esc(T[lang].photo)}: ${esc(pic.by || "")}</span></div>` : "";
-  return `<div class="slot" data-i="${i}"><a class="card${pic ? " has-pic" : ""}" href="#/story/${encodeURIComponent(c.id)}" data-id="${esc(c.id)}">
-      ${picHtml}${edgeHtml(b)}${kickerHtml(b)}<h2>${esc(c.h)}</h2>
+  const wh = whereHtml();
+  const picIn = pic && wh ? picHtml.replace(/<\/div>$/, wh + "</div>") : picHtml;
+  return `<div class="slot" data-i="${i}"><a class="card${pic ? " has-pic" : ""}${wh && !pic ? " wh" : ""}" href="#/story/${encodeURIComponent(c.id)}" data-id="${esc(c.id)}">
+      ${picIn}${wh && !pic ? wh : ""}${edgeHtml(b)}${kickerHtml(b)}<h2>${esc(c.h)}</h2>
       <div class="text">${(c.paras || []).map(p => `<p>${p.map(sentenceHtml).join("")}</p>`).join("")}</div>
       <div class="glabel${b.e ? "" : " none"}">${esc(T[lang].gsum(b.e || 0, (b.e || 0) + (b.v || 0) + (b.p || 0) + (b.o || 0) + (b.d || 0) + (b.r || 0) + (b.u || 0)))}</div>
       <div class="foot"><span class="ago">${esc(ago(c.at))}</span></div></a></div>`;
+}
+// where you are, on the glass (owner, Oct 28 2026): the last two names of the open section and one dot per level of three
+function whereHtml() {
+  if (fKey === "all") return "";
+  const names = [level, sec, ter].filter(Boolean).map(secLabel).filter(Boolean).slice(-2);
+  if (!names.length) return "";
+  const d = secDepth();
+  return `<div class="glass where" aria-hidden="true"><span class="wn">${names.map((x, i) => i === names.length - 1 ? `<b>${esc(x)}</b>` : esc(x)).join("<i>›</i>")}</span>` +
+         `<span class="dots">${[0, 1, 2].map(k => `<u${k < d ? ' class="f"' : ""}></u>`).join("")}</span></div>`;
 }
 function renderDeck(keepId) {
   if (!cards.length && fKey !== "all") {
@@ -1717,7 +1754,7 @@ function renderDeck(keepId) {
   // optimisation pass (owner, Oct 16 2026): a refresh with nothing new rebuilt every card, so their painted washes and
   // pictures were thrown away and redrawn (the smooth background went sharp, then came back) and the deck froze. The
   // same cards in the same language and order are left exactly as they are; only their "x min ago" is brought up to date.
-  const sig = [lang, ...cards.map(c => [c.id, c.at, c.h, (c.img || {}).src || "", JSON.stringify(c.bar || {}), JSON.stringify(c.paras || []).length].join("|"))].join("\n");
+  const sig = [lang, fKey, secDepth(), ...cards.map(c => [c.id, c.at, c.h, (c.img || {}).src || "", JSON.stringify(c.bar || {}), JSON.stringify(c.paras || []).length].join("|"))].join("\n");
   if (track.dataset.sig === sig && track.querySelector("a.card")) {
     track.querySelectorAll("a.card").forEach(a => { const c = cards.find(x => String(x.id) === a.dataset.id), g = a.querySelector(".ago"); if (c && g) g.textContent = ago(c.at); });
     if (keepId != null) { const k = cards.findIndex(c => String(c.id) === String(keepId)); if (k >= 0 && k !== current) jumpTo(k); }
@@ -2882,12 +2919,33 @@ setInterval(() => { if (!document.hidden) tickAgo(); }, 20000);
 /* opening (owner, Oct 8-9 2026): the indigo with the wordmark fades away, then "Hello." for a second, then
    the greeting for the time of day */
 let greeted = false;
-function greetSoon() {
+const GREET_HOLD = 2000, GREET_FADE = 800, GLASS_EASE = "cubic-bezier(.45,0,.2,1)";
+function greetSoon(tries = 0) {
   setTimeout(() => {
-    const el = $("greet");
-    el.classList.add("swap");
-    setTimeout(() => { greeted = true; el.textContent = greeting(); el.classList.remove("swap"); }, 220);
-  }, 1000);
+    greeted = true;
+    $("greet").textContent = greeting();
+    const tourOn = document.getElementById("tour");
+    if (openId || fKey !== "all" || document.hidden || (tourOn && tourOn.classList.contains("on"))) return;   // never under the first-visit tour
+    const slot = track.children[cards.length > 1 ? current + 1 : 0];
+    if (!slot || !slot.querySelector("a.card")) { if (tries < 8) greetSoon(tries + 1); return; }   // the cards are still loading
+    showGreeting(slot.querySelector("a.card .pic"));
+  }, tries ? 500 : 1000);
+}
+// the greeting on the card's picture: in 0.8 s, 2 s still, out 0.8 s; the credit steps aside. No picture: no greeting.
+function showGreeting(pic) {
+  if (!pic) return;
+  const g = document.createElement("div"), cr = pic.querySelector(".pic-credit"), still = STILL.matches;
+  g.className = "glass greet"; g.textContent = greeting(); g.setAttribute("aria-hidden", "true");
+  pic.appendChild(g);
+  const F = still ? 1 : GREET_FADE, opt = {duration: F, easing: GLASS_EASE, fill: "forwards"};
+  const credit = (a, b) => cr && cr.animate([{opacity: a}, {opacity: b}], {...opt, duration: F * 0.7});
+  g.animate([{opacity: 0, transform: "scale(.97)"}, {opacity: 1, transform: "scale(1)"}], opt);
+  const c0 = credit(1, 0);
+  setTimeout(() => {
+    const out = g.animate([{opacity: 1, transform: "scale(1)"}, {opacity: 0, transform: "scale(.99)"}], opt);
+    const c1 = credit(0, 1);
+    out.onfinish = () => { g.remove(); if (c0) c0.cancel(); if (c1) c1.cancel(); };
+  }, F + GREET_HOLD);
 }
 const started = performance.now();
 let revealed = false;
@@ -3015,7 +3073,7 @@ function paintMe() {
    wordmark. Its height changes once; the indigo is clipped up and the card's top edge and content glide, by clip and
    transform only, so the card never relayouts while it moves (owner: the card must not jitter). */
 const top_ = $("top"), hbg = $("hbg");
-let tidied = false, swipes = 0, lastScroll = 0, tidyTimer = null;
+let tidied = true, swipes = 0, lastScroll = 0, tidyTimer = null;   // the header starts tidied (owner, Oct 28 2026: the greeting moved to the glass)
 function tidy() {
   if (tidied) return;
   if (Date.now() - lastScroll < 400 || running) { clearTimeout(tidyTimer); tidyTimer = setTimeout(tidy, 500); return; }   // never mid-swipe

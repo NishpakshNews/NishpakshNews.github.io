@@ -1446,6 +1446,20 @@ stories, and tune settings then.
   at 900 px). `.hbox h1` is 32px there too: 0 of 30 differ at 900 px and on a phone. Checked in the throttled harness at
   both widths, not on a real phone. `sw.js` np-main-64.
 
+- **The glass: greeting and "where you are" (owner, Oct 28 2026; chosen on the playable "Greeting Motion" page: greeting
+  option 2, sections option B; hold 2 s, fade 0.8 s).** Reviewers could not tell "a primary open with its secondaries shown"
+  from "inside a secondary", and the greeting made the header change height. Now the header is TIDIED FROM THE START (58px:
+  menu pill, wordmark, language pill; `header.top.tidy` in the markup, `tidied = true`; the greeting row and the tidy glide
+  are never used) and the app speaks on one frosted pill (`.glass`) on the card's picture, top left, beside the photo credit:
+  (1) the greeting once (`greetSoon` -> `showGreeting`: fades in 0.8 s with a 0.97 -> 1 settle, holds 2 s, fades out 0.8 s;
+  the credit fades aside meanwhile; skipped when the card in view has no picture, an article is open, a section is open or
+  the first-visit tour shows); (2) while a section is open, every card carries `whereHtml()`: the last two names of the open
+  section ("Politics › Elections") and three dots, one filled per level (`secDepth`); a card with no picture carries it in
+  solid indigo above its headline (`.card.wh`). The deck's signature includes `fKey` and the depth, so a level change redraws.
+  Rejected on the way (owner): the path or a depth line in the header (dilutes the name), greetings that rise, dissolve,
+  wipe, cascade or track in ("cheap"). `sw.js` np-main-72. Checked in headless Chromium on the real feed (stand-in pictures),
+  English and Hindi; not yet on a phone. The 3·3·3 section tree is still to be agreed and built.
+
 ## Pipeline (nishpaksh/run.py)
 ingest RSS → proactive search (`discover.py`: Google News decoded, Bing; Tavily fallback) →
 retract headline-only reads → Tavily reads blocked pages → wire copies → grouping (`stories.py`) →
