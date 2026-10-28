@@ -19,6 +19,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 
+from . import capword
 from .ownership import owner_of, region_of
 from .textmatch import skeleton
 
@@ -46,10 +47,14 @@ def names(text: str) -> set[str]:
     """Name skeletons of a headline: capitalised Roman words that are not common words, and every
     Devanagari word (Hindi has no capitals; a rough skeleton is enough to see a shared name)."""
     out = set()
-    for w in re.findall(r"[A-Za-z][A-Za-z'\-]+|[ऀ-ॿ]+", text or ""):
+    for m in re.finditer(r"[A-Za-z][A-Za-z'\-]+|[ऀ-ॿ]+", text or ""):
+        w = m.group(0)
         if re.match(r"[A-Za-z]", w):
             w = re.sub(r"['\u2019]s$", "", w).strip("'-")      # "Macron's" is Macron
-            if not w[0].isupper() or w.lower() in NOT_NAMES or len(w) < 3:
+            if not w or not w[0].isupper() or len(w) < 3:
+                continue
+            # the analyser says whether it is a name (capword.py); NOT_NAMES is the fallback when it does not decide
+            if not capword.is_name(w, text, m.start(), w.lower() not in NOT_NAMES):
                 continue
         sk = skeleton(w)
         if len(sk) >= 3:

@@ -57,6 +57,13 @@ COMMON = {"The", "A", "An", "In", "On", "At", "After", "Before", "He", "She", "T
           "Saturday", "Sunday", "Meanwhile", "Also", "Separately", "While", "With", "From", "For", "As", "Of", "And", "But"}
 
 
+def _common(word: str, text: str, start: int) -> bool:
+    """A capitalised word that is no name ("Meanwhile", "Monday", "The"). The analyser says (capword.py); COMMON answers
+    when it does not decide and is counted against it."""
+    from . import capword
+    return not capword.is_name(word, text, start, word not in COMMON)
+
+
 # words of order and frequency are not figures (figures.py), but a brief sentence may no more add them than a number
 ORDER_WORDS = {"first": "1st", "second": "2nd", "third": "3rd", "half": "half", "once": "once", "twice": "twice"}
 SAYS = re.compile(r"(?i)\b(said|says|told|stated|according to|alleged|alleges|claimed|claims|announced|added)\b")
@@ -106,8 +113,11 @@ def problem(text: str, source: str) -> str | None:
             return f"verb the lead does not use ({m.group(0)})"
     if "alleg" in src and "alleg" not in low:
         return "'allegedly' lost"
-    for name in CAP.findall(t):
-        if name not in COMMON and name.lower() not in src and not _initials(name, source):
+    for m in CAP.finditer(t):
+        name = m.group(0)
+        if _common(name, t, m.start()):
+            continue
+        if name.lower() not in src and not _initials(name, source):
             return f"a name the lead does not have ({name})"
     return None
 
@@ -205,7 +215,7 @@ def _brief_section(router: Router | None, label: str, items: list[dict], stats: 
 def _uses(text: str, second: str, first: str) -> bool:
     """The brief sentence carries something only the lead's second sentence has (a number or a name)."""
     only = _nums(second) - _nums(first)
-    names = {w for w in CAP.findall(second) if w not in COMMON} - set(CAP.findall(first))
+    names = {m.group(0) for m in CAP.finditer(second) if not _common(m.group(0), second, m.start())} - set(CAP.findall(first))
     return bool(only & _nums(text)) or any(w in text for w in names)
 
 

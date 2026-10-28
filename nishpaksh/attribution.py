@@ -52,7 +52,7 @@ def _subtree(toks, i: int) -> set[int]:
 
 def _speech_verb(toks):
     root = next((t for t in toks if t.dep == "ROOT" or t.head == t.i and t.pos == "VERB"), None)
-    if root is None or root.lemma not in nlp.SPEECH_LEMMA or not root.tag.startswith("VB"):
+    if root is None or not root.tag.startswith("VB") or not nlp.is_speech(toks, root):
         return None
     return root
 
@@ -62,8 +62,8 @@ def has_speech(text: str) -> bool:
     toks = nlp.parse(text)
     if not toks:
         return False
-    return any(t.lemma in nlp.SPEECH_LEMMA and t.tag.startswith("VB")
-               and any(c.head == t.i and c.dep in ("nsubj", "nsubjpass") for c in toks) for t in toks)
+    return any(t.tag.startswith("VB") and any(c.head == t.i and c.dep in ("nsubj", "nsubjpass") for c in toks)
+               and nlp.is_speech(toks, t) for t in toks)
 
 
 def read(text: str) -> Speech | None:
@@ -146,6 +146,6 @@ def pronoun_subjects(text: str) -> list[tuple[int, int, str]]:
         return []
     out = []
     for t in toks:
-        if t.dep == "nsubj" and t.text.lower() in ("he", "she") and toks[t.head].lemma in nlp.SPEECH_LEMMA:
+        if t.dep == "nsubj" and t.text.lower() in ("he", "she") and nlp.is_speech(toks, toks[t.head]):
             out.append((t.start, t.end, t.text))
     return out

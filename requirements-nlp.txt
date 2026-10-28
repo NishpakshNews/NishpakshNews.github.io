@@ -10,3 +10,6 @@ murmurhash<1.0.14        # 1.0.14+ breaks spaCy 3.8 model loading (OverflowError
 rapidfuzz>=3.9
 lemminflect>=0.2.3       # verb forms for agreement.py (no model download)
 language-tool-python>=2.8  # grammar checker (langcheck.py); needs Java, which the runners have
+lingua-language-detector>=2.0  # language identification (langid.py); no model download
+pycountry>=24.6   # ISO country and subdivision names (places.py)
+geonamescache>=2.0  # cities and countries (places.py); no download

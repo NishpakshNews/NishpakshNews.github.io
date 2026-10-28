@@ -105,7 +105,7 @@ def decompose(text: str) -> Decomp | None:
             kids.setdefault(t.head, []).append(t.i)
     root = roots[0]
     verb, prefix = root, set()
-    if root.lemma in nlp.SPEECH_LEMMA:                   # "Police said that X ..." : the fact is the reported clause
+    if nlp.is_speech(toks, root):                   # "Police said that X ..." : the fact is the reported clause
         rep = next((toks[c] for c in kids.get(root.i, []) if toks[c].dep in ("ccomp", "xcomp")), None)
         if rep is not None:
             verb = rep

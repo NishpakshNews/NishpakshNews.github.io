@@ -42,8 +42,9 @@ def key_tokens(statement: str) -> list[str]:
     """Numbers and proper names: what any report of this fact would have to contain."""
     from . import figures       # a figure is the same whether the statement or the outlet wrote 26 or twenty-six
     nums = [figures.canon(f.value) for f in figures.find(statement, spoken_min=figures.SPOKEN_MIN)]
-    words = re.findall(r"\b[A-Z][a-zA-Z]{3,}\b", statement)
-    names = [w for i, w in enumerate(words) if w.lower() not in STOP]
+    from . import capword
+    names = [m.group(0) for m in re.finditer(r"\b[A-Z][a-zA-Z]{3,}\b", statement)
+             if capword.is_name(m.group(0), statement, m.start(), m.group(0).lower() not in STOP)]
     return list(dict.fromkeys(nums + names))
 
 
@@ -147,6 +148,21 @@ def _like(a: str, b: str) -> bool:
     return SequenceMatcher(None, a, b).ratio() >= 0.75
 
 
+def _all_names(statement: str, at: int, phrase: str, words: list[str]) -> bool:
+    """Are all words of the phrase after a title names ("Minister Appointment Order" is not a person)? The analyser says
+    (capword.py); NOT_A_NAME is the fallback and is counted against it."""
+    from . import capword
+    pos = at
+    for raw, w in zip(phrase.split(), words):
+        start = statement.find(raw, pos)
+        pos = start + len(raw) if start >= 0 else pos
+        if not w or not w[0].isupper():
+            continue
+        if not capword.is_name(w, statement, start if start >= 0 else None, w not in NOT_A_NAME):
+            return False
+    return True
+
+
 def absent_people(statement: str, source: str) -> list[str]:
     """Titled people ("Chief Justice Sanjiv Khanna") a statement names whose surname the report does not have,
     in any spelling or script. Lenient: a near spelling counts as present."""
@@ -155,7 +171,7 @@ def absent_people(statement: str, source: str) -> list[str]:
     loose = None
     for m in TITLED.finditer(statement or ""):
         words = [re.sub(r"['’]s$", "", w.rstrip(".-")) for w in m.group(1).split()]
-        if any(w in NOT_A_NAME for w in words):
+        if not _all_names(statement, m.start(1), m.group(1), words):
             continue
         sur = words[-1]
         if len(sur) < 3 or sur.lower() in low or re.fullmatch(PERSON_TITLE, sur):

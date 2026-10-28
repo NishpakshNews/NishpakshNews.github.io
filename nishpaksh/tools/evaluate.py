@@ -16,6 +16,7 @@ Nothing is tuned here: the report is read once, then settings are changed once.
 from __future__ import annotations
 
 import json
+import re
 import statistics
 
 PRECISION_TARGET = 0.99
@@ -159,6 +160,8 @@ def thresholds() -> dict:
                        ("positions", ["MAX_AGE_HOURS"]), ("fidelity", ["QE_MIN"]), ("qa", ["MIN_SCORE"]),
                        ("contrast", ["MIN_PAIRS", "RATIO"]), ("aggregate", ["PRIOR", "POSTERIOR_MIN"]),
                        ("reask", ["MAX_CALLS_PER_RUN"]), ("risk", ["DEFAULT_MIN"]),
+                       ("capword", ["HEADLINE_SHARE", "HEADLINE_MIN"]), ("langid", ["EN_MARGIN", "OTHER_SURE", "HI_MARGIN"]),
+                       ("places", ["MIN_CITY", "BIG_CITY"]),
                        ("followup", ["RESTATED", "ENTITY_WEIGHT", "SERVICE_FLOOR", "REPEAT_SIM", "MIN_GAIN", "BUDGET"])]:
         try:
             m = __import__(f"nishpaksh.{mod}", fromlist=["x"])
@@ -172,6 +175,44 @@ def thresholds() -> dict:
     except Exception as e:  # noqa: BLE001
         out["express"] = f"unavailable: {str(e)[:60]}"
     return out
+
+
+def systems_audit(pages: list[dict]) -> dict:
+    """The technical systems that replaced word lists (capword, speech from the parse) against the lists they replaced, over
+    the published pages: how often they differ and the words they differ on, so the lists can be read before deletion.
+    Per word: [system says name?, list says name?]. A system that is wrong more often than the list stays off (owner)."""
+    from collections import Counter
+    from .. import auditcount, capword, narrative, people, recap, refs, textmatch, worldgate
+    lists = {"worldgate": worldgate.NOT_NAMES, "people": people.NOT_NAMES, "refs": {w.lower() for w in refs._FUNCTION_CAPS},
+             "recap": {w.lower() for w in recap.COMMON}, "narrative": narrative.COMMON_FIRST,
+             "textmatch": {w.lower() for w in textmatch.STOP | textmatch.NOT_A_NAME}}
+    seen = Counter()
+    words: dict[str, Counter] = {k: Counter() for k in lists}
+    texts = 0
+    for p in pages:
+        t = ". ".join([p.get("headline") or ""] + [s.get("text") or "" for para in (p.get("narrative") or {}).get("paragraphs", [])[:2]
+                                                  for s in para[:2]])
+        v = capword.verdicts(t)
+        if v is None:
+            seen["unreadable"] += 1
+            continue
+        texts += 1
+        for m in re.finditer(r"\b[A-Z][a-zA-Z]{2,}\b", t):
+            sv = v.get(m.start())
+            if sv is None:
+                seen["undecided"] += 1
+                continue
+            for k, lst in lists.items():
+                listed_name = m.group(0).lower() not in lst
+                seen[f"{k}:asked"] += 1
+                if sv != listed_name:
+                    seen[f"{k}:differ"] += 1
+                    words[k][(m.group(0), "system:name" if sv else "system:common")] += 1
+    return {"texts": texts, "counts": dict(seen),
+            "top_disagreements": {k: [[w, d, n] for (w, d), n in c.most_common(25)] for k, c in words.items()},
+            "runtime_counts": auditcount.snapshot(),
+            "note": "system:name = the analyser calls it a name and the list called it common (or the list has no entry); read the "
+                    "words: a common word the analyser called a name, or a name it called common, is the system being wrong."}
 
 
 def express_concerns(store) -> dict:
@@ -224,6 +265,7 @@ def main() -> None:
     section("writing", lambda: writing(pages))
     section("coreference", lambda: coreference(pages))
     section("express_concerns", lambda: express_concerns(store))
+    section("systems", lambda: systems_audit(pages))
     section("thresholds", thresholds)
     print(json.dumps(report, ensure_ascii=False, indent=1, default=str))
     try:

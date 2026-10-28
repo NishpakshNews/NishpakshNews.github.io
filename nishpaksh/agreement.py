@@ -144,7 +144,39 @@ _SPEECH = {"said", "says", "stated", "added", "noted", "argued", "claimed", "all
            "insisted", "that", "whether", "if", "because", "as", "when", "after", "before", "while", "since"}
 
 
-def _same_clause(here: str, near: tuple[str, bool], full_before: str, context: str) -> bool:
+def _parse_same_clause(toks, pron, body_end: int) -> bool | None:
+    """From the dependency parse: is the pronoun in the clause of the body's own verb, or in a clause that verb governs
+    as a complement or an adverbial ("The court said it was ...", "The court dismissed it because it was ...")? A clause
+    joined by "and" / "but" with a subject of its own, or a relative clause, is another clause. None = the parse does
+    not say (no part of speech, no verb found)."""
+    if not any(t.pos for t in toks):
+        return None
+    body = next((t for t in toks if t.start < body_end <= t.end), None)
+    if body is None:
+        return None
+
+    def verb_of(t):
+        for _ in range(len(toks)):
+            if t.tag.startswith("VB") or t.pos in ("VERB", "AUX"):
+                return t
+            if t.head == t.i:
+                return None
+            t = toks[t.head]
+        return None
+    bv, pv = verb_of(body), verb_of(toks[pron.head]) if pron.dep in ("nsubj", "nsubjpass") else verb_of(pron)
+    if bv is None or pv is None:
+        return None
+    t = pv
+    for _ in range(len(toks)):
+        if t.i == bv.i:
+            return True
+        if t.dep not in ("ccomp", "xcomp", "advcl") or t.head == t.i:
+            return False
+        t = toks[t.head]
+    return False
+
+
+def _same_clause(here: str, near: tuple[str, bool], full_before: str, context: str, parsed=None) -> bool:
     """Is the pronoun still about that body? Between the body and the pronoun there must be no quotation and no new
     clause (\"and\" / \"but\" / \";\") unless the word right before the pronoun is a speech verb or a joining word
     (\"The court heard the plea and said it ...\" is the court; \"The court said \\\"...\\\" and it was adjourned\" is not)."""
@@ -152,9 +184,21 @@ def _same_clause(here: str, near: tuple[str, bool], full_before: str, context: s
     if not found:
         return True                                # the body is in the sentence before: the pronoun opens the sentence
     gap = here[found[-1][1]:]
-    if _prev_word(here + " ", len(here) + 1) in _SPEECH:
-        return not _QUOTE.search(gap) and '"' not in gap and "“" not in gap
-    return not re.search(r"[\"“”;:]|(?:\s(?:and|but|or|while|whereas|which|who)\s)|[.!?]\s", gap)
+    if re.search(r"[\"“”]", gap):
+        return False                               # a quotation between the body and the pronoun
+    old = (not _QUOTE.search(gap)) if _prev_word(here + " ", len(here) + 1) in _SPEECH else (
+        not re.search(r"[\"“”;:]|(?:\s(?:and|but|or|while|whereas|which|who)\s)|[.!?]\s", gap))
+    if parsed is not None:                         # the parse says whether it is the body's clause (the old words are the fallback)
+        from . import auditcount
+        c = auditcount.counter("clause")
+        new = _parse_same_clause(parsed[0], parsed[1], found[-1][1])
+        if new is not None:
+            c["asked"] += 1
+            if new != old:
+                c["parse_same_list_not" if new else "list_same_parse_not"] += 1
+            return new
+        c["unread"] += 1
+    return old
 
 
 def fix_text(text: str, context: str = "") -> tuple[str, int]:
@@ -179,7 +223,7 @@ def fix_text(text: str, context: str = "") -> tuple[str, int]:
             continue
         here = text[:m.start()]
         near = _nearest_body(here) or (_nearest_body(context) if not body_mentions(here) else None)
-        if not near or not near[1] or not _same_clause(here, near, here, context):
+        if not near or not near[1] or not _same_clause(here, near, here, context, (toks, t)):
             continue
         low, cap = m.group("w").lower(), m.group("w")[:1].isupper()
         if low == "its":

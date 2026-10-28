@@ -758,6 +758,28 @@ SPEECH_ONLY = {"said", "say", "says", "stated", "state", "states", "added", "add
 MIN_EXTRA_WORDS = 1     # content words beyond the short line (after speaker and speech words) that count as a detail
 
 
+def _speech_stems(*texts: str) -> set[str]:
+    """The words of these lines that only say HOW something was said: the verbs that report a clause (read from the parse:
+    "said", "reiterating", "lamented") and their adverbs. SPEECH_ONLY is the fallback when a line cannot be parsed, and the
+    audit counts the listed words the parse did not find (auditcount "speech_only")."""
+    from . import auditcount, nlp
+    from .frames import _stem
+    listed = {_stem(w) for w in SPEECH_ONLY}
+    found: set[str] = set()
+    for text in texts:
+        toks = nlp.parse(text)
+        if not toks or not any(t.pos for t in toks):
+            return listed
+        for t in toks:
+            if t.tag.startswith("VB") and any(c.head == t.i and c.dep == "ccomp" for c in toks):
+                found |= {_stem(t.text.lower()), _stem(t.lemma)}
+                found |= {_stem(c.text.lower()) for c in toks if c.head == t.i and c.dep == "advmod"}
+    c = auditcount.counter("speech_only")
+    c["texts"] += 1
+    c["listed_not_found"] += len(listed & {_stem(w.lower()) for t in texts for w in re.findall(r"[A-Za-z]+", t)} - found)
+    return found
+
+
 def adds_detail(big: dict, small: dict) -> bool:
     """Does the detailed line say anything the short line does not? True for a number, a name (the speaker's own
     name aside) or MIN_EXTRA_WORDS content words more. A speaker and a speech verb are not a detail: the two lines are
@@ -767,7 +789,7 @@ def adds_detail(big: dict, small: dict) -> bool:
     pb, ps = Profile(big.get("text") or ""), Profile(small.get("text") or "")
     if pb.nums - ps.nums:
         return True
-    skip = {_stem(w) for w in SPEECH_ONLY}
+    skip = _speech_stems(big.get("text") or "", small.get("text") or "")
     for src in (big, small):
         skip |= {_stem(w.lower()) for w in re.findall(r"[A-Za-z][\w'-]*", str(src.get("speaker") or ""))}
     if (pb.names - ps.names - ps.roots) - skip:     # a name capitalised only by its place in the sentence is not new

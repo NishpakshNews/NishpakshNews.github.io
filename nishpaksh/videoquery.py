@@ -20,6 +20,8 @@ from __future__ import annotations
 import math
 import re
 
+from . import auditcount, langid
+
 # words that say nothing about WHICH story (a video titled "Big news live today" matches every story)
 STOP = set("""the a an and or of to in on at for with from by as is are was were be been has have had will would after
 before over under into about against amid than this that these those its his her their new says said news live video latest update
@@ -296,6 +298,7 @@ def video_language(title: str, tag: str | None = None, channel_lang: str | None 
     if tag is not None and tag not in ("hi", "en"):
         return None
     words = {w.lower().strip("'’-") for w in _words(title)}
+    sure = _model_language(title)
     if deva > latin:
         if latin > 0.25 * (latin + deva):
             return None
@@ -304,18 +307,41 @@ def video_language(title: str, tag: str | None = None, channel_lang: str | None 
         deva_words = {w for w in words if "\u0900" <= w[0] <= "\u097f"}
         if deva_words & OTHER_DEVA:
             return None
-        if tag == "hi" or deva_words & HINDI_WORDS:
-            return "hi"
-        return None
+        old = bool(tag == "hi" or deva_words & HINDI_WORDS)
+        # the model reads the Devanagari title: Hindi when it leads (Marathi and Nepali are told apart or vetoed above)
+        if sure is not None:
+            new = bool(tag == "hi" or (sure[0] == "hindi" and sure[2] >= langid.HI_MARGIN))
+            _count("hi", old, new)
+            return "hi" if new else None
+        return "hi" if old else None
     if deva:                                # a few Devanagari letters in a Latin title: not clear
-        return None
-    if words & ROMAN_HINDI:
         return None
     if tag == "hi":
         return None
-    if tag == "en" or channel_lang == "en" or words & ENGLISH_WORDS:
-        return "en"
-    return None
+    old_veto = bool(words & ROMAN_HINDI)
+    old_en = not old_veto and bool(tag == "en" or channel_lang == "en" or words & ENGLISH_WORDS)
+    if sure is not None:
+        lang, prob, margin = sure
+        if lang == "english" and margin >= langid.EN_MARGIN:
+            new = True                      # English leads clearly; romanised Hindi never does
+        elif lang != "english" and prob >= langid.OTHER_SURE:
+            new = False                     # clearly another language (romanised Hindi reads as Swahili, Tagalog ...)
+        else:
+            new = old_en                    # the model is unsure: the old words decide
+        _count("en", old_en, new)
+        return "en" if new else None
+    return "en" if old_en else None
+
+
+def _model_language(title: str):
+    return langid.identify(title)
+
+
+def _count(kind: str, old: bool, new: bool) -> None:
+    c = auditcount.counter("language")
+    c[f"{kind}_asked"] += 1
+    if old != new:
+        c[f"{kind}_model_{'yes' if new else 'no'}_list_{'no' if new else 'yes'}"] += 1
 
 
 # ------------------------------------------------------------------------------------------------ shorts

@@ -45,30 +45,49 @@ BODY_END = INSTITUTION - {"india", "pradesh", "nadu", "bengal", "district", "sta
 NAME = re.compile(r"(?:[A-Z][\w.&'()-]*\s+){0,4}[A-Z][\w'-]{2,}")
 
 
-def _clean(phrase: str) -> str:
+def _not_names(phrase: str, words: list[str], text: str | None, at: int) -> list[bool]:
+    """For each word of the phrase: is it a common word, not part of a name? The analyser says when the phrase stands in
+    a text it can read (capword.py); NOT_NAMES is the fallback and is counted against it."""
+    from . import capword
+    out, pos = [], at
+    for w in words:
+        listed = w.lower() in NOT_NAMES
+        if text is None or not w[:1].isupper():
+            out.append(listed)
+            continue
+        start = text.find(w, pos)
+        if start >= 0:
+            pos = start + len(w)
+        out.append(not capword.is_name(w, text, start if start >= 0 else None, not listed))
+    return out
+
+
+def _clean(phrase: str, text: str | None = None, at: int = 0) -> str:
     """A name without its title, role or descriptor: "Election Commissioner Gyanesh Kumar" -> "Gyanesh Kumar",
-    "Yemen's Houthi" -> "Houthi", "Iran-backed Houthi" -> "Houthi"."""
+    "Yemen's Houthi" -> "Houthi", "Iran-backed Houthi" -> "Houthi". `text` and `at`: where the phrase stands, so the
+    analyser can tell its common words from its names."""
     words = [w.strip(".,;:\"'‘’“”") for w in phrase.replace("’", "'").split()]
     words = [w for w in words if w]
+    nn = _not_names(phrase, words, text, at)
     # a possessive or a hyphenated descriptor in front ("Delhi's", "Liberian-flagged") is not part of the name
     while len(words) > 1 and (words[0].endswith("'s") or re.search(r"-[a-z]", words[0])):
-        words = words[1:]
+        words, nn = words[1:], nn[1:]
     # a BODY keeps its whole name: "The Supreme Court", "Election Commission" end in an institution word, and since the
     # titles registry (Oct 10 2026) their words are also title words ("Supreme Court judge", "Election Commissioner"),
     # which stripped them to nothing, so readers following the Supreme Court were never notified. Only "The" goes.
     if len(words) >= 2 and words[-1].lower() in BODY_END and words[-1][:1].isupper():
-        while words and words[0].lower() in NOT_NAMES:
-            words = words[1:]
+        while words and nn[0]:
+            words, nn = words[1:], nn[1:]
         if len(words) >= 2:
             return " ".join(words)
     # everything up to the last title word goes, when a name of 2+ words is left after it
     last_title = max((k for k, w in enumerate(words) if w.lower() in TITLES), default=-1)
     if 0 <= last_title and len(words) - last_title - 1 >= 2:
-        words = words[last_title + 1:]
-    while words and (words[0].lower() in TITLES or words[0].lower() in NOT_NAMES):
-        words = words[1:]
-    while words and words[-1].lower() in NOT_NAMES:
-        words = words[:-1]
+        words, nn = words[last_title + 1:], nn[last_title + 1:]
+    while words and (words[0].lower() in TITLES or nn[0]):
+        words, nn = words[1:], nn[1:]
+    while words and nn[-1]:
+        words, nn = words[:-1], nn[:-1]
     if words and words[-1].endswith("'s"):
         words[-1] = words[-1][:-2]
     return " ".join(words)
@@ -80,8 +99,9 @@ def _candidates(items: list[dict]) -> list[str]:
         sp = _clean(str(i.get("speaker") or ""))
         if sp:
             out.append(sp)
-        for m in NAME.finditer(str(i.get("text") or "")):
-            c = _clean(m.group(0))
+        body = str(i.get("text") or "")
+        for m in NAME.finditer(body):
+            c = _clean(m.group(0), body, m.start())
             if c:
                 out.append(c)
     return out

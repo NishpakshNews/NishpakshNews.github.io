@@ -748,7 +748,11 @@ def _hedge(text: str, proper: set[str] | None = None, single: bool = False) -> s
     if first:
         w = first.group(1)
         # lower-case a common first word; keep a name ("According to reports, Such" seen on a live page)
-        is_name = (w in proper) if proper is not None else w.lower() not in COMMON_FIRST
+        if proper is not None:
+            is_name = w in proper
+        else:                                  # the analyser says (capword.py); COMMON_FIRST answers when it does not decide
+            from . import capword
+            is_name = capword.is_name(w, t, 0, w.lower() not in COMMON_FIRST)
         if not is_name and not w.isupper():
             t = t[0].lower() + t[1:]
     return lead[0].upper() + lead[1:] + ", " + t

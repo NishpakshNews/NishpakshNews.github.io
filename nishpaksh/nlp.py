@@ -62,6 +62,23 @@ def available() -> bool:
     return _backend is not None or pipeline() is not None
 
 
+_docs: dict[str, object] = {}
+
+
+def _doc(text: str):
+    """The analysed text, once: entities and the parse of one text share a single run of the pipeline."""
+    key = text[:100_000]
+    if key in _docs:
+        return _docs[key]
+    nlp = pipeline()
+    if nlp is None:
+        return None
+    if len(_docs) > 300:
+        _docs.clear()
+    _docs[key] = nlp(key)
+    return _docs[key]
+
+
 def ents(text: str) -> list[Ent]:
     """Named entities of a text (cached)."""
     if not text:
@@ -71,10 +88,9 @@ def ents(text: str) -> list[Ent]:
     if _backend is not None:
         out = list(_backend(text))
     else:
-        nlp = pipeline()
-        if nlp is None:
+        doc = _doc(text)
+        if doc is None:
             return []
-        doc = nlp(text[:100_000])
         out = [Ent(e.text, e.label_, e.start_char, e.end_char) for e in doc.ents]
     if len(_cache) > 2000:
         _cache.clear()
@@ -116,10 +132,9 @@ def parse(text: str) -> list[Tok] | None:
     if _parser is not None:
         out = _parser(text)
     else:
-        nlp = pipeline()
-        if nlp is None:
+        doc = _doc(text[:5_000])
+        if doc is None:
             return None
-        doc = nlp(text[:5_000])
         out = [Tok(t.i, t.text, t.idx, t.idx + len(t.text), t.lemma_.lower(), t.tag_, t.pos_, t.dep_, t.head.i) for t in doc]
     if len(_parse_cache) > 2000:
         _parse_cache.clear()
@@ -209,6 +224,31 @@ SPEECH_LEMMA = {"say", "tell", "state", "claim", "allege", "add", "note", "annou
                 "argue", "report", "assert", "maintain", "insist", "explain", "mention", "remark", "stress", "reveal"}
 
 
+def reports(toks: list, t) -> bool:
+    """Does this verb report something: a person or body is its subject and a clause is its complement ("Police said it
+    was ...", "Kabir argued that ...")? Read from the parse, so a verb of saying nobody listed ("lamented", "cautioned")
+    is found as well, and "decided to" / "It seems that" (an infinitive, an expletive) is not."""
+    if not t.tag.startswith("VB") or t.pos == "AUX":
+        return False
+    kids = [c for c in toks if c.head == t.i and c.i != t.i]
+    return any(c.dep == "ccomp" for c in kids) and any(c.dep in ("nsubj", "nsubjpass") for c in kids)
+
+
+def is_speech(toks: list, t) -> bool:
+    """Is this verb a verb of saying? The parse answers when it shows a reported clause (`reports`); a verb with none
+    ("He added.", the words in a quotation's next sentence) is answered by the old list SPEECH_LEMMA, the fallback.
+    Counted: both agree / the parse only (a verb the list lacks) / the list only (no clause to read)."""
+    from . import auditcount
+    c = auditcount.counter("speech")
+    listed = t.lemma in SPEECH_LEMMA
+    if reports(toks, t):
+        c["both" if listed else "parse_only"] += 1
+        return True
+    if listed:
+        c["list_only"] += 1
+    return listed
+
+
 def _text(tokens) -> str:
     toks = sorted(tokens, key=lambda t: t.i)
     while toks and (toks[0].dep_ in ("cc", "punct") or toks[0].lower_ in ("and", "but", "while", "as")):
@@ -255,7 +295,8 @@ def clauses(text: str) -> list[str] | None:
     # find the verb whose coordination to split: the root, or the clause a speech verb reports
     prefix: list = []
     core = root
-    if root.lemma_ in SPEECH_LEMMA or root.lemma_.lower() in SPEECH_LEMMA:
+    if (root.lemma_.lower() in SPEECH_LEMMA) or (root.pos_ == "VERB" and any(c.dep_ == "ccomp" for c in root.children)
+                                                  and any(c.dep_ in ("nsubj", "nsubjpass") for c in root.children)):
         rep = next((c for c in root.children if c.dep_ in ("ccomp", "xcomp")), None)
         if rep is not None:
             core = rep

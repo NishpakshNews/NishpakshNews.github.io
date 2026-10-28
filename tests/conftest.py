@@ -275,7 +275,11 @@ def local_ner(monkeypatch):
     nlp.set_parser(fake_parser)
     from nishpaksh import nlp
     nlp.set_backend(fake_ner)
+    from nishpaksh import auditcount, langid
+    langid.set_backend(lambda text: None)     # no language model in tests: the word lists answer (langid.py)
+    auditcount.reset()
     yield
+    langid.set_backend(None)
     nlp.set_backend(None)
     nlp.set_chunker(None)
     nlp.set_parser(None)

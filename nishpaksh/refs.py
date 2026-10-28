@@ -503,7 +503,9 @@ def _has_candidate(window: str) -> bool:
     """Does the text carry a name or a noun phrase a pronoun could point to?"""
     if _NP.search(window):
         return True
-    return any(w not in _FUNCTION_CAPS for w in re.findall(r"(?<![\w'’-])[A-Z][\w&-]+", window))
+    from . import capword      # the analyser says what is a name; _FUNCTION_CAPS answers when it does not decide
+    return any(capword.is_name(m.group(0), window, m.start(), m.group(0) not in _FUNCTION_CAPS)
+               for m in re.finditer(r"(?<![\w'’-])[A-Z][\w&-]+", window))
 
 
 def antecedent_problem(text: str, near: str | None) -> str | None:

@@ -376,7 +376,8 @@ def main() -> None:
             log.warning("%s failed: %s", name, e)
             stats[name] = f"failed: {str(e)[:200]}"
     from . import embed
-    stats.update(step_seconds=steps, embed_cache=embed.cache_stats())
+    from . import auditcount
+    stats.update(step_seconds=steps, embed_cache=embed.cache_stats(), systems=auditcount.snapshot())
     stats.update(seconds=round(time.time() - t0), trigger=os.environ.get("RUN_TRIGGER", "manual"),
                  tier_calls={k: dict(v) for k, v in sorted(router.tier_log.items())},
                  dropped=sorted(router.dropped), rested=sorted(router.rested), skipping=sorted(skipping))

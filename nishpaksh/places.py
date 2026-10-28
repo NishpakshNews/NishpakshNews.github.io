@@ -129,12 +129,86 @@ DATELINE_PLACES = {
 }
 
 
+# Oct 28 2026 (owner: "replace the hand-written lists with technical systems"): a gazetteer decides first. `geonamescache`
+# (GeoNames, offline: every city of 500,000 people or more, every capital, every country) and `pycountry` (ISO 3166 names). The tables above
+# and below stay as the FALLBACK for what the gazetteer cannot see (the UN, "UAE", a Devanagari spelling too short to match
+# by its consonant skeleton) and every disagreement is counted (auditcount "places"). A missing library = the tables alone.
+BIG_CITY = 1_000_000        # alternate spellings (Kiev / Kyiv) count only for cities this big: "Police" is a town in Poland
+MIN_CITY = 500_000          # small towns share names with English words (Reading, Mobile, Nice); capitals count at any size
+_gaz: dict | None = None
+
+
+def _gazetteer() -> dict | None:
+    global _gaz
+    if _gaz is not None:
+        return _gaz or None
+    _gaz = {}
+    try:
+        import geonamescache
+        from .textmatch import skeleton
+        gc = geonamescache.GeonamesCache()
+        cities, countries = set(), {}
+        for c in gc.get_cities().values():
+            if c.get("population", 0) >= MIN_CITY:
+                cities.add(c["name"].lower())
+                if c.get("population", 0) >= BIG_CITY:
+                    cities |= {a.lower() for a in c.get("alternatenames", []) if a.isascii() and len(a) > 2}
+        try:
+            import pycountry
+        except Exception:  # noqa: BLE001
+            pycountry = None
+        for iso, c in gc.get_countries().items():
+            if c.get("capital"):
+                cities.add(c["capital"].lower())
+            short = c["name"]
+            names = {short.lower()}
+            if pycountry is not None:
+                pc = pycountry.countries.get(alpha_2=iso)
+                names |= {getattr(pc, a).lower() for a in ("name", "official_name", "common_name") if pc and hasattr(pc, a)}
+            for n in names:
+                countries[n] = short
+        skel: dict[str, str] = {}
+        for n in cities | set(countries):
+            k = skeleton(n)
+            if len(k) >= 4:
+                skel.setdefault(k, n)
+        _gaz = {"cities": cities, "countries": countries, "skeleton": skel}
+    except Exception:  # noqa: BLE001
+        _gaz = {}
+    return _gaz or None
+
+
+def _gazetteer_place(k: str) -> bool | None:
+    g = _gazetteer()
+    if g is None:
+        return None
+    if k in g["cities"] or k in g["countries"]:
+        return True
+    if re.search(r"[ऀ-ॿ]", k):
+        from .textmatch import skeleton
+        sk = skeleton(k)
+        return len(sk) >= 4 and sk in g["skeleton"]
+    return False
+
+
 def is_place(name: str) -> bool:
-    """True when `name` (any case, either script) is a state, a city in the table above or a dateline place."""
+    """True when `name` (any case, either script) is a state, a city of the gazetteer or a dateline place. The gazetteer
+    answers first; the tables are the fallback and the audit counts where they differ."""
     k = re.sub(r"[\s_.]+", " ", (name or "").strip().lower()).strip(" ,:")
     if not k:
         return False
-    return k in DATELINE_PLACES or _key(k) in BY_NAME
+    old = k in DATELINE_PLACES or _key(k) in BY_NAME
+    if _key(k) in BY_NAME:
+        return True                                     # the states and their cities: the table of this file, as before
+    new = _gazetteer_place(k)
+    if new is None:
+        return old
+    from . import auditcount
+    c = auditcount.counter("places")
+    c["asked"] += 1
+    if new != old:
+        c["gazetteer_only" if new else "list_only"] += 1
+    return new or old
 
 
 # E21: the governments a source can speak for - the Union, an Indian state or a country. The reading model's "government"
@@ -160,6 +234,13 @@ def government_name(x) -> str | None:
     st = BY_NAME.get(_key(k))
     if st:
         return STATES[st][0]
-    if k in COUNTRIES:
-        return k.title() if len(k) > 3 else k.upper()
-    return None
+    from . import auditcount
+    c = auditcount.counter("countries")
+    g = _gazetteer()
+    new = g["countries"].get(k) if g else None
+    old = (k.title() if len(k) > 3 else k.upper()) if k in COUNTRIES else None
+    if g is not None:
+        c["asked"] += 1
+        if (new is None) != (old is None):
+            c["gazetteer_only" if new else "list_only"] += 1
+    return new or old

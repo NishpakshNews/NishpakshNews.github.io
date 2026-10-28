@@ -287,6 +287,11 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         stats["models"] = model_check.snapshot()
     except Exception:  # noqa: BLE001 - a record, never a reason to fail a run
         pass
+    try:
+        from . import auditcount
+        stats["systems"] = auditcount.snapshot()      # where a technical system and the old list it replaced disagreed
+    except Exception:  # noqa: BLE001
+        pass
     stats["health"] = health(store, stats)
     store.exec(update(_runs).where(_runs.c.id == run_id).values(finished_at=_now(), stats=stats))
     log.info("run complete: %s", stats)
