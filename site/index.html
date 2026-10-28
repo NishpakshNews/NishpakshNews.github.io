@@ -2895,7 +2895,8 @@ function revealPage() {
   setTimeout(() => {
     root.classList.add("ready");
     tidyTimer = setTimeout(tidy, 7500);
-    $("theme").setAttribute("content", "#ECECE9");
+    /* theme-color stays #1f2550 (owner, Oct 28 2026): the header runs from the very top edge in that indigo, so the browser's
+       status bar (Android Chrome paints it from theme-color) continues the header instead of standing pale above it */
     setTimeout(greetSoon, 520);
     setTimeout(maybeTour, 1500);
   }, Math.max(0, 500 - (performance.now() - started)));
@@ -5099,6 +5100,21 @@ function washColour(el) {
    in its own colour with the canvas's blur, straight onto the card's canvas: the GPU does it, nothing is read back, a card
    takes a few ms. Same spread, softness and strength; where two sentences overlap the later one is laid over the earlier
    with the blur's own alpha (the old loop weighted the two by strength), which reads the same at these tints. */
+/* Does this browser blur what a canvas draws (ctx.filter)? Chrome and Firefox do; Safari / iOS ignore the property, so the wash came
+   out as hard-edged rectangles there (owner, Oct 28 2026). Asked once by trying: a 4px square drawn with blur(2px) has some colour
+   2px outside its edge only if the blur happened. Where it did not, washCard blurs with the canvas's shadow instead. */
+let washBlurNative = null;
+function washNativeBlur() {
+  if (washBlurNative !== null) return washBlurNative;
+  try {
+    const c = document.createElement("canvas"); c.width = c.height = 16;
+    const x = c.getContext("2d");
+    if (!("filter" in x)) return (washBlurNative = false);
+    x.filter = "blur(2px)"; x.fillStyle = "#000"; x.fillRect(6, 6, 4, 4);
+    washBlurNative = x.getImageData(4, 8, 1, 1).data[3] > 0;
+  } catch (e) { washBlurNative = false; }
+  return washBlurNative;
+}
 function washCard(card, instant) {
   const w = card.offsetWidth, h = card.offsetHeight;
   if (!w || !h) return;
@@ -5110,15 +5126,24 @@ function washCard(card, instant) {
   const dpr = WASH.res, PW = Math.max(1, Math.round(w * dpr)), PH = Math.max(1, Math.round(h * dpr));
   if (cv.width !== PW || cv.height !== PH) { cv.width = PW; cv.height = PH; cv.style.width = w + "px"; cv.style.height = h + "px"; }
   const ctx = cv.getContext("2d");
-  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.filter = "none"; ctx.clearRect(0, 0, PW, PH);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.filter = `blur(${WASH.soft * dpr}px)`;
-  const d = WASH.spread;
+  const native = washNativeBlur();
+  ctx.setTransform(1, 0, 0, 1, 0, 0); if (native) ctx.filter = "none"; ctx.clearRect(0, 0, PW, PH);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // no canvas filter (Safari): each shape is drawn well left of the canvas and only its blurred shadow lands on it. The shadow's
+  // offset and blur are in canvas pixels, not moved by the transform; a shadow's blur is twice its standard deviation, so
+  // 2 x (soft x dpr) is the same softness as blur(soft x dpr px)
+  const shift = PW + 400;
+  if (native) ctx.filter = `blur(${WASH.soft * dpr}px)`;
+  else { ctx.shadowBlur = 2 * WASH.soft * dpr; ctx.shadowOffsetX = shift; ctx.shadowOffsetY = 0; }
+  const d = WASH.spread, ox = native ? 0 : shift / dpr;
   card.querySelectorAll(".s").forEach(el => {
     const c = washColour(el), rects = el.getClientRects();
     if (!c || !rects.length) return;
-    ctx.fillStyle = `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+    const rgb = `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+    ctx.fillStyle = rgb;
+    if (!native) ctx.shadowColor = rgb;
     ctx.beginPath();
-    for (const r of rects) if (r.width >= 1) ctx.rect((r.left - cr.left) / k - d, (r.top - cr.top) / k - d, r.width / k + 2 * d, r.height / k + 2 * d);
+    for (const r of rects) if (r.width >= 1) ctx.rect((r.left - cr.left) / k - d - ox, (r.top - cr.top) / k - d, r.width / k + 2 * d, r.height / k + 2 * d);
     ctx.fill();
   });
   card.dataset.washed = `${w}x${h}`;
