@@ -879,8 +879,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     it again (its colours mature by code, editions.mature). A development of an earlier article is
     judged like any story, only on what is new (followup.py). Returns True when written."""
     from .editions import judge_follow_up
-    from .narrative import (essay_ok, essay_shortfall, input_hash, ordered_items, publish_bar, sections_from_payload,
-                            write_narrative)
+    from .narrative import (PUBLISH_MIN, essay_ok, essay_shortfall, input_hash, lowered_bar_problems, merge_lone_paragraphs,
+                            ordered_items, publish_bar, sections_from_payload, write_narrative)
     if store.one(select(published.c.story_id).where(published.c.story_id == story_id)):
         return _outcome(story_id, "already published")
     from . import pagearchive
@@ -960,9 +960,28 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
                               report_text=report_text, bar=bar)
     drafted = nar.pop("drafted", None)
     essay_good = essay_ok(nar, payload, bar) and _keepable(nar)
+    # an article may publish at a LOWERED bar (below 80%) only if it reads well (owner, Oct 28 2026): lone one-sentence
+    # paragraphs are first joined into their neighbour of the same section by code (no sentence changed), then no
+    # one-sentence paragraph (except the lead), cut-off sentence or repeated run may remain. The 80% bar is untouched.
+    lowered = bar < PUBLISH_MIN - 1e-9
+    guard: list[str] = []
+    joined = 0
+    if essay_good and lowered:
+        nar["paragraphs"], nar["section_keys"], joined = merge_lone_paragraphs(nar["paragraphs"], nar.get("section_keys") or [])
+        guard = lowered_bar_problems(nar["paragraphs"])
+        if joined:
+            nar.setdefault("flow", {})["lone_joined"] = joined
+            try:
+                from . import inspector
+                nar["flow"]["inspector"] = inspector.inspect(nar["paragraphs"])
+            except Exception:  # noqa: BLE001 - a count; it never stops an article
+                pass
+        if guard:
+            essay_good = False
     dossier.record(store, story_id, "writer", {"model": nar.get("model"), "essay_good": bool(essay_good), "bar": bar,
                                                "plan": nar.get("plan"), "flow": nar.get("flow"), "refs": nar.get("refs"),
                                                "plural_bodies": nar.get("plural_bodies"),
+                                               "lowered_bar": {"joined": joined, "guard": guard} if lowered else None,
                                                "shortfall": None if essay_good else essay_shortfall(nar, payload, bar)})
     if essay_good:
         from .news import write_headline
@@ -981,6 +1000,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         short = essay_shortfall(nar, payload, bar)
         if not short["why"] and not _keepable(nar):
             short["why"] = "writer model not allowed"
+        if not short["why"] and guard:
+            short["why"] = "coherence guard: " + "; ".join(guard)      # covered enough for this bar, but it does not read well
         if not essay_good:
             nar["shortfall"] = short
             _note_writer_failure(store, story_id, h, nar)
@@ -1002,6 +1023,11 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         an = dict((store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {})
         an.pop("writer_draft", None)
         store.exec(update(stories).where(stories.c.id == story_id).values(analysis=an))
+    mark = None
+    if lowered:        # published below 80%: marked so it can be read and compared (owner, Oct 28 2026)
+        sf = essay_shortfall(nar, payload, bar)
+        mark = {"bar": round(bar, 2), "covered": sf["covered"], "total": sf["total"], "joined": joined}
+        nar["lowered_bar"] = mark
     payload["narrative"] = nar
     payload.pop("_thread_ctx", None)
     unify_article(payload)                  # and in what the writer and the headline model wrote
@@ -1029,7 +1055,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
             attach_children(store, only=parents)
         except Exception as e:  # noqa: BLE001 - a link never stops an article; the next run's pass does it
             log.warning("children of %s not attached: %s", parents, str(e)[:150])
-    return _outcome(story_id, "published")
+    return _outcome(story_id, "published", {"lowered_bar": mark} if mark else None)
 
 
 FLOOR_WAIT_HOURS = 3   # at the lowest bar a story is tried again only this often (it is never given up)

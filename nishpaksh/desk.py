@@ -246,6 +246,41 @@ def refused_last_run(store: Store, now: dt.datetime | None = None) -> set[str]:
     return set((row["report"] or {}).get("dropped") or [])
 
 
+RUN_TRIES = 3             # a story is written at most this often in one run: the first try and up to two retries
+RETRY_MIN_SECONDS = 300   # a retry starts only with this much of the run's time left (a try can take minutes)
+
+
+def _write_with_retries(store: Store, router: Router, sid: int, until: float | None, stats: dict) -> bool:
+    """Write the story; if the try ends "written short" (owner, Oct 28 2026), try again at once in the same run. The saved
+    draft is continued, never started again (publish_story resumes it), and each failed try has lowered the bar by
+    one step (narrative.publish_bar; the 80% bar stays the target of a first draft). A retry is made only while:
+    the failure is a coverage shortfall (a rejected essay or a model that is not allowed will not change by trying
+    again), it stepped the bar (a model that was overloaded used no try), the try was above the floor, the story has
+    had fewer than RUN_TRIES tries in this run, and the run has time left. Retries are counted apart from the desk's
+    tries (`stats["retries"]`), so they do not crowd other stories out. A retry that adds nothing leaves the draft as
+    it was; the story waits for the next run, as before."""
+    from . import compose
+    from .narrative import PUBLISH_FLOOR
+    before = compose._writer_tries(store, sid)
+    ok = compose.publish_story(store, router, sid)
+    tries = 1
+    while not ok and tries < RUN_TRIES:
+        out = compose.LAST_OUTCOME
+        short = out.get("detail") or {}
+        if out.get("outcome") != "written short" or short.get("why") != "coverage":
+            break
+        after = compose._writer_tries(store, sid)
+        if after <= before or float(short.get("bar") or 0) <= PUBLISH_FLOOR:
+            break
+        if until and until - time.time() < RETRY_MIN_SECONDS:
+            break
+        before = after
+        tries += 1
+        stats.setdefault("retries", {})[str(sid)] = tries - 1
+        ok = compose.publish_story(store, router, sid)
+    return ok
+
+
 def work(store: Store, router: Router, now: dt.datetime | None = None, until: float | None = None) -> dict:
     from . import compose, consolidate, verify
     now = now or utcnow()
@@ -302,10 +337,12 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
             continue
         verify.base_verdicts(store, sid)            # the 6-hour clock moved since it was analysed
         t1 = time.time()
-        ok = compose.publish_story(store, router, sid)
+        ok = _write_with_retries(store, router, sid, until, stats)
         write_s += time.time() - t1
         if ok:
             stats["published"].append(sid)
+            if (compose.LAST_OUTCOME.get("detail") or {}).get("lowered_bar"):      # published below 80%: marked for reading
+                stats.setdefault("lowered_bar", {})[str(sid)] = compose.LAST_OUTCOME["detail"]["lowered_bar"]
             if sid in express_ids:
                 stats.setdefault("express", []).append(sid)
             stats["tried"] += 1

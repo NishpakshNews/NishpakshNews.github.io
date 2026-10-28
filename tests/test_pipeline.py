@@ -2136,10 +2136,10 @@ def test_sections_left_short_are_filled_a_few_at_a_time():
     assert [k for k in dict.fromkeys(keys)] == ["news", "background", "happened", "say", "numbers", "next"]
 
 
-def test_a_short_article_is_finished_next_time_not_thrown_away(store):
+def test_a_short_article_is_finished_next_time_not_thrown_away(store, monkeypatch):
     """Owner, Oct 7 2026: an article that falls short of the 85% bar is kept as a draft; the next try
     fills in what is missing instead of writing a new article from nothing."""
-    from nishpaksh import compose
+    from nishpaksh import compose, narrative
     from nishpaksh.run import run
     _seed(store)
     calls = []
@@ -2169,12 +2169,20 @@ def test_a_short_article_is_finished_next_time_not_thrown_away(store):
             if "Write the story below as ONE news article" in prompt:
                 calls.append("draft")
             return super().generate(model, prompt, json_mode, grounded)
+    # below 80% an article that reads badly is not published (owner, Oct 28 2026): this tiny one has a one-sentence
+    # paragraph, so the try ends "written short" with the reason, and its draft is kept
+    assert not compose.publish_story(store, _router(store, Fills()), sid)
+    assert compose.LAST_OUTCOME["outcome"] == "written short" and "coherence guard" in compose.LAST_OUTCOME["detail"]["why"]
+    assert store.rows(select(published)) == []
+    assert "writer_draft" in store.one(select(stories.c.analysis).where(stories.c.id == sid))["analysis"]
+    monkeypatch.setattr(narrative, "lowered_bar_problems", lambda paragraphs: [])         # the rest is about the draft
     assert compose.publish_story(store, _router(store, Fills()), sid)
     assert "draft" not in calls                                   # continued, not started again
     an = store.one(select(stories.c.analysis).where(stories.c.id == sid))["analysis"]
     assert "writer_draft" not in an
     nar = store.one(select(published).where(published.c.story_id == sid))["payload_en"]["narrative"]
     assert nar["resumed"] and "drafted" not in nar
+    assert nar["lowered_bar"]["bar"] < 0.8 and nar["lowered_bar"]["total"] >= nar["lowered_bar"]["covered"]     # marked
 
     # a statement the draft cites is merged into another later: the sentence follows it, not dropped
     from nishpaksh.db import canonical

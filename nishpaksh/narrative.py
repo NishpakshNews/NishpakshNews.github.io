@@ -1329,6 +1329,62 @@ def essay_shortfall(nar: dict, payload: dict, bar: float | None = None) -> dict:
     return out
 
 
+LONE_MERGE_MAX = 5     # a lone sentence joins a paragraph only if that stays at 6 sentences or fewer (voice.problems flags 7+)
+
+
+def merge_lone_paragraphs(paragraphs: list[list[dict]], keys: list[str]) -> tuple[list[list[dict]], list[str], int]:
+    """Lone one-sentence paragraphs (except the lead) joined into the neighbouring paragraph of the SAME section, by
+    code: the earlier one first, else the next (owner, Oct 28 2026, in-run retry: an article published at a lowered
+    bar must not read as one-line paragraphs). No sentence is changed, added or removed and the order is kept. A lone
+    sentence with no neighbour in its section stays alone (`lowered_bar_problems` then refuses the article).
+    Returns (paragraphs, keys, merged)."""
+    paras = [list(p) for p in paragraphs]
+    ks = list(keys) if len(keys) == len(paras) else []
+    if not ks:
+        return paras, list(keys), 0           # no section per paragraph: nothing is known about neighbours
+    merged = 0
+    k = 1                                     # the lead (0) is left as written
+    while k < len(paras):
+        if len([s for s in paras[k] if (s.get("text") or "").strip()]) != 1:
+            k += 1
+            continue
+        prev_ok = k - 1 >= 1 and ks[k - 1] == ks[k] and len(paras[k - 1]) <= LONE_MERGE_MAX   # never into the lead
+        next_ok = k + 1 < len(paras) and ks[k + 1] == ks[k] and len(paras[k + 1]) <= LONE_MERGE_MAX
+        if prev_ok:
+            paras[k - 1] += paras[k]
+            del paras[k], ks[k]
+        elif next_ok:
+            paras[k + 1] = paras[k] + paras[k + 1]
+            del paras[k], ks[k]
+        else:
+            k += 1
+            continue
+        merged += 1                           # the paragraph now at k is the neighbour: looked at again only if it is lone
+    return paras, ks, merged
+
+
+def lowered_bar_problems(paragraphs: list[list[dict]]) -> list[str]:
+    """What keeps an article from publishing at a LOWERED bar (below PUBLISH_MIN; owner, Oct 28 2026): a one-sentence
+    paragraph (except the lead), a cut-off sentence, a repeated run of words. The 80% bar itself is not asked these
+    (they are counted there, `flow.inspector`). Empty list = coherent enough."""
+    from . import inspector
+    out: list[str] = []
+    lone = sum(1 for n, p in enumerate(paragraphs) if n > 0 and len([s for s in p if (s.get("text") or "").strip()]) == 1)
+    if lone:
+        out.append(f"{lone} one-sentence paragraph(s)")
+    cut = repeat = 0
+    for p in paragraphs:
+        for s in p:
+            t = (s.get("text") or "").strip()
+            cut += bool(inspector._ABBREV_END.search(t))
+            repeat += inspector.repeated_run(t)
+    if cut:
+        out.append(f"{cut} cut-off sentence(s)")
+    if repeat:
+        out.append(f"{repeat} repeated run(s)")
+    return out
+
+
 def _target_length(items: list[dict], express: bool = False) -> str:
     """Roughly how long the article should be: it follows the material, never padded. An express story (one
     report, read for coverage) writes every statement fully: one sentence each at least."""
