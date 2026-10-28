@@ -2627,11 +2627,11 @@ function layoutBar() {
   // a short label ("HR", "All") still gets a pill, not a bubble: every label counts at least 3em wide
   const widths = (row, i, fs, room) => row.map((l, j) => Math.max(textWidth(l, fs), 3 * fs) + (i > 0 && j === 0 ? CH : 0) + (room && away && i === selRow && j === selJ ? 16 : 0));
   let fs = lang === "hi" ? 14.25 : 13.25;
-  rows.forEach((row, i) => { const t = widths(row, i, fs).reduce((a, b) => a + b, 0); if (t + 6 * MINPAD > W) fs = Math.min(fs, fs * (W - 6 * MINPAD) / t); });
+  rows.forEach((row, i) => { const t = widths(row, i, fs).reduce((a, b) => a + b, 0); if (t + row.length * MINPAD > W) fs = Math.min(fs, fs * (W - row.length * MINPAD) / t); });
   fs = Math.max(9.5, Math.floor(fs * 4) / 4);
   sbar.style.fontSize = fs + "px";
   const place = (row, i) => {
-    const ws = widths(row, i, fs, true), pad = Math.max(0, (W - ws.reduce((a, b) => a + b, 0)) / 6);
+    const ws = widths(row, i, fs, true), pad = Math.max(0, (W - ws.reduce((a, b) => a + b, 0)) / row.length);   // the space shared by however many labels the row has (it was 6: four labels left the right end empty, Oct 29 2026)
     let c = 0;
     return ws.map(w => { const r = [c / W * 100, (w + pad) / W * 100]; c += w + pad; return r; });
   };
