@@ -63,7 +63,18 @@ def test_a_real_face_is_found():
     import numpy as np
     img = np.full((600, 800, 3), 200, np.uint8)       # a plain picture: no face
     ok, buf = cv2.imencode(".jpg", img)
-    assert focus.look(buf.tobytes()) == {}
+    got = focus.look(buf.tobytes())
+    assert "fc" not in got and got["col"][1] == 0 and 0.77 < got["col"][3] < 0.8      # no face; the corner colour is still read
+
+
+def test_the_corner_colour_is_read():
+    cv2 = pytest.importorskip("cv2")
+    import numpy as np
+    img = np.zeros((600, 800, 3), np.uint8)
+    img[:, :] = (30, 60, 200)                          # BGR: a strong red-orange
+    ok, buf = cv2.imencode(".png", img)
+    h, s, l, lum = focus.look(buf.tobytes())["col"]
+    assert h < 20 and s > 0.7 and lum < 0.5
 
 
 def test_an_older_cache_entry_is_looked_at_again(tmp_path):

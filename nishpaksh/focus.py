@@ -41,7 +41,7 @@ MIN_FACE = 0.035        # a face smaller than this share of the picture's shorte
 MIN_SHARE = 0.45        # faces much smaller than the largest are background people: left out (owner, Oct 15 2026: "the ones in
                         # the foreground matter")
 MIN_SHARP = 0.3         # a face far blurrier than the sharpest large face is out of focus, i.e. background
-VERSION = 2             # cache entries of another version are looked at again (2: eyes, foreground by size and sharpness)
+VERSION = 3             # cache entries of another version are looked at again (2: eyes, foreground by size and sharpness; 3: corner colour)
 CACHE_DAYS = 10
 UA = "Mozilla/5.0 (compatible; NishpakshBot/1.0; +https://nishpakshnews.github.io)"
 
@@ -155,12 +155,33 @@ def summarise(boxes, w: int, h: int, kind: str) -> dict:
     return {"fc": fc, "ar": round(w / h, 3), "fk": kind}
 
 
+def corner(img) -> dict:
+    """The colour under the greeting (owner, Oct 29 2026): the average of the picture's top-left corner as
+    {"col": [hue 0-360, saturation 0-1, lightness 0-1, luminance 0-1]}. The site makes the pill from it."""
+    import colorsys  # noqa: PLC0415
+    h, w = img.shape[:2]
+    b, g, r = (float(img[: max(1, int(h * .22)), : max(1, int(w * .62))][:, :, i].mean()) / 255 for i in range(3))
+    hh, ll, ss = colorsys.rgb_to_hls(r, g, b)
+    lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return {"col": [round(hh * 360), round(ss, 2), round(ll, 2), round(lum, 2)]}
+
+
 def look(data: bytes) -> dict:
     cv2 = _cv()
-    if cv2 is None or not MODEL.exists():
+    if cv2 is None:
         return {}
     img, _, _ = _decode(cv2, data)
     if img is None:
+        return {}
+    try:
+        col = corner(img)
+    except Exception:  # noqa: BLE001 - the colour is a nicety
+        col = {}
+    return {**col, **_faces_of(cv2, img)}
+
+
+def _faces_of(cv2, img) -> dict:
+    if not MODEL.exists():
         return {}
     h, w = img.shape[:2]
     found = [b for b in faces(cv2, img) if b[3] >= MIN_FACE * min(w, h)]

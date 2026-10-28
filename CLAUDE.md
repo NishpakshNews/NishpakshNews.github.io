@@ -1460,7 +1460,8 @@ stories, and tune settings then.
   wipe, cascade or track in ("cheap"). `sw.js` np-main-72. Checked in headless Chromium on the real feed (stand-in pictures),
   English and Hindi; not yet on a phone. The 3·3·3 section tree is still to be agreed and built.
 
-- **Sections: three levels of three (owner, Oct 28 2026; "not 5 or 6 or like domains, 3 and 3 only, in all levels").** Replaces the
+- **The greeting takes the picture's colour and pops (owner, Oct 29 2026; "Greeting Colour" page, option 2 "opposite of the picture", new motion, new size).** `focus.corner` reads the average colour of each picture's top-left corner (`img.col` = [hue, saturation, lightness, luminance]; `focus.VERSION` 3, so pictures are looked at again, 30 an export; a picture with no `col` gets the indigo pill). `greetLook` (site): a pale corner (luminance > .5) gives a deep pill of the same hue with white words, a dark corner a luminous pill with deep words; dot, border, glow and ring in the same hue. Motion: arrives from a 6px blur (0.9 s), a ring of its own colour opens once (`.glass-halo`), one light sweeps across (`.gs`), 2.4 s still, out 0.8 s; 10% larger (21px, scale 1.1). Reduced motion: no ring, no light. The "where you are" pill stays smoked glass; milky glass was shown and not chosen. `sw.js` np-main-76. Read next: whether a mid-tone corner (luminance near .5) flips badly between pale and dark treatment.
+**Sections: three levels of three (owner, Oct 28 2026; "not 5 or 6 or like domains, 3 and 3 only, in all levels").** Replaces the
   five-by-five tree and the Domains lens of Oct 9 (`categories.py`, key lists there): **India** (Politics: Government · Parties ·
   Elections; Justice: Crime · Courts · Probes; Life: Health & schools · Sport & films · Weather & accidents), **World** (Diplomacy:
   India abroad · Indians abroad · Global; Conflicts: Wars · Defence · Terror; Abroad: Politics · Disasters · Other news), **Business**

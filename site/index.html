@@ -1345,8 +1345,13 @@
            background: rgba(18,18,22,0.38); border: 1px solid rgba(255,255,255,0.16);
            -webkit-backdrop-filter: blur(22px) saturate(1.4); backdrop-filter: blur(22px) saturate(1.4);
            box-shadow: 0 8px 22px -10px rgba(0,0,0,0.4); text-shadow: 0 1px 2px rgba(0,0,0,0.18); }
-  .glass.greet { font-family: "Newsreader", Georgia, serif; font-weight: 500; font-size: 19px; line-height: 24px; padding: 7px 16px 6px; opacity: 0; }
-  html.hi .glass.greet { font-family: "Tiro Devanagari Hindi", serif; font-size: 18px; }
+  .glass.greet { font-family: "Newsreader", Georgia, serif; font-weight: 500; font-size: 21px; line-height: 26px; padding: 9px 18px 8px 14px; opacity: 0; overflow: hidden;
+                 gap: 9px; transform-origin: 0 0; }
+  .glass.greet .gd { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--gdot, #fff); }
+  .glass.greet .gs { position: absolute; top: 0; bottom: 0; width: 60%; left: -70%; pointer-events: none; transform: skewX(-18deg);
+                     background: linear-gradient(100deg, transparent 0, rgba(255,255,255,.55) 50%, transparent 100%); }
+  .glass-halo { position: absolute; z-index: 1; pointer-events: none; border-radius: 999px; opacity: 0; transform-origin: 0 50%; }
+  html.hi .glass.greet { font-family: "Tiro Devanagari Hindi", serif; font-size: 19px; }
   .glass.where { font-size: 13.5px; font-weight: 600; line-height: 18px; padding: 6px 12px 5px 14px; max-width: 62%;
                  animation: glassIn 800ms cubic-bezier(.45,0,.2,1) both; }
   .glass.where .wn { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -2954,21 +2959,45 @@ function greetSoon(tries = 0) {
     showGreeting(slot.querySelector("a.card .pic"));
   }, tries ? 500 : 1000);
 }
-// the greeting on the card's picture: in 0.8 s, 2 s still, out 0.8 s; the credit steps aside. No picture: no greeting.
+// the colour of the pill from the picture's corner (feed `img.col` = [hue, saturation, lightness, luminance], read on the server):
+// a pale corner gets a deep pill with white words, a dark corner a luminous one with deep words (owner, Oct 29 2026, option 2)
+function greetLook(pic) {
+  const im = pic && pic.closest("a.card") && (cards.find(c => String(c.id) === pic.closest("a.card").dataset.id) || {}).img;
+  const col = im && Array.isArray(im.col) ? im.col : null;
+  if (!col) return {bg: "rgba(31,37,80,0.92)", ink: "#fff", bd: "rgba(140,160,255,.5)", glow: "rgba(70,84,154,.9)", ring: "rgba(120,140,255,.8)", dot: "#aab6ff"};
+  const [h, s0, , lum] = col, s = Math.min(.9, Math.max(.5, s0 * 1.25)), hs = (S, L, a = 1) => `hsla(${h},${Math.round(S * 100)}%,${Math.round(L * 100)}%,${a})`;
+  return lum > .5
+    ? {bg: hs(s, .24, .92), ink: "#fff", bd: hs(s, .5, .5), glow: hs(s, .45), ring: hs(s, .5), dot: hs(s, .72)}
+    : {bg: hs(Math.min(.9, s + .05), .84, .95), ink: hs(s, .17), bd: "rgba(255,255,255,.7)", glow: hs(s, .7), ring: hs(s, .75), dot: hs(s, .4)};
+}
+// the greeting on the card's picture: it arrives out of a soft blur, a ring of its own colour opens once around it, one light
+// passes across; 2.4 s still; out in 0.8 s. The credit steps aside. No picture: no greeting.
 function showGreeting(pic) {
   if (!pic) return;
-  const g = document.createElement("div"), cr = pic.querySelector(".pic-credit"), still = STILL.matches;
-  g.className = "glass greet"; g.textContent = greeting(); g.setAttribute("aria-hidden", "true");
-  pic.appendChild(g);
-  const F = still ? 1 : GREET_FADE, opt = {duration: F, easing: GLASS_EASE, fill: "forwards"};
-  const credit = (a, b) => cr && cr.animate([{opacity: a}, {opacity: b}], {...opt, duration: F * 0.7});
-  g.animate([{opacity: 0, transform: "scale(.97)"}, {opacity: 1, transform: "scale(1)"}], opt);
+  const g = document.createElement("div"), cr = pic.querySelector(".pic-credit"), still = STILL.matches, L = greetLook(pic);
+  g.className = "glass greet"; g.setAttribute("aria-hidden", "true");
+  g.innerHTML = `<span class="gd"></span><span>${esc(greeting())}</span><span class="gs"></span>`;
+  g.style.cssText = `background:${L.bg};color:${L.ink};border-color:${L.bd};text-shadow:none;--gdot:${L.dot};` +
+                    `box-shadow:0 10px 26px -10px ${L.glow},inset 0 1px 0 rgba(255,255,255,.18);backdrop-filter:blur(6px) saturate(1.4);-webkit-backdrop-filter:blur(6px) saturate(1.4)`;
+  const halo = document.createElement("div"); halo.className = "glass-halo";
+  halo.style.boxShadow = `0 0 0 2px ${L.ring}, 0 0 26px 4px ${L.ring}`;
+  pic.appendChild(halo); pic.appendChild(g);
+  g.style.transform = "scale(1.1)";
+  const r = g.getBoundingClientRect(), pr = pic.getBoundingClientRect();
+  Object.assign(halo.style, {left: (r.left - pr.left) + "px", top: (r.top - pr.top) + "px", width: r.width + "px", height: r.height + "px"});
+  const F = still ? 1 : GREET_FADE + 100, opt = {duration: F, easing: GLASS_EASE, fill: "forwards"};
+  const credit = (a, b) => cr && cr.animate([{opacity: a}, {opacity: b}], {...opt, duration: Math.round(F * 0.5)});
+  g.animate(still ? [{opacity: 1}, {opacity: 1}] : [{opacity: 0, transform: "scale(1.02)", filter: "blur(6px)"}, {opacity: 1, transform: "scale(1.1)", filter: "blur(0)"}], opt);
   const c0 = credit(1, 0);
+  if (!still) setTimeout(() => {
+    halo.animate([{opacity: .85, transform: "scale(1)"}, {opacity: 0, transform: "scale(1.22,1.7)"}], {duration: 1100, easing: "cubic-bezier(.2,.6,.3,1)"});
+    g.querySelector(".gs").animate([{left: "-70%"}, {left: "125%"}], {duration: 1000, easing: GLASS_EASE});
+  }, 520);
   setTimeout(() => {
-    const out = g.animate([{opacity: 1, transform: "scale(1)"}, {opacity: 0, transform: "scale(.99)"}], opt);
+    const out = g.animate([{opacity: 1}, {opacity: 0}], {...opt, duration: GREET_FADE});
     const c1 = credit(0, 1);
-    out.onfinish = () => { g.remove(); if (c0) c0.cancel(); if (c1) c1.cancel(); };
-  }, F + GREET_HOLD);
+    out.onfinish = () => { g.remove(); halo.remove(); if (c0) c0.cancel(); if (c1) c1.cancel(); };
+  }, F + 2400);
 }
 const started = performance.now();
 let revealed = false;
