@@ -189,23 +189,3 @@ def test_still_holds_does_not_count_in_the_funnel_and_a_valid_mark_stays(store):
     assert express.still_holds(store, sid) is True
     assert express.STATS == before
     assert express.revoke_stale(store) == []
-
-
-def test_a_headline_the_model_cannot_read_pauses_the_story_but_does_not_revoke_it(store):
-    """risk.py: unread is neither fine nor excluded. The desk does not write on it (still_holds False), the mark stays,
-    and the next run that can read the headline decides."""
-    from nishpaksh import nli
-    f = _feed(store)
-    sid, aid = _story(store, f, read=True)
-    _claim(store, sid, aid, "Tata Motors")
-    assert express.qualify(store, sid)
-    working = nli._backend
-    from nishpaksh import risk
-    risk.load_cache(None)                    # the scores of the working reader are remembered; this run cannot read at all
-    nli.set_backend(lambda pairs: [None] * len(pairs))
-    assert express.still_holds(store, sid) is False
-    assert express.revoke_stale(store) == []
-    assert store.one(select(stories.c.qualifies).where(stories.c.id == sid))["qualifies"] is True
-    nli.set_backend(working)
-    assert express.still_holds(store, sid) is True
-    assert sid not in express.UNREAD_STORIES

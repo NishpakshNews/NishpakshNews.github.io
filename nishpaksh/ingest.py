@@ -280,7 +280,6 @@ def _dk(feed: dict) -> str:
 def ingest(store: Store) -> int:
     from . import express
     express.reset()          # the express funnel of this run starts here (stats["express"])
-    express.load_cache(store)        # the scores of earlier runs (risk.py)
     now = utcnow()
     oldest = now - dt.timedelta(hours=SETTINGS.max_article_age_hours)
     candidates: list[tuple[dict, dict]] = []

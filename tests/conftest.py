@@ -73,10 +73,6 @@ def fake_nli(pairs):
                    events.ROUTINE: r"\b(met|heard|said that nothing)\b"}[b]
             out.append((0.9, 0.05, 0.05) if re.search(hit, a, re.I) else (0.1, 0.8, 0.1))
             continue
-        scripted = _risk_script().get(b)                   # a concern definition of express.yaml (risk.py): scripted by words
-        if scripted is not None:
-            out.append((0.9, 0.05, 0.05) if scripted.search(a) else (0.05, 0.9, 0.05))
-            continue
         if "passed lab tests" in a and "substandard" in b:      # the scripted court filing contradicts the claim
             out.append((0.03, 0.07, 0.90))
             continue
@@ -93,42 +89,6 @@ def fake_nli(pairs):
             out.append((0.92, 0.06, 0.02))
         else:
             out.append((0.08, 0.87, 0.05))
-    return out
-
-
-_RISK_WORDS = {
-    "harm:crime": r"\b(arrest\w*|detained|custody|bail|jail\w*|FIR|chargesheet|charge sheet|lawsuit|sued|sues|raids?|probe|murder\w*)\b"
-                  r"|(?<!\bon )(?<!\bCentre )(?<!\btennis )(?<!\bbadminton )(?<!\bbasketball )\b(court|tribunal|verdict|judge)\b",
-    "harm:death": r"\b(died|dies|dead|killed|kills|deaths?|suicide|crash\w*|accident|injured)\b|मौत|हादसा|दुर्घटना",
-    "harm:accusation": r"\b(accused|accuses|alleg\w*|fraud|scam|scandal|cheating|abuse|harassment|rape|assault|molest)\b",
-    "harm:ban": r"\b(banned|suspended|doping|dope|match-fixing)\b",
-    "harm:unrest": r"\b(riot|violence|terror|hate|communal|boycott)\b",
-    "government:acts": r"\b(RBI|SEBI|ministry|regulator|government|Centre|minister)\b",
-    "government:policy": r"\b(scheme|tariff|tax|GST|law|policy)\b",
-    "market:prices": r"\b(shares?|Sensex|Nifty|stocks?|gold|crude|rally|surge[sd]?)\b",
-    "market:economy": r"\b(inflation|GDP|repo|interest rates?)\b",
-    "market:advice": r"\b(stocks to buy|buy or sell|target price)\b",
-    "speculation:rumour": r"\b(reportedly|leak\w*|rumou?rs?|sources)\b",
-    "speculation:forecast": r"\b(likely|could|prediction|in talks|expected to)\b|(?-i:\bmay\b|\b[A-Z][a-z]+ May (?=[a-z]))",
-    "gossip:private_life": r"\b(dating|spotted|wedding|breakup|boyfriend|girlfriend)\b",
-    "gossip:box_office": r"\b(box office|opening day|crore on)\b",
-    "service:list": r"\b(top \d+|\d+ best|best \w+( \w+)? under|top 5)\b",
-    "service:live": r"\b(live score|live updates|live blog|rate today|horoscope|price today)\b",
-    "service:view": r"\b(opinion|editorial|explainer|sponsored)\b",
-}
-
-
-def _risk_script():
-    """{definition sentence: compiled words} for the concerns of config/express.yaml: stands in for the model's judgement of
-    each definition. "May" the month does not fire the forecast definition (a real model reads the sentence, not the word)."""
-    import re
-    from nishpaksh import express
-    out = {}
-    for c, keys in (express.cfg().get("concerns") or {}).items():
-        for k, sentence in keys.items():
-            pat = _RISK_WORDS.get(f"{c}:{k}")
-            if pat:
-                out[sentence] = re.compile(pat, re.IGNORECASE)
     return out
 
 
@@ -275,9 +235,7 @@ def local_ner(monkeypatch):
     nlp.set_parser(fake_parser)
     from nishpaksh import nlp
     nlp.set_backend(fake_ner)
-    from nishpaksh import auditcount, langid, risk
-    risk.load_cache(None)                     # the express reader's remembered scores and time budget start empty
-    risk.set_budget(None)
+    from nishpaksh import auditcount, langid
     langid.set_backend(lambda text: None)     # no language model in tests: the word lists answer (langid.py)
     auditcount.reset()
     yield

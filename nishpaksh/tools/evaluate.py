@@ -159,7 +159,7 @@ def thresholds() -> dict:
                        ("consolidate", ["SOFT_SIMILARITY", "SOFT_MAX", "SAME_ASK_MAX"]), ("perspectives", ["PRIOR_WEIGHT", "CLEAR_AFTER"]),
                        ("positions", ["MAX_AGE_HOURS"]), ("fidelity", ["QE_MIN"]), ("qa", ["MIN_SCORE"]),
                        ("contrast", ["MIN_PAIRS", "RATIO"]), ("aggregate", ["PRIOR", "POSTERIOR_MIN"]),
-                       ("reask", ["MAX_CALLS_PER_RUN"]), ("risk", ["DEFAULT_MIN"]),
+                       ("reask", ["MAX_CALLS_PER_RUN"]),
                        ("capword", ["HEADLINE_SHARE", "HEADLINE_MIN"]), ("langid", ["EN_MARGIN", "OTHER_SURE", "HI_MARGIN"]),
                        ("places", ["MIN_CITY", "BIG_CITY"]),
                        ("followup", ["RESTATED", "ENTITY_WEIGHT", "SERVICE_FLOOR", "REPEAT_SIM", "MIN_GAIN", "BUDGET"])]:
@@ -169,11 +169,6 @@ def thresholds() -> dict:
                 out[f"{mod}.{n}"] = getattr(m, n, None)
         except Exception as e:  # noqa: BLE001
             out[mod] = f"unavailable: {str(e)[:60]}"
-    try:
-        from .. import express
-        out["express.concern_min"] = express.setting("concern_min", None)      # config/express.yaml: the bar the definitions use
-    except Exception as e:  # noqa: BLE001
-        out["express"] = f"unavailable: {str(e)[:60]}"
     return out
 
 
@@ -215,20 +210,6 @@ def systems_audit(pages: list[dict]) -> dict:
                     "words: a common word the analyser called a name, or a name it called common, is the system being wrong."}
 
 
-def express_concerns(store) -> dict:
-    """The express lane's definition sentences (config/express.yaml `concerns`, risk.py) against the verdicts the lane already
-    stored: what the old word lists excluded and the definitions would pass, what passed and they would exclude, the strongest
-    score per group in tenths (to read `concern_min`). Lists are cut to 25 titles."""
-    from .. import express, express_replay, risk
-    c = express.cfg()
-    rep = express_replay.audit(express_replay.stored_rows(store), c.get("concerns") or {}, c.get("apply") or {},
-                               float(c.get("concern_min", risk.DEFAULT_MIN)))
-    for d in rep["old_excluded"].values():
-        d["missed"] = d["missed"][:25]
-    rep["passed"]["would_exclude"] = rep["passed"]["would_exclude"][:25]
-    return rep
-
-
 def main() -> None:
     from sqlalchemy import text as sql
     from ..config import database_url
@@ -264,7 +245,6 @@ def main() -> None:
         report["published"] = {"error": str(e)[:100]}
     section("writing", lambda: writing(pages))
     section("coreference", lambda: coreference(pages))
-    section("express_concerns", lambda: express_concerns(store))
     section("systems", lambda: systems_audit(pages))
     section("thresholds", thresholds)
     print(json.dumps(report, ensure_ascii=False, indent=1, default=str))

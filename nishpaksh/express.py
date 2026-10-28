@@ -2,8 +2,8 @@
 independent outlet's readable page. Config: `config/express.yaml`. Everything else keeps the strict rule.
 
 Built in parts (see CLAUDE.md, "Express lane"):
-  1. this module's door, in code: the lanes, the feeds that carry a lane, and `excluded_many` (a headline
-     that a concern definition fits, risk.py, never enters the lane, whatever the lane model says); the ledger (ledger.py);
+  1. this module's door, in code: the lanes, the feeds that carry a lane, and `excluded` (a headline that
+     matches an exclusion never enters the lane, whatever a model says); the ledger (ledger.py);
   2. (built) the express intake (`take_intake`: code exclusions before a page is fetched, its own caps), the headline
      question to a small model (`gate`: lane or not, asked twice, order swapped, unsure = no; the verdict is kept in
      `articles.extraction["express"]`, so a headline is asked about once) and the embedding slice
@@ -16,16 +16,14 @@ Nothing here touches a colour rule: an express story has one independent outlet,
 only") and can never be green (green needs 3 outlets, 2 origins and 6 hours).
 
 Model and database are used only by `lane_feeds`, `gate`, `embed_allowance` and `book_embedded`; the door itself
-(`excluded_many`) uses the local entailment model (nli.py, no quota) and the URL pieces, not word lists.
+(`excluded`) is plain code.
 """
 from __future__ import annotations
 
 import datetime as dt
 import functools
 import logging
-import time
-
-from . import risk
+import re
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +32,11 @@ VERDICT_VERSION = 1
 # numbers are summed over runs; `excluded` {list: n} and `excluded_terms` {"list:term": n} count code exclusions;
 # `now` holds readings that are not sums (cap left, passed and waiting).
 STATS: dict = {}
+
+DEVANAGARI = re.compile(r"[ऀ-ॿ]")
+MONTH_BEFORE = {"in", "since", "until", "till", "by", "from", "of", "on", "this", "last", "next", "early", "late",
+                "mid", "during", "before", "after", "every", "each", "through", "to", "for"}
+
 
 @functools.lru_cache(maxsize=1)
 def cfg() -> dict:
@@ -49,7 +52,7 @@ def cfg() -> dict:
 
 def reload() -> None:
     cfg.cache_clear()
-    _urls.cache_clear()
+    _compiled.cache_clear()
     _tagged.cache_clear()
 
 
@@ -77,55 +80,76 @@ def lane_feeds(store) -> dict[int, str]:
 
 
 # --- the exclusion check -----------------------------------------------------------------------------------------
-# Owner, Oct 27 2026: no word lists. What a headline is about is read by the local entailment model against the
-# definition sentences of `concerns:` in express.yaml (risk.py). Only the URL check stays: a path such as /opinion/ is
-# the page's structure, not language.
 
-UNREAD = risk.UNREAD       # the headline could not be read by the model: undecided, asked again next run
+def _term_regex(term: str) -> tuple[re.Pattern, bool]:
+    """(pattern, hindi). Latin terms: whole words, phrases with any spacing; an all-capitals term is matched as
+    written (ED the agency, never Ed Sheeran). Hindi terms: plain fragments."""
+    term = str(term).strip()
+    if DEVANAGARI.search(term):
+        return re.compile(re.escape(term)), True
+    body = r"\s+".join(re.escape(w) for w in term.split())
+    flags = 0 if (term == term.upper() and any(ch.isalpha() for ch in term)) else re.IGNORECASE
+    return re.compile(rf"(?<![\w]){body}(?![\w])", flags), False
 
 
 @functools.lru_cache(maxsize=1)
-def _urls() -> list[str]:
-    return [str(u).lower() for u in (cfg().get("exclude_url") or [])]
+def _compiled() -> dict:
+    c = cfg()
+    ex = c.get("exclude") or {}
+    apply_ = c.get("apply") or {}
+    reasons = {}
+    for reason, terms in ex.items():
+        where = apply_.get(reason, "all")
+        reasons[reason] = (None if where == "all" else set(where),
+                           [(t, *_term_regex(t)) for t in (terms or [])])
+    pats = {}
+    for reason, plist in ((c.get("patterns") or {}).items()):
+        pats[reason] = [re.compile(p, re.IGNORECASE) for p in plist or []]
+    allow = [re.compile(re.escape(a), re.IGNORECASE) for a in (c.get("allow_phrases") or [])]
+    urls = [u.lower() for u in (c.get("exclude_url") or [])]
+    return {"reasons": reasons, "patterns": pats, "allow": allow, "urls": urls}
 
 
-def excluded_many(items: list[tuple[str, str, str, str | None]]) -> list:
-    """Why each report must stay out of the express lane: [(title, lead, url, lane)] -> one entry per item, a reason
-    "concern:definition" (e.g. "harm:crime", "url:opinion"), None (it may enter), or UNREAD (the model could not read it:
-    the caller leaves it undecided and asks again on the next run, it is never passed).
-
-    Applied before any other model sees the headline. With lane None only the concerns that apply to every lane are used
-    (the cheap first look); with a lane, that lane's own concerns are added. A match in the headline or in the opening
-    words counts. Local model, no quota; the seconds and pairs are counted in STATS."""
-    out: list = [None] * len(items)
-    todo: list[int] = []
-    urls = _urls()
-    for i, (_title, _lead, url, _lane) in enumerate(items):
-        u = (url or "").lower()
-        piece = next((p for p in urls if p in u), None)
-        if piece:
-            out[i] = f"url:{piece.strip('/')}"
-        else:
-            todo.append(i)
-    if todo:
-        c = cfg()
-        started = time.monotonic()
-        got = risk.reasons([risk.text_of(items[i][0], items[i][1]) for i in todo], [items[i][3] for i in todo],
-                           c.get("concerns") or {}, c.get("apply") or {}, float(c.get("concern_min", risk.DEFAULT_MIN)))
-        for i, r in zip(todo, got):
-            out[i] = r
-        bump("risk_texts", len(todo))
-        bump("risk_unread", sum(1 for r in got if r is UNREAD))
-        if not _QUIET[0]:
-            for k, v in risk.STATS.items():
-                STATS[f"risk_{k}"] = v
-        STATS["risk_seconds"] = round(STATS.get("risk_seconds", 0.0) + time.monotonic() - started, 2) if not _QUIET[0] else STATS.get("risk_seconds", 0.0)
-    return out
+def _may_is_a_month(text: str, m: re.Match) -> bool:
+    """\"May\" is a month, not a doubt, when it is written with a capital and follows a time word (\"in May\"),
+    or a number follows it (\"May 12\"). \"may\" in lower case is always the verb."""
+    word = m.group(0)
+    if word != "May":
+        return False
+    after = text[m.end():].lstrip()[:1]
+    if after.isdigit():
+        return True
+    before = re.findall(r"[A-Za-z']+", text[:m.start()])
+    return bool(before) and before[-1].lower() in MONTH_BEFORE
 
 
-def excluded(title: str, lead: str = "", url: str = "", lane: str | None = None):
-    """`excluded_many` for one report (tests, the replay tool)."""
-    return excluded_many([(title, lead, url, lane)])[0]
+def excluded(title: str, lead: str = "", url: str = "", lane: str | None = None) -> str | None:
+    """Why this report must stay out of the express lane, or None. `reason:term` (e.g. \"harm:arrested\").
+
+    Code only, applied before any model sees the headline. With `lane` None only the lists that apply to every
+    lane are used (the cheap first look); with a lane, that lane's own lists are added too. A match in the
+    headline or in the opening words counts."""
+    c = _compiled()
+    u = (url or "").lower()
+    for piece in c["urls"]:
+        if piece in u:
+            return f"url:{piece.strip('/')}"
+    text = f"{title or ''}. {(lead or '')[:300]}"
+    for rx in c["allow"]:
+        text = rx.sub(" ", text)
+    for reason, (where, terms) in c["reasons"].items():
+        if where is not None and (lane is None or lane not in where):
+            continue
+        for term, rx, _hindi in terms:
+            for m in rx.finditer(text):
+                if term.lower() == "may" and _may_is_a_month(text, m):
+                    continue
+                return f"{reason}:{term}"
+    for reason, plist in c["patterns"].items():
+        for rx in plist:
+            if rx.search(title or ""):
+                return f"{reason}:pattern"
+    return None
 
 
 def reason_group(reason: str | None) -> str | None:
@@ -138,33 +162,6 @@ def reason_group(reason: str | None) -> str | None:
 def reset() -> None:
     """A new run (ingest calls it first)."""
     STATS.clear()
-    risk.set_budget(float(setting("risk_seconds_per_run", 300)))
-
-
-CACHE_NAME = "risk_cache"
-
-
-def load_cache(store) -> None:
-    """The scores of earlier runs (risk.py): a headline is read by the model once, not every hour."""
-    try:
-        from sqlalchemy import select
-        from .db import model_state
-        row = store.one(select(model_state.c.data).where(model_state.c.name == CACHE_NAME))
-        risk.load_cache(row.get("data") if row else None)
-    except Exception as e:  # noqa: BLE001 - no cache only costs time
-        log.info("risk cache not loaded (%s)", str(e)[:80])
-
-
-def save_cache(store) -> None:
-    try:
-        from sqlalchemy import delete, insert
-        from .db import model_state
-        now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
-        with store.route(insert(model_state)).engine.begin() as c:
-            c.execute(delete(model_state).where(model_state.c.name == CACHE_NAME))
-            c.execute(insert(model_state).values(name=CACHE_NAME, data=risk.dump_cache(), updated_at=now))
-    except Exception as e:  # noqa: BLE001
-        log.info("risk cache not saved (%s)", str(e)[:80])
 
 
 _QUIET = [0]     # >0 while `still_holds` re-checks a story: the funnel counts each story once, in the run's own check
@@ -224,12 +221,9 @@ def take_intake(todo: list[tuple[dict, dict]]) -> tuple[list[tuple[dict, dict]],
     keep: list[tuple[dict, dict]] = []
     cap_feed = int(setting("intake_per_feed", 12))
     cap_run = int(setting("intake_per_run", 80))
-    verdicts = excluded_many([(en.get("title") or "", en.get("summary") or "", en.get("url") or "", lane_of_url(f["url"]))
-                              for f, en in mine])
-    for (f, en), why in zip(mine, verdicts):
-        if why is UNREAD:
-            bump("intake_unread")          # the model could not read it: the page is fetched, the gate judges it (and holds it if it still cannot)
-        elif why:
+    for f, en in mine:
+        why = excluded(en.get("title") or "", en.get("summary") or "", en.get("url") or "", lane_of_url(f["url"]))
+        if why:
             _count_excluded(why)
             bump("intake_excluded")
             continue
@@ -495,10 +489,6 @@ def gate(store, router, arts: list[dict], now: dt.datetime) -> tuple[set[int], s
     pending: list[tuple[dict, str]] = []
     undecided: list[dict] = []
     save: dict[int, dict] = {}
-    unseen = [a for a in mine if verdict_of(a) is None and (a.get("text_source") or "full") != "summary"]
-    first_look = dict(zip((a["id"] for a in unseen),
-                          excluded_many([(a.get("title") or "", (a.get("text") or "")[:300], a.get("url") or "",
-                                          lane_of[a["feed_id"]]) for a in unseen])))
     for a in mine:
         v = verdict_of(a)
         if v is None:
@@ -508,11 +498,7 @@ def gate(store, router, arts: list[dict], now: dt.datetime) -> tuple[set[int], s
                 bump("unreadable")
                 v = save[a["id"]]
             else:
-                why = first_look.get(a["id"])
-                if why is UNREAD:
-                    bump("risk_held")        # not read by the model: nothing is saved, not embedded, looked at again next run
-                    held.add(a["id"])
-                    continue
+                why = excluded(a.get("title") or "", (a.get("text") or "")[:300], a.get("url") or "", lane)
                 if why:
                     _count_excluded(why)
                     save[a["id"]] = _verdict("excluded", lane, why, now)
@@ -533,10 +519,6 @@ def gate(store, router, arts: list[dict], now: dt.datetime) -> tuple[set[int], s
         limit = batch * int(setting("filter_calls_per_run", 6))
         todo = undecided[:limit]
         got = lanes_agreed(router, todo, batch)
-        named = [a for a in todo if got.get(a["id"]) not in (None, "none")]
-        second_look = dict(zip((a["id"] for a in named),
-                               excluded_many([(a.get("title") or "", (a.get("text") or "")[:300], a.get("url") or "", got[a["id"]])
-                                              for a in named])))
         for a in todo:
             if a["id"] not in got:
                 continue
@@ -547,11 +529,7 @@ def gate(store, router, arts: list[dict], now: dt.datetime) -> tuple[set[int], s
                 bump("not_lane")
                 held.add(a["id"])
                 continue
-            why = second_look.get(a["id"])
-            if why is UNREAD:
-                bump("risk_held")            # the lane is named but the lane's own concerns could not be read: asked again next run
-                held.add(a["id"])
-                continue
+            why = excluded(a.get("title") or "", (a.get("text") or "")[:300], a.get("url") or "", lane)
             if why:
                 _count_excluded(why)
                 save[a["id"]] = _verdict("excluded", lane, why, now)
@@ -621,20 +599,6 @@ def _count(group: str, key: str) -> None:
     g[key] = g.get(key, 0) + 1
 
 
-def names_a_media_house(raw: str) -> bool:
-    """The attribution is another media house (not an origin: "Bloomberg", "a Bloomberg report", "according to Mint").
-    The registry decides, the one the pipeline already keeps (ownership.yaml + feeds.yaml: `ownership.is_known_outlet`), not a
-    list of words kept here: the whole attribution is an outlet, or an organisation the entity reader finds in it is one."""
-    from .ownership import is_known_outlet
-    if is_known_outlet(raw):
-        return True
-    try:
-        from . import nlp
-        return any(is_known_outlet(e.text) for e in nlp.ents(raw))
-    except Exception:  # noqa: BLE001 - no reader: only a whole-string outlet name counts (as above)
-        return False
-
-
 def attribution_kind(raw: str | None) -> str:
     """How a statement's source reads: own voice, anonymous, an agency, another media house (not an origin), or named."""
     from .origins import ANON_WORDS, OWN_WORDS, _norm
@@ -649,7 +613,8 @@ def attribution_kind(raw: str | None) -> str:
         return ANON
     if n in AGENCIES:
         return AGENCY
-    if names_a_media_house(raw or ""):
+    words = [str(w).lower() for w in setting("media_words", [])]
+    if any(re.search(rf"\b{re.escape(w)}\b", n) for w in words):
         return MEDIA
     return NAMED
 
@@ -693,11 +658,10 @@ def story_lane(members: list[dict], lane_of: dict[int, str] | None = None) -> tu
     if len(lanes_yes) > 1:
         return None, "two_lanes"
     lane = next(iter(lanes_yes))
-    seen = excluded_many([(a.get("title") or "", "", a.get("url") or "", lane) for a in members])
-    if any(w and w is not UNREAD for w in seen):
-        return None, "member_excluded"
-    if any(w is UNREAD for w in seen):
-        return None, "risk_unread"        # a headline the model could not read: the story waits (never passed on a guess)
+    for a in members:
+        why = excluded(a.get("title") or "", "", a.get("url") or "", lane)
+        if why:
+            return None, "member_excluded"
     return lane, None
 
 
@@ -843,7 +807,6 @@ def disputed(store, sid: int) -> bool:
     return any(r["conflicts"] for r in store.rows(select(canonical.c.conflicts).where(canonical.c.story_id == sid)))
 
 
-UNREAD_STORIES: set[int] = set()     # stories `assess` could not judge because the model could not read a headline (not revoked for it)
 LANE_OF_STORY: dict[int, tuple[str, str]] = {}      # the lane of a story `assess` just passed (qualify saves it with the story)
 
 
@@ -861,10 +824,6 @@ def assess(store, sid: int) -> bool:
                              articles.c.feed_id, (func.length(articles.c.text) > 0).label("has_text"))
                       .where(articles.c.story_id == sid))
     lane, why = story_lane(arts, lane_of)
-    if why == "risk_unread":
-        UNREAD_STORIES.add(sid)
-    else:
-        UNREAD_STORIES.discard(sid)
     if not lane:
         if why != "no_lane":          # a normal story is not an express miss
             _count("story_out", why)
@@ -934,8 +893,6 @@ def revoke_stale(store, skip: set[int] | frozenset = frozenset()) -> list[int]:
         if r["id"] in skip or (r["analysis"] or {}).get("qualified_by") != "express":
             continue
         if not still_holds(store, r["id"]):
-            if r["id"] in UNREAD_STORIES:
-                continue          # the model could not read a headline just now: the mark stays, the desk will not write it until it can
             store.exec(update(stories).where(stories.c.id == r["id"]).values(qualifies=False, dirty=True))
             out.append(r["id"])
     if out:
