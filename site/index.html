@@ -1334,6 +1334,10 @@
      sentence draws on top of it. */
   .wcard { position: relative; isolation: isolate; }
   .wcard > :not(canvas.wash) { position: relative; z-index: 1; }
+  /* Chrome on Android sometimes left a card's words undrawn (a blurred colour box, words back after a touch): the colour
+     canvas fades by opacity, so it is its own layer, and the words above it were not always repainted. Giving the words
+     their own layer too keeps them drawn (owner, Oct 29 2026). */
+  .wcard > :not(canvas.wash) { transform: translateZ(0); }
   .wcard.quote::before { z-index: 2; }
   canvas.wash { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; border-radius: inherit; opacity: 0; transition: opacity 260ms ease; }
   canvas.wash.on { opacity: 1; }

@@ -1,7 +1,7 @@
 // Nishpaksh offline support (nishpaksh_version_1.0). The page itself and its icons are kept for
 // offline use; news (the feed, articles) is always asked for fresh and the last copy is used offline;
 // fonts are kept once loaded.
-const VERSION = "np-main-83";
+const VERSION = "np-main-84";
 const IMGS = "np-pictures";           // the outlets' share pictures: linked, shown from this device's own cache (owner, Oct 29 2026)
 const IMG_MAX = 80;
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-maskable-192.png",
