@@ -885,7 +885,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         return _outcome(story_id, "already published")
     from . import pagearchive
     try:
-        payload = build_payload(store, router, story_id)
+        with _timed("payload"):
+            payload = build_payload(store, router, story_id)
     except pagearchive.Unreachable as e:
         # the story's parent is on the archive branch and the branch could not be asked: written without the thread,
         # the article would be closed with no parent and would skip the follow-up check. It waits for the next run.
@@ -902,7 +903,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     drop_outlet_self_talk(payload)
     drop_past_schedules(payload)       # "is scheduled to" for what has already happened (owner, Oct 9 2026)
     from .belong import check as context_belongs
-    context_belongs(store, router, story_id, payload)   # a line that is not about this story goes to "Also in these reports" (belong.py)
+    with _timed("belong"):
+        context_belongs(store, router, story_id, payload)   # a line that is not about this story goes to "Also in these reports" (belong.py)
     an_ = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
     fold_covered(payload, an_.get("covered") or {})
     link_updates(payload, an_.get("updates") or {})
@@ -940,7 +942,8 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         return _outcome(story_id, "resting at the lowest bar")
     bar = publish_bar(_writer_tries(store, story_id))
     from .belong import assign_topics
-    assign_topics(store, router, story_id, payload)     # one subject per paragraph (plan.py); no topics: shared words, as before
+    with _timed("topics"):
+        assign_topics(store, router, story_id, payload)     # one subject per paragraph (plan.py); no topics: shared words, as before
     # an earlier try that fell short of the bar is continued, not started again (owner, Oct 7 2026)
     an = (store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {}
     draft = _remap_draft(store, an.get("writer_draft"), payload)

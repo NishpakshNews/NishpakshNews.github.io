@@ -1363,25 +1363,33 @@ def merge_lone_paragraphs(paragraphs: list[list[dict]], keys: list[str]) -> tupl
     return paras, ks, merged
 
 
+LONE_ALLOWED = 2     # one-sentence paragraphs (besides the lead) an article may still have at a lowered bar (owner, Oct 28 2026)
+
+
+def cut_off(text: str) -> bool:
+    """A sentence that stops before it says anything: no verb in the parse ("On Sunday, US Central Command chief Adm.").
+    The same rule `nlp.merge_fragments` uses to join a fragment on, with no list of abbreviations. Not analysed, or no
+    part of speech given (the test parser) = not cut off: a missing analyser never blocks an article."""
+    from . import nlp
+    toks = nlp.parse(text)
+    if not toks or not any(t.pos for t in toks):
+        return False
+    return not any(t.pos in ("VERB", "AUX") for t in toks)
+
+
 def lowered_bar_problems(paragraphs: list[list[dict]]) -> list[str]:
-    """What keeps an article from publishing at a LOWERED bar (below PUBLISH_MIN; owner, Oct 28 2026): a one-sentence
-    paragraph (except the lead), a cut-off sentence, a repeated run of words. The 80% bar itself is not asked these
-    (they are counted there, `flow.inspector`). Empty list = coherent enough."""
-    from . import inspector
+    """What keeps an article from publishing at a LOWERED bar (below PUBLISH_MIN; owner, Oct 28 2026): more than
+    LONE_ALLOWED one-sentence paragraphs (the lead is not counted) or a cut-off sentence. The 80% bar itself is not asked
+    these (they are counted there, `flow.inspector`). A doubled name or repeated speaker is not asked here: the
+    per-sentence checks refuse a speaker named twice in a sentence, and the names are rewritten once (style.mentions).
+    Empty list = coherent enough."""
     out: list[str] = []
     lone = sum(1 for n, p in enumerate(paragraphs) if n > 0 and len([s for s in p if (s.get("text") or "").strip()]) == 1)
-    if lone:
-        out.append(f"{lone} one-sentence paragraph(s)")
-    cut = repeat = 0
-    for p in paragraphs:
-        for s in p:
-            t = (s.get("text") or "").strip()
-            cut += bool(inspector._ABBREV_END.search(t))
-            repeat += inspector.repeated_run(t)
+    if lone > LONE_ALLOWED:
+        out.append(f"{lone} one-sentence paragraphs (at most {LONE_ALLOWED})")
+    cut = sum(1 for p in paragraphs for s in p if cut_off((s.get("text") or "").strip()))
     if cut:
         out.append(f"{cut} cut-off sentence(s)")
-    if repeat:
-        out.append(f"{repeat} repeated run(s)")
     return out
 
 

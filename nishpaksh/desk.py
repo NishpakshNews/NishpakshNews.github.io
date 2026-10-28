@@ -278,6 +278,7 @@ def _write_with_retries(store: Store, router: Router, sid: int, until: float | N
 def work(store: Store, router: Router, now: dt.datetime | None = None, until: float | None = None) -> dict:
     from . import compose, consolidate, verify
     now = now or utcnow()
+    t_work = time.time()
     compose.STAGE_SECONDS.clear()
     stats = {"already_this_hour": published_this_hour(store, now), "tried": 0, "published": []}
     room, beat_room = seats(store, now)
@@ -295,6 +296,7 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
     stats["ready"] = len(queue)
     stats["ready_beat"] = len(beats)
     stats["skipped"] = {}
+    stats["startup_seconds"] = round(time.time() - t_work)       # before the first story: the queue, beats, order (owner, Oct 28 2026: 5 silent minutes)
     t_start = time.time()
     review_until = (t_start + REVIEW_SHARE * (until - t_start)) if until else None
     # stories whose review is already finished are written first (they cost no review time); the rest keep their order

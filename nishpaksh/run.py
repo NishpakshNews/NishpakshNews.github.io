@@ -20,6 +20,15 @@ from .router import GeminiBackend, Router
 log = logging.getLogger("nishpaksh")
 
 
+def _light_pick(store: Store, queue_ids: list[int], allowance: int) -> list[int]:
+    """The stories a LIGHT run still reads and analyses: the best-rated stories of the queue that have work waiting (new
+    or changed articles, `dirty`), at most `allowance`. A story that already has everything it needs is not touched."""
+    if allowance <= 0 or not queue_ids:
+        return []
+    dirty = {r["id"] for r in store.rows(select(stories.c.id).where(stories.c.dirty.is_(True), stories.c.id.in_(list(queue_ids))))}
+    return [sid for sid in queue_ids if sid in dirty][:allowance]
+
+
 def _parallel(items: list, fn, until: float, workers: int) -> list:
     """Apply fn to items with a few threads, starting nothing after `until`. One story failing
     is logged and skipped; it stays dirty and is retried next run."""
@@ -87,6 +96,31 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
             stats.setdefault("errors", []).append(f"{name}: {str(e)[:200]}")
             return None
 
+    import contextlib
+    seconds: dict = {}
+    stats["step_seconds"] = seconds         # where the run's time went (owner, Oct 28 2026: nothing in the pipeline was timed)
+
+    @contextlib.contextmanager
+    def timed(name):
+        t = time.time()
+        try:
+            yield
+        finally:
+            seconds[name] = round(seconds.get(name, 0) + time.time() - t, 1)
+
+    # LIGHT run (owner, Oct 28 2026): with many stories already ready the desk is the bottleneck, so the pipeline fetches,
+    # groups and rates (the news stays fresh, new articles join their stories) but does not prepare more stories than
+    # `light_read_allowance`; the search for more outlets, the blocked-page reads and the picture look-ups wait.
+    light = False
+    if SETTINGS.light_ready_min > 0:
+        try:
+            from . import desk as _desk
+            ready_n = len(_desk.ready(store))
+            light = ready_n >= SETTINGS.light_ready_min
+            stats["light"] = {"ready": ready_n, "min": SETTINGS.light_ready_min, "on": light}
+        except Exception as e:  # noqa: BLE001 - a full run is the safe default
+            log.warning("ready count for the light run failed: %s", str(e)[:150])
+
     from . import events
     step("events", lambda: stats.__setitem__("events", events.refresh(store)))   # learned order of events, once a day
     step("event ranks", lambda: events.load(store))
@@ -94,36 +128,54 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     step("dupescore", lambda: stats.__setitem__("dupescore", dupescore.refresh(store)))
     step("dupescore load", lambda: dupescore.load(store))
     if ingest_news:
-        ingest.sync_feeds(store)
-        stats["ingested"] = ingest.ingest(store)
+        with timed("ingest"):
+            ingest.sync_feeds(store)
+            stats["ingested"] = ingest.ingest(store)
         # outlets' share pictures (collected now, shown later): older articles in stories looked at once
-        stats["images"] = dict(ingest.IMAGE_STATS, filled=step("images", lambda: ingest.fill_images(store)))
-    if search_news:
+        if light:
+            stats["images"] = dict(ingest.IMAGE_STATS, filled=None, skipped="light run")
+        else:
+            with timed("images"):
+                stats["images"] = dict(ingest.IMAGE_STATS, filled=step("images", lambda: ingest.fill_images(store)))
+    if search_news and not light:
         # who else covered the stories we know? found articles are grouped like any other
         # the stories being prepared for the writer (ranked in earlier runs) are searched first
-        stats["search"] = step("search", lambda: discover.discover(store, tavily, until=t0 + 8 * 60,
-                                                                   focus=set(priority.queue(store)), bank=bank))
+        with timed("search"):
+            stats["search"] = step("search", lambda: discover.discover(store, tavily, until=t0 + 8 * 60,
+                                                                       focus=set(priority.queue(store)), bank=bank))
     stats["retracted_headline_only"] = extract.retract_unreadable(store)
-    if tavily is not None:
+    if tavily is not None and not light:
         # pages we could not read, in stories worth reading (grouped in earlier runs)
-        stats["tavily_pages_read"] = step("tavily", lambda: extract.read_blocked_pages(
-            store, tavily, SETTINGS.tavily_extract_pages_per_run, focus=set(priority.queue(store)), bank=bank))
-    stats["wire_assigned"] = wire.assign_wire_groups(store)
-    stats["grouped"] = step("grouping", lambda: story_mod.group_stories(store, router))   # a failure must not stop reading and writing
+        with timed("tavily"):
+            stats["tavily_pages_read"] = step("tavily", lambda: extract.read_blocked_pages(
+                store, tavily, SETTINGS.tavily_extract_pages_per_run, focus=set(priority.queue(store)), bank=bank))
+    with timed("grouping"):
+        stats["wire_assigned"] = wire.assign_wire_groups(store)
+        stats["grouped"] = step("grouping", lambda: story_mod.group_stories(store, router))   # a failure must not stop reading and writing
     from . import express as _express
     if _express.STATS:
         stats["express"] = {k: (dict(v) if isinstance(v, dict) else v) for k, v in _express.STATS.items()}
     stats["embedding"] = dict(story_mod.EMBED_STATS)     # what grouping did with the embedding quota (ledger.py records it)
     # only the stories worth writing are read and analysed (priority.py, owner Oct 6 2026): each story
     # with 3+ sources is rated from its headlines; the best `prep_queue` of them are prepared
-    stats["rated"] = step("priority", lambda: priority.rank_new(store, router))
-    focus = set(priority.queue(store))
+    with timed("rating"):
+        stats["rated"] = step("priority", lambda: priority.rank_new(store, router))
+    queue_ids = priority.queue(store)
+    focus = set(queue_ids)
     stats["queue"] = len(focus)
-    # express stories (express.py): their own small reading cap, read from one outlet; apart from the queue
-    express_ids = step("express_focus", lambda: _express.focus(store)) or set()
-    focus |= express_ids
+    # express stories (express.py): their own small reading cap, read from one outlet; apart from the queue.
+    # A light run does not read them (their reading waits for a full run); its allowance goes to the queue's best stories.
+    if light:
+        express_ids = set()
+        picked = _light_pick(store, queue_ids, SETTINGS.light_read_allowance)
+        focus = set(picked)
+        stats["light"]["read"] = picked
+    else:
+        express_ids = step("express_focus", lambda: _express.focus(store)) or set()
+        focus |= express_ids
     # time plan: reading stops 20 minutes before the deadline; the story stage gets the rest
-    stats["extracted"] = extract.extract_pending(store, router, deadline - 20 * 60, focus=focus, express=express_ids)
+    with timed("extract"):
+        stats["extracted"] = extract.extract_pending(store, router, deadline - 20 * 60, focus=focus, express=express_ids)
 
     # published stories are closed (editions.py): never re-analysed, re-read or rewritten
     from . import editions
@@ -146,7 +198,8 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     from . import origins
 
     from .consolidate import consolidate_story
-    stats["units"] = step("units", lambda: perspectives.refresh_units(store))
+    with timed("units_concepts"):
+        stats["units"] = step("units", lambda: perspectives.refresh_units(store))
 
     def _concepts():
         from . import concepts
@@ -154,7 +207,8 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         words = {w for r in store.rows(select(_claims.c.loaded_words).where(_claims.c.loaded_words.is_not(None)))
                  for w in (r["loaded_words"] or [])}
         return concepts.map_new(store, router, words)
-    stats["concepts_mapped"] = step("concepts", _concepts)
+    with timed("units_concepts"):
+        stats["concepts_mapped"] = step("concepts", _concepts)
 
     def analyse(sid):
         # one fact per statement (split.py): compound rows split before matching, so a fact two outlets
@@ -178,10 +232,13 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
             perspectives.mark_qualified(store, sid, "interim")
         elif sid in express_ids and _express.qualify(store, sid):     # one or two outlets, a named origin (express.py)
             pass
-    analysed = _parallel(dirty, analyse, deadline - 12 * 60, workers)
+    with timed("analyse"):
+        analysed = _parallel(dirty, analyse, deadline - 12 * 60, workers)
     from . import positions
-    pos = step("positions", lambda: positions.daily(store, until=deadline))   # E29: the test first, then the clusters read it
-    stats["global_clusters"] = perspectives.recompute_global(store)
+    with timed("positions"):
+        pos = step("positions", lambda: positions.daily(store, until=deadline))   # E29: the test first, then the clusters read it
+    with timed("global_clusters"):
+        stats["global_clusters"] = perspectives.recompute_global(store)
     # labels may have changed (or the clusters gone): re-label analysed stories (code only). A
     # published article keeps the perspectives it was written with.
     for sid in sorted(analysed):
@@ -222,28 +279,30 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         "grounded": router.per_run_budget("grounded"), "judge": router.per_run_budget("judge")}
     stats["verify_budget"] = dict(budget)
     checked = 0
-    for sid in analysed:
-        if sid not in qualifying:
-            continue
-        verify.base_verdicts(store, sid)
-        if SETTINGS.model_verdicts and time.time() < deadline - 6 * 60 and (budget.get("judge", 0) > 0):
-            checked += verify.verify_story(store, router, sid, budget)
+    with timed("verify"):
+        for sid in analysed:
+            if sid not in qualifying:
+                continue
+            verify.base_verdicts(store, sid)
+            if SETTINGS.model_verdicts and time.time() < deadline - 6 * 60 and (budget.get("judge", 0) > 0):
+                checked += verify.verify_story(store, router, sid, budget)
     # writing is the desk's job (desk.py, its own workflow at :35); the pipeline only prepares
     reasons = {sid: editions.settle_reason(store, sid) for sid in qualifying}
     settled = [sid for sid, why in reasons.items() if why]
     # published articles: only their colours mature, by code (the 6-hour clock)
-    matured = sum(1 for sid in sorted(frozen) if editions.mature(store, sid))
-    # later reports that replace a published line (threads.py): "Updates since published", the old line struck
-    for sid in sorted(frozen):
+    with timed("published_pages"):
+        matured = sum(1 for sid in sorted(frozen) if editions.mature(store, sid))
+        # later reports that replace a published line (threads.py): "Updates since published", the old line struck
+        for sid in sorted(frozen):
+            try:
+                editions.attach_updates(store, router, sid)
+            except Exception as e:  # noqa: BLE001 - an update list never stops the run
+                log.warning("updates of story %s not attached: %s", sid, str(e)[:150])
+        # "Latest in this story" (owner, Oct 24 2026): every page lists the follow-ups that develop it, newest last
         try:
-            editions.attach_updates(store, router, sid)
-        except Exception as e:  # noqa: BLE001 - an update list never stops the run
-            log.warning("updates of story %s not attached: %s", sid, str(e)[:150])
-    # "Latest in this story" (owner, Oct 24 2026): every page lists the follow-ups that develop it, newest last
-    try:
-        stats["children_attached"] = editions.attach_children(store)
-    except Exception as e:  # noqa: BLE001 - a link list never stops the run
-        log.warning("children not attached: %s", str(e)[:150])
+            stats["children_attached"] = editions.attach_children(store)
+        except Exception as e:  # noqa: BLE001 - a link list never stops the run
+            log.warning("children not attached: %s", str(e)[:150])
     stats.update(stories_dirty=len(dirty), analysed=len(analysed), qualifying=len(qualifying),
                  settled=len(settled), settled_read=sum(1 for why in reasons.values() if why == "read"),
                  claims_checked=checked, colours_matured=matured,

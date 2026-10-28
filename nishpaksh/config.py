@@ -135,6 +135,11 @@ class Settings:
     max_extract_per_story: int = 8
     prep_queue: int = 16                 # stories read, analysed and searched for at a time (priority.py)
     prep_beat: int = 4                   # ...of which reserved for Domains and Sport stories (owner, Oct 9 2026)
+    # a light pipeline when many stories are already ready (owner, Oct 28 2026: the desk is the bottleneck, ~20 were ready
+    # and the pipeline still spent 30 of its 42 minutes reading and analysing more): at or above this many ready stories
+    # the run only fetches, groups and rates, and reads/analyses at most `light_read_allowance` stories. 0 = never light.
+    light_ready_min: int = 8
+    light_read_allowance: int = 2
     desk_per_hour: int = 2               # articles the writer publishes in one clock hour from any story (owner)
     desk_beat_seat: int = 2              # ...plus this many for Domains, Sport or express stories only (express.py: Oct 13 2026, 1 -> 2); empty if none is ready
     desk_tries: int = 5                  # stories the writer job tries per run before giving up

@@ -2175,6 +2175,7 @@ def test_a_short_article_is_finished_next_time_not_thrown_away(store, monkeypatc
     real_ok = narrative.essay_ok
     monkeypatch.setattr(narrative, "essay_ok", lambda nar, payload, bar=None: real_ok(nar, payload, bar)
                         and (bar is not None and bar < narrative.PUBLISH_MIN - 1e-9))
+    monkeypatch.setattr(narrative, "lowered_bar_problems", lambda paragraphs: ["3 one-sentence paragraphs (at most 2)"])
     assert not compose.publish_story(store, _router(store, Fills()), sid)
     assert compose.LAST_OUTCOME["outcome"] == "written short" and "coherence guard" in compose.LAST_OUTCOME["detail"]["why"]
     assert store.rows(select(published)) == []
