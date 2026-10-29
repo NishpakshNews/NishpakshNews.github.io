@@ -32,7 +32,7 @@ import math
 import re
 from dataclasses import dataclass
 
-from . import figures, idf
+from . import figures, idf, reconcile
 from .relate import Profile, core_names, name_sets_fit, nums_within, numbers_near, relate as relate_pair
 
 COVER = 0.95       # share of the shorter line's weight the longer line holds, to call it covered (a fact never goes for a word)
@@ -40,7 +40,9 @@ OVERLAP = 0.45     # weighted cosine from which two lines are one subject
 HELD = 0.75        # ... or the share of the shorter line the longer holds (a short line inside a long one)
 QUESTION = 0.55    # weighted cosine from which two lines asked the same question (a conflict needs it)
 NEAR = 0.02        # figures this close are one figure written at two precisions, not a conflict (48 / 48.54)
+REWRITE_MIN = 0.55  # a merge is only asked of the writer from this cosine (below it the pair is reported, not offered)
 NEW_ROOTS = 2      # a merged sentence may use at most this many words neither original had (a joining word)
+_LEANS = re.compile(r"(?i)^\s*(?:he|she|they|it|his|her|their|its|this|that|these|those|the latter|both)\b")
 GUARDED = {"disputed", "false"}            # a line in one of these colours is never folded into another
 
 _QUOTE = re.compile(r"[“\"]([^”\"]{12,})[”\"]")
@@ -63,10 +65,13 @@ class Verdict:
     cont_a: float           # share of line a's weight that line b holds
     cont_b: float
     why: str = ""
+    notes: tuple = ()       # ((figure the kept line has, the other reading), ...): put in brackets if the owner wants them
+    conflict_kind: str = ""
 
     def as_dict(self) -> dict:
         return {"a": self.a, "b": self.b, "outcome": self.outcome, "drop": self.drop, "keep": self.keep,
-                "cos": round(self.cos, 2), "cont_a": round(self.cont_a, 2), "cont_b": round(self.cont_b, 2), "why": self.why}
+                "cos": round(self.cos, 2), "cont_a": round(self.cont_a, 2), "cont_b": round(self.cont_b, 2), "why": self.why,
+                "notes": [list(n) for n in self.notes], "conflict_kind": self.conflict_kind}
 
 
 # --- parts of a line -----------------------------------------------------------------------------------------------
@@ -185,11 +190,25 @@ def judge(i: int, j: int, ta: str, tb: str, pa: Profile, pb: Profile, W: idf.Wei
         return v("distinct", why="not one subject")
     if ordinals(ta) != ordinals(tb) and (ordinals(ta) and ordinals(tb)):
         return v("distinct", why="different ordinals")
-    if not name_sets_fit(pa, pb):
-        return v("distinct", why="names on both sides")
-    why = question_differs(pa, pb, ta, tb)
-    if why and cos >= QUESTION:
-        return v("conflict", why=why)
+
+    # how the two lines differ, read by `reconcile` (figures and dates as intervals, name aliases, negation by scope)
+    diff = reconcile.difference(ta, tb, pa, pb)
+    if diff.conflicts and any(k == "names" for k, _ in diff.soft):
+        return v("distinct", why="different answers beside different names: different subjects")
+    if diff.conflicts:
+        if cos >= QUESTION:
+            return Verdict(i, j, "conflict", None, None, cos, ca, cb, "; ".join(f"{k}: {x}" for k, x in diff.conflicts[:2]),
+                           conflict_kind=diff.kind)
+        return v("distinct", why="different answers, but not one question")
+    # paired figures count as one word in both lines (7,395 and 7,395.55 are the same word here), so the measures see them
+    for k, fp in enumerate(x for x in diff.pairs if x.relation in ("equal", "within", "covers", "near")):
+        ta_tok, tb_tok = f"#{round(fp.a.value, 3)}", f"#{round(fp.b.value, 3)}"
+        if ta_tok in ba and tb_tok in bb:
+            ba = (ba - {ta_tok}) | {f"#pair{k}"}
+            bb = (bb - {tb_tok}) | {f"#pair{k}"}
+    cos, ca, cb = measures(W, ba, bb)
+    if diff.status == "part":
+        return v("overlap" if cos >= OVERLAP else "distinct", why="a smaller count of the same thing in a narrower place")
 
     # the small line is the one with less to say (less weight); `cont` is how much of it the other line holds
     wa, wb = sum(W.w(x) for x in ba), sum(W.w(x) for x in bb)
@@ -197,18 +216,23 @@ def judge(i: int, j: int, ta: str, tb: str, pa: Profile, pb: Profile, W: idf.Wei
     cont = ca if small == i else cb
     ps, pbig = (pa, pb) if small == i else (pb, pa)
     ts, tbig = (ta, tb) if small == i else (tb, ta)
-    if cont >= COVER and adds_nothing(ps, pbig, ts, tbig):
+    nothing = diff.adds_nothing("a" if small == i else "b") and ordinals(ts) <= ordinals(tbig)
+    # the second reading of each near figure, oriented to the line that stays
+    notes = tuple(((n[2], n[1]) if small == i else (n[1], n[2])) for n in diff.notes)      # (the figure of the line that stays, the other reading)
+    if cont >= COVER and nothing:
         if quotes(ts) and not quotes(tbig):
             return v("overlap", why="a quotation is kept, the other line says the same around it")
-        return v("covered", small, big, f"{cont:.2f} of the shorter line is in the longer")
+        if _LEANS.match(tbig) and not _LEANS.match(ts):
+            return v("overlap", why="the longer line leans on the one before it (a pronoun): the fold would leave it without a subject")
+        return Verdict(i, j, "covered", small, big, cos, ca, cb, f"{cont:.2f} of the shorter line is in the longer", notes)
     if cos >= OVERLAP or cont >= HELD:
-        if nli_fn is not None and adds_nothing(ps, pbig, ts, tbig) and not (quotes(ts) and not quotes(tbig)):
+        if nli_fn is not None and nothing and not (quotes(ts) and not quotes(tbig)):
             try:
                 ok = nli_fn([(tbig, ts)])[0]
             except Exception:  # noqa: BLE001
                 ok = None
             if ok:
-                return v("covered", small, big, "reader: the longer line says all the shorter says")
+                return Verdict(i, j, "covered", small, big, cos, ca, cb, "reader: the longer line says all the shorter says", notes)
         return v("overlap", why="each line adds a detail")
     return v("distinct", why="below the overlap floor")
 
@@ -250,10 +274,12 @@ def _fold(host: dict, gone: dict) -> None:
     host.pop("parts", None)                  # which part belongs to whom is unknown: one colour
 
 
-def tidy(paragraphs: list[list[dict]], protect=frozenset(), nli_fn=None, rewrite=None) -> tuple[list[list[dict]], dict]:
+def tidy(paragraphs: list[list[dict]], protect=frozenset(), nli_fn=None, rewrite=None, annotate=False) -> tuple[list[list[dict]], dict]:
     """The article with its repeats folded, and a report. Nothing is changed in place. `protect`: ids that are never
     folded (the lead's, a dispute's). `rewrite(a, b) -> str | None` makes one sentence of two overlapping lines; it is
-    optional and every answer is checked by `verify_merge`."""
+    optional and every answer is checked by `verify_merge`. `annotate`: a fold whose dropped line read a figure a little
+    differently puts that reading in brackets after the figure that stays (off by default: the house voice has no "another
+    report" wording; the owner decides)."""
     paras = [[dict(x) for x in para] for para in paragraphs]
     judged = pairs_of(paras, nli_fn)
     report = {"pairs": len(judged), "outcomes": {}, "folded": 0, "merged": 0, "merge_refused": 0, "skipped_guard": 0,
@@ -279,9 +305,14 @@ def tidy(paragraphs: list[list[dict]], protect=frozenset(), nli_fn=None, rewrite
             continue
         if vd.outcome in ("same", "covered"):
             _fold(para[vd.keep], para[vd.drop])
+            if annotate:
+                for kept_fig, other_fig in vd.notes:
+                    para[vd.keep]["text"] = reconcile.annotate(para[vd.keep]["text"], kept_fig, other_fig)
             gone.add((n, vd.drop))
             report["folded"] += 1
             item["applied"] = "folded"
+        elif vd.cos < REWRITE_MIN and max(vd.cont_a, vd.cont_b) < HELD:
+            item["applied"] = "candidate: weak"
         elif rewrite is not None:
             merged = None
             try:
