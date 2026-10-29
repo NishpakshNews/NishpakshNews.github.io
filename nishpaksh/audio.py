@@ -333,15 +333,31 @@ def work(store: Store, out_dir: pathlib.Path, voices: Voices, until: float | Non
     return stats
 
 
+AUDIO_LIFE_HOURS = 36        # an audio is removed this long after it was made (owner, Oct 29 2026)
+
+
+def expired(made_at, now=None) -> bool:
+    """True when an audio made at `made_at` is older than AUDIO_LIFE_HOURS."""
+    if made_at is None:
+        return False
+    now = now or utcnow()
+    if made_at.tzinfo is None and now.tzinfo is not None:
+        made_at = made_at.replace(tzinfo=now.tzinfo)
+    return now - made_at > dt.timedelta(hours=AUDIO_LIFE_HOURS)
+
+
 def prune(store: Store, out_dir: pathlib.Path) -> int:
-    """Keep audio of live articles and of recaps of the last KEEP_DAYS days; the rest leaves the branch and the
-    table (an archived article is no longer on the front page)."""
+    """Keep audio of live articles and of recaps of the last KEEP_DAYS days, and only for AUDIO_LIFE_HOURS after it was
+    made; the rest leaves the branch and the table (an archived article is no longer on the front page). A reader who
+    asks again after that gets it made again (a new request, as for any audio that does not exist)."""
     live = {r["story_id"] for r in store.rows(select(published.c.story_id))}
     since = (utcnow() - dt.timedelta(days=KEEP_DAYS)).date().isoformat()
     gone = 0
-    for r in store.rows(select(audio_files.c.key, audio_files.c.story_id)):
+    for r in store.rows(select(audio_files.c.key, audio_files.c.story_id, audio_files.c.made_at)):
         k = r["key"]
         keep = (r["story_id"] in live) if r["story_id"] is not None else (k[6:16] >= since)
+        if keep and expired(r["made_at"]):
+            keep = False
         if not keep:
             store.exec(delete(audio_files).where(audio_files.c.key == k))
             gone += 1
@@ -363,8 +379,9 @@ def main() -> None:
     store = Store(database_url())
     if a.check:
         n = sum(1 for j in todo(store))
-        print(f"waiting={n}")
-        raise SystemExit(0 if n else 1)
+        old = sum(1 for r in store.rows(select(audio_files.c.made_at)) if expired(r["made_at"]))
+        print(f"waiting={n} expired={old}")          # expired audio also starts a run, so it is removed on time
+        raise SystemExit(0 if (n or old) else 1)
     t0 = time.time()
     voices = Voices(store, gemini_api_keys())
     out = pathlib.Path(a.dir)

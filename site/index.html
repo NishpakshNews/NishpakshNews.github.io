@@ -906,6 +906,11 @@
   .naudio button { width: 40px; height: 40px; border-radius: 50%; border: 0; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; flex: none; }
   .nrow { display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid #eeeef1; width: 100%; border-left: 0; border-right: 0; border-bottom: 0;
           background: none; text-align: start; color: var(--ink); cursor: pointer; }
+  .nbar { display: flex; gap: 8px; margin: 4px 0 0; }
+  .nbar button { flex: 1; height: 40px; border: 1px solid #dcdce3; border-radius: 12px; background: #fff; color: var(--ink); font-size: 14px; font-weight: 600; cursor: pointer; }
+  .nbar button[disabled] { opacity: .45; cursor: default; }
+  .flabel.nl { display: flex; align-items: center; justify-content: space-between; }
+  .flabel.nl button { border: 0; background: none; color: var(--muted); font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; padding: 4px 6px; }
   .nrow .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 7px; flex: none; }
   .rclock { border-radius: 18px; color: #fff; padding: 22px 20px; margin-top: 6px; }
   .rclock b.big { display: block; font-family: var(--head); font-size: 40px; font-weight: 600; line-height: 1.1; margin-top: 2px; }
@@ -4054,7 +4059,7 @@ Object.assign(ICON, {
   xs: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   bellg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3d4043" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
 });
-Object.assign(T.en, {notes: "Notifications", myAudio: "My audio", noNotes: "Nothing yet. Follow a section, a state or a word and we will tell you when an article comes out.",
+Object.assign(T.en, {notes: "Notifications", myAudio: "My audio", markAllRead: "Mark all as read", clearAll: "Clear all", clearAudio: "Clear", audioKept: "Audio is removed 36 hours after it is made.", noNotes: "Nothing yet. Follow a section, a state or a word and we will tell you when an article comes out.",
   noAudio: "You have not asked for any audio yet.", ready: l => `${l} · ready`, making: l => `${l} · being made, usually within an hour`, failed: l => `${l} · could not be made`,
   followIntro: "We tell you every time an article comes out in what you follow. Tap the circle for all of it, the arrow to choose inside.",
   sectionsL: "Sections", placesL: "Places and names", states: "States", words: "Words and names", allOf: l => `All of ${l}`, all: "All",
@@ -4063,7 +4068,7 @@ Object.assign(T.en, {notes: "Notifications", myAudio: "My audio", noNotes: "Noth
   recapMaking: "Today's summary is being written. It will be here in a few minutes.", notifyMe: "Notify me when it is ready", listenRecap: "Listen",
   articles: n => `${n} stories today`, hm: (h, m) => `${h} h ${m} min`, recapReadyHint: "Ready", recapTimeHint: "11 pm", stop: "Stop following",
   coloursL: "When lines change colour", coloursIntro: "An article's words never change, but its colours do as more reports come in. We tell you when lines of any article turn the colours you pick, at most once an hour per article.", struckF: "struck through (replaced by later news)"});
-Object.assign(T.hi, {notes: "सूचनाएं", myAudio: "मेरे ऑडियो", noNotes: "अभी कुछ नहीं। कोई खंड, राज्य या शब्द फ़ॉलो करें, नया लेख आने पर हम बताएंगे।",
+Object.assign(T.hi, {notes: "सूचनाएं", myAudio: "मेरे ऑडियो", markAllRead: "सब पढ़ा हुआ चिह्नित करें", clearAll: "सब हटाएं", clearAudio: "हटाएं", audioKept: "ऑडियो बनने के 36 घंटे बाद हट जाता है।", noNotes: "अभी कुछ नहीं। कोई खंड, राज्य या शब्द फ़ॉलो करें, नया लेख आने पर हम बताएंगे।",
   noAudio: "आपने अभी कोई ऑडियो नहीं मांगा।", ready: l => `${l} · तैयार`, making: l => `${l} · बन रहा है, आमतौर पर एक घंटे में`, failed: l => `${l} · नहीं बन सका`,
   followIntro: "आप जो फ़ॉलो करते हैं, उसमें हर नया लेख आने पर हम बताते हैं। पूरा चुनने के लिए गोले पर, भीतर चुनने के लिए तीर पर टैप करें।",
   sectionsL: "खंड", placesL: "जगहें और नाम", states: "राज्य", words: "शब्द और नाम", allOf: l => `पूरा ${l}`, all: "सब",
@@ -4105,7 +4110,7 @@ async function setFollow(kind, key, on, label) {
 }
 async function countUnread() {
   if (!me) { unread = 0; paintBadge(); return; }
-  try { unread = (await rest("notifications?select=id&read_at=is.null&limit=99")).length; } catch (e) { /* offline */ }
+  try { unread = (await rest("notifications?select=id&read_at=is.null&cleared_at=is.null&limit=99")).length; } catch (e) { /* offline */ }
   paintBadge();
 }
 function paintBadge() {
@@ -4204,8 +4209,14 @@ async function loadNotes() {
   notesData = null;
   try {
     const [notes, reqs] = await Promise.all([
-      rest("notifications?select=id,kind,title,body,url,created_at,read_at&order=created_at.desc&limit=50"),
-      rest("audio_requests?select=story_id,lang,status,requested_at&order=requested_at.desc&limit=20")]);
+      rest("notifications?select=id,kind,title,body,url,created_at,read_at&cleared_at=is.null&order=created_at.desc&limit=50"),
+      rest(`audio_requests?select=story_id,lang,status,requested_at,done_at&cleared_at=is.null&order=requested_at.desc&limit=20`)]);
+    // an audio is removed 36 h after it is made: a finished request whose file is gone is not listed
+    const files = await api("audio_files?select=key").catch(() => null);
+    if (Array.isArray(files)) {                               // (offline or failed: the list is left as it is)
+      const have = new Set(files.map(f => f.key));
+      for (let i = reqs.length - 1; i >= 0; i--) if (reqs[i].status === "done" && !have.has(`${reqs[i].story_id}-${reqs[i].lang}`)) reqs.splice(i, 1);
+    }
     const heads = {};
     await Promise.all([...new Set(reqs.map(r => String(r.story_id)))].map(async id => {
       const c = (pool || []).find(x => String(x.id) === id);
@@ -4218,6 +4229,25 @@ async function loadNotes() {
     if (ids.length) rest(`notifications?id=in.(${ids.join(",")})`, {method: "PATCH", body: JSON.stringify({read_at: new Date().toISOString()})})
       .then(() => { unread = 0; paintBadge(); }).catch(() => {});
   } catch (e) { notesData = {notes: [], reqs: []}; }
+  if (sheetKind === "notes") renderSheet();
+}
+/* the buttons of the notifications sheet: mark all read, clear all, clear the finished audio (a soft clear: the row is hidden, never deleted) */
+async function clearNotes(what) {
+  if (!notesData) return;
+  const now = new Date().toISOString();
+  try {
+    if (what === "audio") {
+      await rest("audio_requests?cleared_at=is.null&status=neq.queued", {method: "PATCH", body: JSON.stringify({cleared_at: now})});
+      notesData.reqs = notesData.reqs.filter(r => r.status === "queued");
+    } else if (what === "read") {
+      await rest("notifications?read_at=is.null&cleared_at=is.null", {method: "PATCH", body: JSON.stringify({read_at: now})});
+      notesData.notes.forEach(n => { n.read_at = n.read_at || now; });
+      unread = 0; paintBadge();
+    } else if (what === "all") {
+      await rest("notifications?cleared_at=is.null", {method: "PATCH", body: JSON.stringify({read_at: now, cleared_at: now})});
+      notesData.notes = []; unread = 0; paintBadge();
+    }
+  } catch (e) { toast(T[lang].error); return; }
   if (sheetKind === "notes") renderSheet();
 }
 function notesHtml() {
@@ -4233,7 +4263,10 @@ function notesHtml() {
       <span style="flex:1;min-width:0"><span style="display:block;font-size:15px;font-weight:${n.read_at ? 400 : 600};line-height:1.3">${esc(n.title)}</span><span class="bnote" style="display:block;margin-top:3px">${esc(n.body || "")}</span></span>
       <span style="font-size:12px;color:#9a9ca3;white-space:nowrap">${esc(when(n.created_at))}</span></button>`).join("")
     : `<p class="bnote" style="margin:6px 2px">${esc(t.noNotes)}</p>`;
-  return `<div class="bbody" style="flex:1;min-height:0;gap:0"><div class="flabel" style="margin-top:4px">${esc(t.myAudio)}</div>${audios}<div class="flabel" style="margin-top:18px">${esc(t.notes)}</div>${notes}</div>`;
+  const anyAudio = notesData.reqs.some(r => r.status !== "queued"), anyNote = notesData.notes.length > 0, anyUnread = unread > 0 || notesData.notes.some(n => !n.read_at);
+  return `<div class="bbody" style="flex:1;min-height:0;gap:0"><div class="flabel nl" style="margin-top:4px"><span>${esc(t.myAudio)}</span>${anyAudio ? `<button type="button" data-nclear="audio">${esc(t.clearAudio)}</button>` : ""}</div>${audios}${notesData.reqs.length ? `<p class="bnote" style="margin:2px 2px 0;font-size:12px">${esc(t.audioKept)}</p>` : ""}
+    <div class="flabel" style="margin-top:18px">${esc(t.notes)}</div>
+    ${anyNote ? `<div class="nbar"><button type="button" data-nclear="read"${anyUnread ? "" : " disabled"}>${esc(t.markAllRead)}</button><button type="button" data-nclear="all">${esc(t.clearAll)}</button></div>` : ""}${notes}</div>`;
 }
 
 /* Daily recap: before 11 pm, when and how long; then the day's articles, Listen, and Notify me */
@@ -4288,6 +4321,7 @@ bsheet.addEventListener("click", async e => {
   const b = e.target.closest("button, .rs"); if (!b || !sheetKind) return;
   if (sheetKind === "follow" && (b.dataset.fsub || b.dataset.fall || b.dataset.fone || b.dataset.fword)) { e.stopImmediatePropagation(); followClick(b); return; }
   if (b.dataset.fback) { e.stopImmediatePropagation(); followSub = null; renderSheet(); return; }
+  if (b.dataset.nclear) { e.stopImmediatePropagation(); clearNotes(b.dataset.nclear); return; }
   if (b.dataset.nplay) { e.stopImmediatePropagation(); const k = b.dataset.nplay; closeSheet(); playAudio(k); return; }
   if (b.dataset.nurl !== undefined) {
     e.stopImmediatePropagation();

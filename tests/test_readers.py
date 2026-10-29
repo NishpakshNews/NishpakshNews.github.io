@@ -382,3 +382,21 @@ def test_bodies_keep_their_whole_name_titles_do_not_eat_them():
     assert people._clean("Supreme Court judge Ujjal Bhuyan") == "Ujjal Bhuyan"
     assert people._clean("The Court") == ""                                   # a bare body word is no name
     assert people._ok("Supreme Court") and not people._ok("Chief Justice")
+
+
+def test_expired_audio_is_removed_after_36_hours_even_while_its_article_is_live(tmp_path):
+    now = dt.datetime(2026, 10, 29, 12, 0, tzinfo=dt.timezone.utc)
+    assert not audio.expired(now - dt.timedelta(hours=35, minutes=59), now)
+    assert audio.expired(now - dt.timedelta(hours=36, minutes=1), now)
+    assert not audio.expired(None, now)
+    s = _store(tmp_path)
+    p = _payload("Headline here", [("A first sentence.", "established")])
+    _publish(s, 401, dt.datetime(2026, 10, 9, 10), p)
+    out = tmp_path / "audio"
+    out.mkdir()
+    for k, hours in (("401-en", 40), ("401-hi", 2)):
+        (out / f"{k}.m4a").write_bytes(b"x")
+        s.exec(insert(audio_files).values(key=k, story_id=401, lang=k[-2:], url=f"/audio/{k}.m4a",
+                                          made_at=audio.utcnow() - dt.timedelta(hours=hours)))
+    assert audio.prune(s, out) == 1
+    assert not (out / "401-en.m4a").exists() and (out / "401-hi.m4a").exists()
