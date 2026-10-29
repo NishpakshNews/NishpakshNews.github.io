@@ -129,6 +129,21 @@ def _summary(p: dict) -> str:
     return first[:400]
 
 
+def _picture(store: Store, row: dict, looked: list[int]) -> dict | None:
+    """The article's picture for its archived page (archivepic.py): link, credit, faces, blur. Never stops the archive:
+    any failure gives no picture, and past MAX_PER_RUN pictures in one step the rest keep the link and credit only."""
+    try:
+        from . import archivepic
+        look = looked[0] < archivepic.MAX_PER_RUN
+        img = archivepic.for_story(store, row["story_id"], row["payload_en"], look=look)
+        if img and look:
+            looked[0] += 1
+        return img
+    except Exception as e:  # noqa: BLE001
+        log.warning("archive: picture of %s skipped: %s", row.get("story_id"), e)
+        return None
+
+
 def export_due(store: Store, root: str | pathlib.Path, now: dt.datetime | None = None) -> list[int]:
     """Write every published article older than `archive_after_days` into the branch checkout at
     `root`; returns their ids (also left in root/.pending.json for `delete`)."""
@@ -138,6 +153,7 @@ def export_due(store: Store, root: str | pathlib.Path, now: dt.datetime | None =
     rows = store.rows(select(published).where(published.c.updated_at < cutoff).order_by(published.c.story_id))
     done: list[int] = []
     lines: dict[str, list[str]] = {}
+    looked = [0]                        # pictures looked at so far in this step (archivepic.MAX_PER_RUN)
     for r in rows:
         written = _written_at(r)
         page = {"story_id": r["story_id"], "written_at": written, "headline_en": r["headline_en"],
@@ -147,6 +163,9 @@ def export_due(store: Store, root: str | pathlib.Path, now: dt.datetime | None =
         idx = root / "index" / f"{written[:7]}.jsonl"
         listed = _listed(idx)
         if r["story_id"] not in listed:   # an archived article is never rewritten
+            img = _picture(store, r, looked)
+            if img:
+                page["img"] = img
             path.write_bytes(gzip.compress(json.dumps(page, ensure_ascii=False, default=str).encode("utf-8"), mtime=0))
             pe = r["payload_en"] or {}
             lines.setdefault(written[:7], []).append(json.dumps(
