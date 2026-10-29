@@ -1386,8 +1386,8 @@
   .glass.where b { font-weight: 700; }
   .glass.where i { font-style: normal; opacity: 0.65; font-weight: 400; margin: 0 0.3em; }
   .glass .dots { flex: none; display: flex; gap: 4px; }
-  .glass .dots u { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.3); }
-  .glass .dots u.f { background: #fff; }
+  .glass .dots u { width: 6px; height: 6px; border-radius: 50%; background: var(--wi-dim, rgba(255,255,255,0.3)); }
+  .glass .dots u.f { background: var(--wi, #fff); }
   .card.wh { padding-top: 58px; }
   .card.wh > .glass.where { top: 16px; left: 22px; max-width: calc(100% - 44px); background: rgba(47,58,114,0.92); border-color: rgba(47,58,114,0.92);
                             -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: none; box-shadow: none; }
@@ -1823,7 +1823,7 @@ function cardHtml(c, i) {
   const picHtml = pic ? `<div class="pic"><img class="soft" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async">
       <img class="sharp" src="${esc(pic.src)}" alt="" referrerpolicy="no-referrer" decoding="async"><div class="wash"></div>
       <span class="pic-credit">${esc(T[lang].photo)}: ${esc(pic.by || "")}</span></div>` : "";
-  const wh = whereHtml();
+  const wh = whereHtml(pic);
   const picIn = pic && wh ? picHtml.replace(/<\/div>$/, wh + "</div>") : picHtml;
   return `<div class="slot" data-i="${i}"><a class="card${pic ? " has-pic" : ""}${wh && !pic ? " wh" : ""}" href="#/story/${encodeURIComponent(c.id)}" data-id="${esc(c.id)}">
       ${picIn}${wh && !pic ? wh : ""}${edgeHtml(b)}${kickerHtml(b, c.upd)}<h2>${esc(c.h)}</h2>
@@ -1832,12 +1832,21 @@ function cardHtml(c, i) {
       <div class="foot"><span class="ago">${esc(ago(c.at))}</span></div></a></div>`;
 }
 // where you are, on the glass (owner, Oct 28 2026): the last two names of the open section and one dot per level of three
-function whereHtml() {
+function whereHtml(pic) {
   if (fKey === "all") return "";
   const names = [level, sec, ter].filter(Boolean).map(secLabel).filter(Boolean).slice(-2);
   if (!names.length) return "";
   const d = secDepth();
-  return `<div class="glass where" aria-hidden="true"><span class="wn">${names.map((x, i) => i === names.length - 1 ? `<b>${esc(x)}</b>` : esc(x)).join("<i>›</i>")}</span>` +
+  // same translucent, picture-aware glass as the greeting (owner, Oct 29 2026); a card with no picture keeps the indigo pill
+  let st = "";
+  if (pic && Array.isArray(pic.col)) {
+    const L = glassLook(pic.col), light = L.ink === "#fff";
+    st = ` style="background:${L.bg};color:${L.ink};border-color:${L.bd};` +
+         `text-shadow:${light ? "0 1px 3px rgba(0,0,0,.35)" : "0 1px 2px rgba(255,255,255,.4)"};` +
+         `--wi:${L.ink};--wi-dim:${light ? "rgba(255,255,255,.3)" : L.ink.replace(/,1\)$/, ",.3)")};` +
+         `backdrop-filter:blur(14px) saturate(1.5);-webkit-backdrop-filter:blur(14px) saturate(1.5)"`;
+  }
+  return `<div class="glass where"${st} aria-hidden="true"><span class="wn">${names.map((x, i) => i === names.length - 1 ? `<b>${esc(x)}</b>` : esc(x)).join("<i>›</i>")}</span>` +
          `<span class="dots">${[0, 1, 2].map(k => `<u${k < d ? ' class="f"' : ""}></u>`).join("")}</span></div>`;
 }
 function deckSig() {
@@ -3163,12 +3172,14 @@ function greetSoon(tries = 0) {
 // a pale corner gets a deep pill with white words, a dark corner a luminous one with deep words (owner, Oct 29 2026, option 2)
 function greetLook(pic) {
   const im = pic && pic.closest("a.card") && (cards.find(c => String(c.id) === pic.closest("a.card").dataset.id) || {}).img;
-  const col = im && Array.isArray(im.col) ? im.col : null;
-  if (!col) return {bg: "rgba(31,37,80,0.92)", ink: "#fff", bd: "rgba(140,160,255,.5)", glow: "rgba(70,84,154,.9)", ring: "rgba(120,140,255,.8)", dot: "#aab6ff"};
+  return glassLook(im && Array.isArray(im.col) ? im.col : null);
+}
+function glassLook(col) {
+  if (!col) return {bg: "rgba(31,37,80,0.68)", ink: "#fff", bd: "rgba(140,160,255,.5)", glow: "rgba(70,84,154,.9)", ring: "rgba(120,140,255,.8)", dot: "#aab6ff"};
   const [h, s0, , lum] = col, s = Math.min(.9, Math.max(.5, s0 * 1.25)), hs = (S, L, a = 1) => `hsla(${h},${Math.round(S * 100)}%,${Math.round(L * 100)}%,${a})`;
   return lum > .5
-    ? {bg: hs(s, .24, .92), ink: "#fff", bd: hs(s, .5, .5), glow: hs(s, .45), ring: hs(s, .5), dot: hs(s, .72)}
-    : {bg: hs(Math.min(.9, s + .05), .84, .95), ink: hs(s, .17), bd: "rgba(255,255,255,.7)", glow: hs(s, .7), ring: hs(s, .75), dot: hs(s, .4)};
+    ? {bg: hs(s, .2, .66), ink: "#fff", bd: hs(s, .5, .5), glow: hs(s, .45), ring: hs(s, .5), dot: hs(s, .72)}
+    : {bg: hs(Math.min(.9, s + .05), .88, .7), ink: hs(s, .12), bd: "rgba(255,255,255,.7)", glow: hs(s, .7), ring: hs(s, .75), dot: hs(s, .4)};
 }
 // the greeting on the card's picture: it arrives out of a soft blur, a ring of its own colour opens once around it, one light
 // passes across; 2.4 s still; out in 0.8 s. The credit steps aside. No picture: no greeting.
@@ -3177,8 +3188,8 @@ function showGreeting(pic) {
   const g = document.createElement("div"), cr = pic.querySelector(".pic-credit"), still = STILL.matches, L = greetLook(pic);
   g.className = "glass greet"; g.setAttribute("aria-hidden", "true");
   g.innerHTML = `<span class="gd"></span><span>${esc(greeting())}</span><span class="gs"></span>`;
-  g.style.cssText = `background:${L.bg};color:${L.ink};border-color:${L.bd};text-shadow:none;--gdot:${L.dot};` +
-                    `box-shadow:0 10px 26px -10px ${L.glow},inset 0 1px 0 rgba(255,255,255,.18);backdrop-filter:blur(6px) saturate(1.4);-webkit-backdrop-filter:blur(6px) saturate(1.4)`;
+  g.style.cssText = `background:${L.bg};color:${L.ink};border-color:${L.bd};text-shadow:${L.ink === "#fff" ? "0 1px 3px rgba(0,0,0,.35)" : "0 1px 2px rgba(255,255,255,.4)"};--gdot:${L.dot};` +
+                    `box-shadow:0 10px 26px -10px ${L.glow},inset 0 1px 0 rgba(255,255,255,.18);backdrop-filter:blur(14px) saturate(1.5);-webkit-backdrop-filter:blur(14px) saturate(1.5)`;
   const halo = document.createElement("div"); halo.className = "glass-halo";
   halo.style.boxShadow = `0 0 0 2px ${L.ring}, 0 0 26px 4px ${L.ring}`;
   pic.appendChild(halo); pic.appendChild(g);
