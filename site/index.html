@@ -4933,7 +4933,11 @@ async function checkAfterSaved(l, shownCards) {
     if (l !== lang || !staged || staged.lang !== l) return;
     const shown = newestAt(shownCards), have = new Map(shownCards.map(c => [String(c.id), c.v || ""]));
     const fresh = staged.cards.filter(c => utcMs(c.at) > shown);
-    const changed = staged.cards.some(c => !have.has(String(c.id)) || (c.v || "") !== have.get(String(c.id)));
+    // the saved home keeps only HOME_KEEP stories while the feed holds many more, so a card the feed has that the saved home
+    // never held (an older one) is not news: only cards as new as the oldest one shown are compared (owner, Oct 29 2026:
+    // "Fresh news ready" came at every start and, pressed, stayed on the same article because nothing had changed)
+    const floor = shownCards.reduce((m, c) => Math.min(m, utcMs(c.at) || Infinity), Infinity);
+    const changed = staged.cards.some(c => utcMs(c.at) > floor && (!have.has(String(c.id)) || (c.v || "") !== have.get(String(c.id))));
     if (fresh.length) showNew(fresh);
     else if (changed) showNew([], T[lang].freshHome);
     else staged = null;
