@@ -142,6 +142,15 @@ class Settings:
     # writes at most about 4 an hour, so 4 left is a cushion for the next hour's first desk run).
     light_ready_min: int = 4
     light_read_allowance: int = 2
+    # Oct 29 2026 (owner): a light run reads MORE the lower the pool is, so the pool is refilled a little every hour and full runs
+    # (the 2-hour ones) stay rare. (ready at least, stories read): the first line that fits is used.
+    light_read_steps: tuple = ((8, 2), (5, 4), (0, 6))
+    # the desk writes LESS the lower the pool is, so the hours are even (1 an hour, not 3 and then none). (ready at least, articles
+    # this desk run may publish): the first line that fits is used; the seats still apply. With `desk_write_all_from` ready or
+    # more every banked seat may be used; just under it the normal hour's seats (desk_per_hour + desk_beat_seat). The steps keep
+    # the pool at 4 or more after the writing wherever they can, so a normal hour stays a light run. 0 ready: nothing to write.
+    desk_write_steps: tuple = ((8, 4), (7, 3), (6, 2), (1, 1))
+    desk_write_all_from: int = 12
     # a light run also reads this many NEW express stories (they used to wait for a full run, so with the pool mostly above the
     # threshold none was ever read and no express article was written); stories already begun are always finished
     light_express_allowance: int = 1

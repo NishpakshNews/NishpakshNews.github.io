@@ -3166,6 +3166,8 @@ def test_the_desk_keeps_one_seat_for_domains_or_sport(store, monkeypatch):
     import nishpaksh.consolidate as K, nishpaksh.verify as V
     monkeypatch.setattr(K, "consolidate_story", lambda *a, **k: None)
     monkeypatch.setattr(V, "base_verdicts", lambda *a, **k: None)
+    # the seats are what is tested here, not the pool's write allowance (tests/test_pool_scaling.py)
+    monkeypatch.setattr(desk, "SETTINGS", dataclasses.replace(desk.SETTINGS, desk_write_all_from=0))
     st = desk.work(store, None, now=NOW)
     assert done == gen[:2] + [sport] and st["beat_seat"] == [sport]
     assert st["beat_seat_empty"] == "1 empty: none could be written"
@@ -3906,7 +3908,7 @@ def test_unused_seats_of_earlier_hours_are_there_for_the_desk(store):
 def test_the_desk_writes_more_than_two_when_seats_were_banked(store, monkeypatch):
     from nishpaksh import compose, desk, verify
     import nishpaksh.consolidate as K
-    queue = list(range(1, 11))
+    queue = list(range(1, 13))
     monkeypatch.setattr(desk, "ready", lambda store, now=None: queue)
     monkeypatch.setattr(desk, "_beats", lambda store, ids: set())
     monkeypatch.setattr(verify, "base_verdicts", lambda *a, **k: None)

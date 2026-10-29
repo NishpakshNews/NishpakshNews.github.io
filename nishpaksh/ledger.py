@@ -64,7 +64,8 @@ def _num(x):
 
 # --- one run's record ----------------------------------------------------------------------------------------------
 
-def build_entry(run: dict, desk: dict | None, outlets: dict | None, intake: dict | None, embed_used: int | None) -> dict:
+def build_entry(run: dict, desk: dict | None, outlets: dict | None, intake: dict | None, embed_used: int | None,
+                ready_end: int | None = None) -> dict:
     """The record of one run, from plain data.
 
     run     the `runs` row: id, started_at, finished_at, trigger, stats
@@ -96,9 +97,19 @@ def build_entry(run: dict, desk: dict | None, outlets: dict | None, intake: dict
         entry["yield_at_start"] = yields
     if st.get("express"):
         entry["express"] = st["express"]
+    # the pool and what was done about it (owner, Oct 29 2026: the system should settle around a level; this is how to see the level
+    # and whether the rules move it): ready stories at the job's first desk run, after it (the light/full decision), and at the end
+    light = st.get("light") or {}
+    if light or desk or ready_end is not None:
+        entry["pool"] = {"mode": ("prime" if light.get("prime") else "light" if light.get("on") else "full") if light else None,
+                         "at_desk_start": (desk or {}).get("ready"), "after_first_desk": light.get("ready"), "end": ready_end,
+                         "write_allowance": (desk or {}).get("write_allowance"),
+                         "read": len(light.get("read") or []) if light.get("on") else (st.get("refill") or {}).get("queue"),
+                         "desk_runs": (desk or {}).get("runs"), "desk_seconds": (desk or {}).get("seconds")}
     if desk:
         entry["desk"] = {k: desk[k] for k in ("published", "seats", "ready", "ready_beat", "tried", "skipped",
-                                              "beat_seat", "beat_seat_empty", "already_this_hour", "short") if k in desk}
+                                              "beat_seat", "beat_seat_empty", "already_this_hour", "short", "write_allowance",
+                                              "runs", "seconds") if k in desk}
         if desk.get("express"):
             entry["desk"]["express"] = desk["express"]
     return entry
@@ -220,6 +231,25 @@ def render(entries: list[dict], now: dt.datetime | None = None) -> str:
           *_table(["IST", "new articles", "embed budget", "embedded", "waiting", "embed left", "grouped",
                    "reading queue", "qualifying", "settled", "published", "problems"], rows), ""]
 
+    # 2b. the pool and the rhythm --------------------------------------------------------------------------------------
+    rows = []
+    for e in entries[-24:][::-1]:
+        po, pub = e.get("pool") or {}, (e.get("desk") or {}).get("published")
+        if po:
+            rows.append([e["ist"], po.get("mode", ""), po.get("at_desk_start", ""), po.get("write_allowance", ""),
+                         len(pub) if isinstance(pub, list) else "", po.get("after_first_desk", ""), po.get("read", ""),
+                         po.get("end", ""), po.get("desk_runs", ""), e.get("seconds", "")])
+    rh = next((e["rhythm"] for e in reversed(entries) if e.get("rhythm")), None)
+    if rows or rh:
+        L += ["## The pool and the rhythm", ""]
+        if rh:
+            L += [f"Last 24 completed hours: {rh['hours_with_article']} with an article, {rh['empty_hours']} empty, "
+                  f"{rh['mean_per_hour']} a hour (spread {rh['sd_per_hour']}); longest gap {rh['longest_gap_min']} min; "
+                  f"per hour, oldest first: {' '.join(str(h) for h in rh['hours_24h'])}.", ""]
+        if rows:
+            L += [*_table(["IST", "mode", "ready at desk start", "desk may write", "published", "ready after first desk",
+                           "stories read", "ready at end", "desk runs", "pipeline seconds"], rows), ""]
+
     # 3. outlets ----------------------------------------------------------------------------------------------------
     intake_week: Counter = Counter()
     embedded_week: Counter = Counter()
@@ -292,6 +322,16 @@ README = f"""# Ledger
 One record per hourly run, written after the desk step (`python -m nishpaksh.ledger`, schema version {VERSION}).
 Purpose: embedding use and outlet yield were hard to see; this keeps them, run after run, in the repository so
 the next session starts from numbers.
+
+## Pool and rhythm (Oct 29 2026)
+
+`pool`: `mode` (light, full, prime) of the run; `at_desk_start` ready stories when the job's first desk run began;
+`write_allowance` how many that desk run could publish (None: every seat); `after_first_desk` the count that decided light or full;
+`read` stories the run read; `end` ready at the end of the job; `desk_runs` and `desk_seconds` of the job's desk runs.
+`rhythm`: `hours_24h` articles written in each of the 24 completed hours before this record (oldest first), `empty_hours`,
+`mean_per_hour`, `sd_per_hour`, `longest_gap_min` between desk runs that wrote something, `first_in_job_min` from the job's start to its
+first article. Times are those of the desk's record (the end of its run), a few minutes before the feed shows the article.
+Consistency is the goal: no empty hours and a small spread, then more articles.
 
 ## Files
 - `LEDGER.md`: the readable summary of the last 8 days, regenerated every run.
@@ -413,6 +453,10 @@ def merge_desk_reports(reports: list[dict]) -> dict | None:
     if not reports:
         return None
     out = dict(reports[0])
+    out["runs"] = len(reports)
+    secs = [r.get("seconds") for r in reports if isinstance(r.get("seconds"), (int, float))]
+    if secs:
+        out["seconds"] = int(sum(secs))
     for r in reports[1:]:
         for key in ("published", "express"):
             if r.get(key):
@@ -427,6 +471,41 @@ def merge_desk_reports(reports: list[dict]) -> dict | None:
                 out[key] = merged
         if isinstance(r.get("beat_seat"), list):
             out["beat_seat"] = (out["beat_seat"] if isinstance(out.get("beat_seat"), list) else []) + r["beat_seat"]
+    return out
+
+
+def rhythm_from(events: list[tuple[dt.datetime, int]], job_start: dt.datetime | None, now: dt.datetime) -> dict:
+    """How even the publishing is (owner, Oct 29 2026: the goal is consistency, then more of it). `events` are the desk runs that
+    wrote something: (when its record was made, articles), UTC. `hours_24h` are the 24 completed clock hours before `now`, oldest
+    first; a good system has no empty hour and little spread. Plain data, no database."""
+    top = now.replace(minute=0, second=0, microsecond=0)
+    hours, this_hour = [0] * 24, 0
+    for at, n in events:
+        k = int((top - at.replace(minute=0, second=0, microsecond=0)).total_seconds() // 3600)
+        if k == 0:
+            this_hour += n
+        elif 1 <= k <= 24:
+            hours[24 - k] += n
+    mean = sum(hours) / 24
+    times = sorted(at for at, n in events if n > 0 and at > now - dt.timedelta(hours=24))
+    since_last = round((now - times[-1]).total_seconds() / 60) if times else None
+    gaps = [(b - a).total_seconds() / 60 for a, b in zip(times, times[1:])] + ([since_last] if since_last is not None else [])
+    first = next((round((at - job_start).total_seconds() / 60) for at, n in sorted(events) if job_start and n > 0 and at >= job_start), None)
+    return {"hours_24h": hours, "this_hour": this_hour, "hours_with_article": sum(1 for h in hours if h), "empty_hours": sum(1 for h in hours if not h),
+            "mean_per_hour": round(mean, 2), "sd_per_hour": round((sum((h - mean) ** 2 for h in hours) / 24) ** 0.5, 2),
+            "longest_gap_min": round(max(gaps)) if gaps else 1440, "since_last_min": since_last, "first_in_job_min": first}
+
+
+def _desk_events(store, since: dt.datetime) -> list[tuple[dt.datetime, int]]:
+    from sqlalchemy import select
+    from .db import diagnostics
+    rows = store.rows(select(diagnostics.c.created_at, diagnostics.c.report)
+                      .where(diagnostics.c.kind == "desk", diagnostics.c.created_at >= since).order_by(diagnostics.c.created_at.asc()))
+    out = []
+    for r in rows:
+        pub = (r.get("report") or {}).get("published")
+        if isinstance(pub, list) and pub and r.get("created_at"):
+            out.append((r["created_at"], len(pub)))
     return out
 
 
@@ -485,8 +564,20 @@ def record(store, directory: pathlib.Path) -> dict | None:
         write_all(directory, None)
         return None
     started = run["started_at"]
+    try:
+        from . import desk
+        ready_end = len(desk.ready(store))
+    except Exception as e:  # noqa: BLE001 - the ledger never stops the hour
+        log.warning("ledger: ready count failed: %s", str(e)[:150])
+        ready_end = None
     entry = build_entry(run, _desk_report(store, started - dt.timedelta(minutes=5)), _outlet_table(store),
-                        _intake(store, started - dt.timedelta(minutes=1)), _embed_used(store, pt_day(started)))
+                        _intake(store, started - dt.timedelta(minutes=1)), _embed_used(store, pt_day(started)), ready_end)
+    try:
+        from .db import utcnow
+        now = utcnow()
+        entry["rhythm"] = rhythm_from(_desk_events(store, now - dt.timedelta(hours=26)), started, now)
+    except Exception as e:  # noqa: BLE001
+        log.warning("ledger: rhythm failed: %s", str(e)[:150])
     shadow = _shadow(store, started - dt.timedelta(minutes=5))
     if shadow:
         entry["shadow"] = shadow

@@ -114,6 +114,18 @@ def _express_ids(store: Store, ids: list[int]) -> set[int]:
             if (r["analysis"] or {}).get("qualified_by") == "express"}
 
 
+def write_allowance(ready_n: int) -> int | None:
+    """How many articles one desk run may publish with `ready_n` stories ready (owner, Oct 29 2026): the fewer ready, the fewer
+    written, so the pool is not emptied in one hour and the hours stay even. None = no limit beyond the seats (the pool is at or
+    above `desk_write_all_from`: every banked seat may be used)."""
+    if ready_n >= SETTINGS.desk_write_all_from:
+        return None
+    for at_least, n in SETTINGS.desk_write_steps:
+        if ready_n >= at_least:
+            return n
+    return 0
+
+
 def seats(store: Store, now: dt.datetime | None = None) -> tuple[int, int]:
     """(general seats left, beat seats left) for this run. Beat articles published fill the beat seat first.
 
@@ -295,6 +307,8 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
     express_ids = _express_ids(store, queue)
     stats["ready"] = len(queue)
     stats["ready_beat"] = len(beats)
+    allowed = write_allowance(len(queue))                      # None: every seat may be used
+    stats["write_allowance"] = allowed
     stats["skipped"] = {}
     stats["startup_seconds"] = round(time.time() - t_work)       # before the first story: the queue, beats, order (owner, Oct 28 2026: 5 silent minutes)
     t_start = time.time()
@@ -310,6 +324,7 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
         # a try is a story the writer was asked to write; stories turned away before that (not a
         # follow-up yet, no headline) do not use one up, but at most DESK_LOOK stories are looked at
         if (room <= 0 and beat_room <= 0) or stats["tried"] >= max_tries or n >= DESK_LOOK + 5 * extra \
+                or (allowed is not None and len(stats["published"]) >= allowed) \
                 or (until and time.time() > until):
             break
         beat = sid in beats

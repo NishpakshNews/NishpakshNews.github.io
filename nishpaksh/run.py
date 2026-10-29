@@ -31,6 +31,17 @@ def _light_pick(store: Store, queue_ids: list[int], allowance: int) -> list[int]
     return [sid for sid in queue_ids if sid in dirty][:allowance]
 
 
+def read_allowance(ready_n: int | None) -> int:
+    """How many stories of the queue a LIGHT run reads (owner, Oct 29 2026): the lower the pool, the more (config
+    `light_read_steps`). The ready count unknown: the plain `light_read_allowance`."""
+    if ready_n is None:
+        return SETTINGS.light_read_allowance
+    for at_least, n in SETTINGS.light_read_steps:
+        if ready_n >= at_least:
+            return n
+    return SETTINGS.light_read_allowance
+
+
 def refill_size(ready_n: int | None) -> int:
     """How many stories of the queue a FULL run prepares (owner, Oct 29 2026: a full run is a refill, not "everything").
     The pool is short of `refill_target` by `need` stories; about `refill_yield` of the stories read become ready, so
@@ -202,7 +213,7 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     # threshold no express story was ever read); those already begun are finished; the queue's allowance is separate.
     if light:
         express_ids = step("express_focus", lambda: _express.focus(store, limit=SETTINGS.light_express_allowance)) or set()
-        picked = _light_pick(store, queue_ids, SETTINGS.prime_read_allowance if prime else SETTINGS.light_read_allowance)
+        picked = _light_pick(store, queue_ids, SETTINGS.prime_read_allowance if prime else read_allowance(ready_n))
         focus = set(picked)
         stats["light"]["read"] = picked
     else:
