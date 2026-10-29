@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import re
 
-from . import tidy
+from . import alsograph, tidy
 from .relate import Profile
 
 MIN_WORDS = 6
@@ -96,6 +96,11 @@ def _alias(x: str, y: str) -> bool:
     return names_alias(x, y)
 
 
+def _same_subject(ask, headline: str, text: str) -> bool:
+    m = re.match(r"\W*([A-Za-z]+)", ask(SUBJECT_PROMPT.format(h=headline, t=text)) or "")
+    return bool(m) and m.group(1).upper() == "SAME"
+
+
 def shared_names(p: Profile, profiles: list[Profile]) -> set[str]:
     setting = _setting(profiles)
     return {n for n in p.names if n not in _GENERIC and any(n in q.names for q in profiles)} - setting
@@ -111,7 +116,7 @@ def _setting(profiles: list[Profile]) -> set[str]:
 
 
 def judge_line(line: dict, written: list[str], profiles: list[Profile], W, anchor: Profile, outlets: set[str],
-               ask=None, headline: str = "") -> dict:
+               ask=None, headline: str = "", graph: dict | None = None, clusters: dict | None = None) -> dict:
     """{"ok": bool, "why": reason, "place": (paragraph line index, cos) | None} for one `also` line."""
     text = line.get("text") or ""
     bad = form_problem(text, outlets, line.get("speaker"))
@@ -139,12 +144,16 @@ def judge_line(line: dict, written: list[str], profiles: list[Profile], W, ancho
     cos_anchor = tidy.measures(W, tidy.bag(p), tidy.bag(anchor))[0]
     story_names = set().union(*(q.names for q in profiles)) if profiles else set()
     mine = {n for n in p.names if n not in _GENERIC}
-    if len(mine) >= 2:
+    if graph is not None:
+        # a cluster of also lines sharing a name the story lacks is another instance (event, scheme, place) or an umbrella's
+        # part: ONE decision per cluster (`insert` asks at most once per cluster, none without a model: then it stays out)
+        if graph.get("foreign") is not None and not (clusters or {}).get(graph["foreign"]):
+            return {"ok": False, "why": "part of another event's cluster (names something the story does not)"}
+    if (graph is None or line.get("role") == "related") and len(mine) >= 2:
+        # no graph, or a line read as a RELATED event: a single line with new names may be a sibling, and only a model can say
         w_all = sum(W.w(n) for n in mine)
         w_in = sum(W.w(n) for n in mine if any(n == m or _alias(n, m) for m in story_names))
         if w_all and w_in / w_all < NAME_COVER:
-            # New names beside a name the story has are either a detail of it ("Master Posts") or a sibling (another scheme).
-            # No weight tells them apart; ONE closed model question does, and without it the line stays out.
             word = None
             if ask is not None and shared_names(p, profiles):
                 m = re.match(r"\W*([A-Za-z]+)", ask(SUBJECT_PROMPT.format(h=headline, t=text)) or "")
@@ -161,7 +170,7 @@ def judge_line(line: dict, written: list[str], profiles: list[Profile], W, ancho
     return {"ok": True, "why": "belongs", "place": (best, round(best_cos, 2)), "shared": sorted(shared)[:4]}
 
 
-def insert(paragraphs: list[list[dict]], also: list[dict], headline: str = "", shade=None, source_index=None, ask=None) -> tuple[list[list[dict]], dict]:
+def insert(paragraphs: list[list[dict]], also: list[dict], headline: str = "", shade=None, source_index=None, ask=None, graph=True) -> tuple[list[list[dict]], dict]:
     """The paragraphs with the lines that belong inserted, and a report. Nothing is changed in place."""
     paras = [[dict(x) for x in para] for para in paragraphs]
     flat = [(n, k) for n, para in enumerate(paras) for k in range(len(para))]
@@ -174,7 +183,16 @@ def insert(paragraphs: list[list[dict]], also: list[dict], headline: str = "", s
     outlets = {s.get("outlet") for x in also for s in x.get("sources") or [] if isinstance(s, dict)}
     report = {"lines": len(also), "inserted": 0, "why_not": {}, "items": []}
     # strongest tie first, so two lines about one point land in the order of their nearness
-    judged = [(judge_line(x, written, profiles, W, anchor, outlets, ask, headline), x) for x in also]
+    scores = alsograph.scores(written, [x.get("text") or "" for x in also], headline, W) if graph and also else [None] * len(also)
+    clusters, asked = {}, 0
+    if graph and ask is not None:
+        for sc, x in zip(scores, also):                      # one question per cluster, on its best-tied line
+            cid = sc["foreign"] if sc else None
+            if cid is not None and cid not in clusters:
+                clusters[cid] = _same_subject(ask, headline, x.get("text") or "")
+                asked += 1
+    report["cluster_questions"] = asked
+    judged = [(judge_line(x, written, profiles, W, anchor, outlets, ask, headline, sc, clusters), x) for sc, x in zip(scores, also)]
     room = max(1, int(len(written) * MAX_SHARE))
     for res, x in sorted(judged, key=lambda t: -(t[0].get("place", (0, 0))[1] if t[0]["ok"] else -1)):
         item = {"text": x.get("text"), **{k: v for k, v in res.items() if k != "ok"}, "ok": res["ok"]}
