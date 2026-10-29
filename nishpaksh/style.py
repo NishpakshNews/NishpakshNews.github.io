@@ -70,6 +70,26 @@ def intro_forms(names: dict[str, str], texts: list[str]) -> dict[str, str]:
     return out
 
 
+def known_titles(names: dict[str, str], texts: list[str]) -> dict[str, set[str]]:
+    """{surname: the title phrases the statements and sources really write before one of the person's forms}, lower case,
+    spaces collapsed. A title the writer puts before the first mention is checked against it (Oct 29 2026: one sentence
+    citing "Congress leader Rahul Gandhi" and "Leader of opposition in Lok Sabha Rahul Gandhi" was written with a blend of
+    both, "Congress leader Lok Sabha Rahul Gandhi", which no report says)."""
+    out: dict[str, set[str]] = {}
+    for full, short in names.items():
+        for t in texts:
+            tb = _titles.title_before(t, full)
+            if tb:
+                out.setdefault(short, set()).add(" ".join(tb.lower().split()))
+    return out
+
+
+def title_is_reported(written: str, reported: set[str]) -> bool:
+    """The title as written is one the reports write, or a piece of one (\"Finance Minister\" of \"Union Finance Minister\")."""
+    w = " ".join(written.lower().split())
+    return any(w == r or w in r for r in reported)
+
+
 def mentions(t: str, names: dict[str, str]) -> list[tuple[int, int, str]]:
     """Every mention of a listed person in ONE text, found on the text as written: (start, end, surname), no two
     overlapping. Written forms come longest first; a bare surname is extended to the left over the person's own
@@ -116,6 +136,10 @@ def shorten_names(paragraphs: list[list[dict]], speakers: list[str] | tuple = ()
     if not names:
         return
     intro = intro_forms(names, [text, *sources])
+    reported = known_titles(names, list(sources))      # what the reports (not the writer) say; empty = nothing to check against
+    if sources:                                        # the introduction's title comes from the reports, not from the writer's own text
+        from_reports = intro_forms(names, list(sources))
+        intro = {sh: (from_reports[sh] if reported.get(sh) else form) for sh, form in intro.items()}
     width: dict[str, int] = {}                    # words in the fullest written form of each person
     for full, short in names.items():
         width[short] = max(width.get(short, 0), len(full.split()))
@@ -143,7 +167,11 @@ def shorten_names(paragraphs: list[list[dict]], speakers: list[str] | tuple = ()
             if short in seen:
                 new = short                              # every later mention, however written
             elif len(written_name.split()) >= width[short]:
-                new = written                            # the introduction stays as the writer wrote it
+                title_w = t[at:a].strip()
+                if title_w and reported.get(short) and not title_is_reported(title_w, reported[short]):
+                    new = intro[short]                   # a title no report writes (a blend of two): the introduction is the code's
+                else:
+                    new = written                        # the introduction stays as the writer wrote it
                 seen.add(short)
             else:                                        # a surname before the person was introduced
                 new = intro[short]

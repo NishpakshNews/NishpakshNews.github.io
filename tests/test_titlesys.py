@@ -84,3 +84,14 @@ def test_the_longer_title_wins_when_system_and_list_disagree(monkeypatch):
     assert titlesys.compare_title(a, listed, t, a) == 0           # the system said "no title": the list's full title stands
     assert titlesys.compare_title(5, listed, t, a) == 0           # a shorter system run never cuts the list's title
     assert titlesys.compare_title(0, a, t, a) == 0                # a title only the system knows is kept
+
+
+def test_a_blended_introduction_title_no_report_writes_is_replaced_by_the_codes():
+    from nishpaksh import style
+    srcs = ["Chief Minister Himanta Biswa Sarma said the road is open.", "Union Home Minister Himanta Biswa Sarma said the fund is set."]
+    blend = [[{"text": "Union Chief Minister Himanta Biswa Sarma said the road is open."}, {"text": "Sarma said the fund is set."}]]
+    style.shorten_names(blend, speakers=["Himanta Biswa Sarma"], sources=srcs)
+    assert blend[0][0]["text"] == "Union Home Minister Himanta Biswa Sarma said the road is open."
+    ok = [[{"text": "Chief Minister Himanta Biswa Sarma said the road is open."}]]
+    style.shorten_names(ok, speakers=["Himanta Biswa Sarma"], sources=srcs)
+    assert ok[0][0]["text"] == "Chief Minister Himanta Biswa Sarma said the road is open."     # a title the reports write stays
