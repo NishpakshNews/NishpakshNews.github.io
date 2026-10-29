@@ -3081,7 +3081,10 @@ async function manualRefresh() {
     const keep = cards[current] && cards[current].id;
     const had = cardCache[lang] && cardCache[lang].length ? newestAt(cardCache[lang]) : 0;   // what the reader has been shown
     if (st) cardCache[lang] = st.cards; else { delete cardCache.en; delete cardCache.hi; }   // new cards already read: no waiting
-    const ok = await showDeck(keep, true, true);      // the feed alone: the tooltip does not depend on Supabase
+    // the database too (Oct 29 2026): when the feed is behind it (a failed export), the pill had found the new stories there and
+    // the press, reading the feed alone, found none and said "up to date". The database read is short (4 s) and its failure
+    // only means the feed's view, so the tooltip still does not depend on it.
+    const ok = await showDeck(keep, false, true);
     if (ok && had) {
       const isNew = newestAt(cardCache[lang]) > had;
       outcome = isNew ? "new" : "none";

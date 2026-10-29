@@ -343,7 +343,18 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", required=True)
     a = ap.parse_args()
-    print(export(Store(database_url()), a.dir))
+    try:
+        print(export(Store(database_url()), a.dir))
+    except Exception as e:  # noqa: BLE001 - say why, where the job's logs cannot be read, then fail as before
+        import os, traceback
+        try:       # Oct 29 2026: one export failed in 5 s, the feed stayed an hour old and the notifications still went out
+            from .db import diagnostics, insert, utcnow
+            Store(database_url(), readers_url="").exec(insert(diagnostics).values(kind="feed", created_at=utcnow(), report={
+                "error": f"{type(e).__name__}: {e}"[:600], "trace": traceback.format_exc()[-2500:],
+                "run": f"{os.environ.get('GITHUB_RUN_ID', 'local')}-{os.environ.get('GITHUB_RUN_ATTEMPT', '1')}"}))
+        except Exception:  # noqa: BLE001
+            pass
+        raise
 
 
 if __name__ == "__main__":

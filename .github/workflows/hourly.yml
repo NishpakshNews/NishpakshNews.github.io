@@ -138,12 +138,15 @@ jobs:
         continue-on-error: true
         run: python -m nishpaksh.mirror
       - name: Publish the feed for the reading site
+        id: feed
         if: ${{ always() && steps.save.outcome == 'success' }}
         continue-on-error: true
         run: bash .github/scripts/publish_feed.sh
       - name: Send notifications
-        # after the feed, so the article is on the home page when the reader taps (owner, Oct 10 2026)
-        if: ${{ always() && steps.save.outcome == 'success' }}
+        # after the feed, so the article is on the home page when the reader taps (owner, Oct 10 2026); and only if the
+        # feed was published (Oct 29 2026: a failed feed step still let the pushes go out, for articles with no picture
+        # and not on the home page). Unsent notifications stay queued and go out with the next hour's feed.
+        if: ${{ always() && steps.save.outcome == 'success' && steps.feed.outcome == 'success' }}
         continue-on-error: true
         run: python -m nishpaksh.notify --send-only
       - name: Start the audio job if a reader is waiting
