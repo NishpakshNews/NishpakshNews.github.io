@@ -63,23 +63,46 @@ def test_negation_is_read_with_its_scope():
     assert not D("The cap applies to the MRP of the drug.", "The cap applies only to the MRP and not the price to the retailer.").conflicts
 
 
-def test_a_near_figure_folds_and_the_second_reading_goes_in_brackets_only_when_asked():
-    a = L("The scheme was approved with an outlay of ₹7,395 crore for rural works by the Cabinet on Wednesday.", [1])
-    b = L("The scheme was approved with an outlay of ₹7,395.55 crore for rural works by the Cabinet on Wednesday, the minister said.", [2])
+def test_a_near_figure_folds_and_the_second_reading_is_kept_as_data_not_words():
+    a = L("The scheme was approved with an outlay of ₹7,395 crore for rural works by the Cabinet on Wednesday.", [1], sources=(1,))
+    b = L("The scheme was approved with an outlay of ₹7,395.55 crore for rural works by the Cabinet on Wednesday, the minister said.",
+          [2], sources=(2,))
     out, rep = tidy.tidy([[a, b]])
-    assert len(out[0]) == 1 and rep["folded"] == 1 and "(" not in out[0][0]["text"]
-    out, rep = tidy.tidy([[a, b]], annotate=True)
-    assert len(out[0]) == 1 and "in another account" in out[0][0]["text"]
+    assert len(out[0]) == 1 and rep["folded"] == 1
+    kept = out[0][0]
+    assert "(" not in kept["text"] and "another" not in kept["text"]
+    assert kept["variants"] == [{"shown": "7,395.55 crore", "value": "7,395 crore", "ids": [1], "sources": [1]}]
 
 
-def test_a_line_that_leans_on_the_one_before_is_not_the_one_that_stays():
-    a = L("The student publicly apologized for the post.", [1])
-    b = L("She also publicly apologized for the post in Pune.", [2])
-    out, rep = tidy.tidy([[a, b]])
-    assert rep["folded"] == 0 or "She" not in out[0][0]["text"]
+def test_a_line_is_not_taken_out_if_the_next_one_leans_on_it():
+    first = L("The student publicly apologized for the post in Pune on Tuesday.", [1])
+    mid = L("The student apologized publicly for the post in Pune on Tuesday, college officials said.", [2])
+    lean = L("She also met the college principal.", [3])
+    other = L("Officials said an inquiry was under way.", [4])
+    out, rep = tidy.tidy([[first, other, mid, lean]])
+    texts = [x["text"] for x in out[0]]
+    assert texts[-1] == "She also met the college principal." and any("officials said" in t for t in texts if "inquiry" not in t) or len(texts) == 4
 
 
-def test_the_writer_is_asked_twice_and_both_answers_must_pass_the_check():
+def test_two_overlapping_lines_are_merged_by_code_with_an_attachable_detail_only():
+    from nishpaksh import fusion
+    r = fusion.fuse("Representatives of dialogue partners and observer countries have also been invited.",
+                    "Dialogue partner countries are also being invited to participate in the meeting.")
+    assert r and r["text"].endswith("have also been invited to participate in the meeting.")
+    r = fusion.fuse("The increase is expected to benefit around 48 lakh central government employees and 68 lakh pensioners.",
+                    "The government said the increase will benefit 48.54 lakh employees and 68.71 lakh pensioners.")
+    assert r and "48.54 lakh central government employees" in r["text"]            # the precise figure, the other line's detail
+    r = fusion.fuse("Kalia made no statements about Chinese control over Arunachal Pradesh.",
+                    "He made no such statement about Chinese control over Arunachal Pradesh.")
+    assert r and r["text"].startswith("Kalia")                                      # a noun over a pronoun
+    # a verb phrase is never grafted on, and a line that claims more or less ("only") is not merged with one that does not
+    assert fusion.fuse("The Central Government may revise the annual fee rates on 1 April each year.",
+                       "Revised rates will be effective from 1 April each year.") is None
+    assert fusion.fuse("Only non-commercial vehicles with a valid FASTag are eligible for it.",
+                       "Eligible non-commercial vehicle owners with a valid FASTag can choose between the monthly pass and the local pass.") is None
+
+
+def test_the_model_fallback_is_asked_once_and_its_answer_is_checked_by_code():
     a, b = "Singh met Hegseth in Cebu on Wednesday.", "Singh posted on X about his meeting with Hegseth."
     good = "Singh met Hegseth in Cebu on Wednesday and posted on X about the meeting."
     calls = []
@@ -87,7 +110,18 @@ def test_the_writer_is_asked_twice_and_both_answers_must_pass_the_check():
     def ask(prompt):
         calls.append(prompt)
         return good
-    assert tidy_rewrite.make_rewrite(ask)(a, b) == good and len(calls) == 2
-    answers = iter([good, "Singh met Hegseth in Manila."])
-    assert tidy_rewrite.make_rewrite(lambda p: next(answers))(a, b) is None
+    assert tidy_rewrite.make_rewrite(ask)(a, b) == good and len(calls) == 1
     assert tidy_rewrite.make_rewrite(lambda p: "NO")(a, b) is None
+    out, rep = tidy.tidy([[L(a, [1]), L(b, [2])]], rewrite=lambda x, y: "Singh met Hegseth in Manila.")
+    assert rep["merged"] == 0                                                          # code refuses what changes a fact
+
+
+def test_conflict_candidates_name_what_is_disputed_and_leave_other_subjects_alone():
+    texts = {1: "The Union Cabinet approved the Container Manufacturing Promotion Scheme on Wednesday 28 October 2026.",
+             2: "The Union Cabinet approved the Container Manufacturing Promotion Scheme on Thursday 29 October 2026.",
+             3: "Rain fell over Kerala on Tuesday.",
+             4: "Maximum temperature in Delhi may remain 30 degrees and in Bhopal 28 degrees."}
+    got = R.conflict_candidates(texts)
+    assert list(got) == [(1, 2)]
+    d = got[(1, 2)]
+    assert d["kind"] == "date" and len(d["values"]) == 2 and "Cabinet" in d["question"]

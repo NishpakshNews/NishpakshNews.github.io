@@ -443,10 +443,43 @@ def difference(ta: str, tb: str, pa, pb) -> Difference:
     return d
 
 
-def annotate(text: str, kept: str, other: str, template: str = "({other} in another account)") -> str:
-    """The text with the second reading of a figure in brackets right after the figure the line keeps."""
-    i = text.find(kept)
-    if i < 0 or not other:
-        return text
-    j = i + len(kept)
-    return text[:j] + " " + template.format(other=other) + text[j:]
+# --- disputes: what exactly is disputed ------------------------------------------------------------------------------
+KIND_OF = {"figure": "number", "date": "date", "clock": "date", "negation": "negation"}      # `disputes.candidate`'s kinds
+QUESTION_COS = 0.55
+
+
+def describe(ta: str, tb: str, d: Difference | None = None) -> dict:
+    """What a dispute between two lines is about, in data the writer and the site can show: the facet (number / date /
+    negation), the two values as written, and the question they answer (the words both lines share)."""
+    from .relate import Profile
+    pa, pb = Profile(ta), Profile(tb)
+    d = d or difference(ta, tb, pa, pb)
+    facet, detail = (d.conflicts[0] if d.conflicts else ("", ""))
+    values = [v.strip() for v in re.split(r"\s+/\s+", re.sub(r"\s*\(the weekday.*$", "", detail), maxsplit=1)] if detail else []
+    shared = pa.roots & pb.roots
+    question = " ".join(w for w in re.findall(r"[A-Za-z][\w'’-]*", ta) if _stem(w.lower()) in shared)
+    out = {"facet": facet, "kind": KIND_OF.get(facet, facet), "values": values, "question": question}
+    if "weekday" in detail:
+        out["note"] = "a weekday written beside one of the dates is not the day of that date"
+    return out
+
+
+def conflict_candidates(texts: dict[int, str], min_cos: float = QUESTION_COS) -> dict[tuple[int, int], dict]:
+    """Pairs of statements of one story that answer one question two ways, by the typed reading above: {(a, b): descriptor}.
+    A pair whose names differ on both sides is another subject, not a dispute. Proposals only: the dispute gate and the
+    model asked 'can both be true?' decide."""
+    from . import tidy
+    from .relate import Profile
+    ids = sorted(texts)
+    prof = {i: Profile(texts[i]) for i in ids}
+    W = tidy.weights(list(prof.values()))
+    out = {}
+    for k, a in enumerate(ids):
+        for b in ids[k + 1:]:
+            cos = tidy.measures(W, tidy.bag(prof[a]), tidy.bag(prof[b]))[0]
+            if cos < min_cos:
+                continue
+            d = difference(texts[a], texts[b], prof[a], prof[b])
+            if d.conflicts and not any(f == "names" for f, _ in d.soft) and tidy.ordinals(texts[a]) == tidy.ordinals(texts[b]):
+                out[(a, b)] = describe(texts[a], texts[b], d)
+    return out

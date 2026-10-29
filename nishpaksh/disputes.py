@@ -42,6 +42,11 @@ MONTH_DAY = re.compile(r"(?i)\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov
 OF_TOTAL = re.compile(r"(?i)\b(\d+)\s+(?:out\s+)?of\s+(?:the\s+)?(?:total\s+|all\s+)?(\d+)\b")
 QUESTION_SIM = {"bi-encoder": 0.72, "tfidf": 0.5}     # cosine of the two claims: the same question (embed.py)
 UPDATE_GAP = dt.timedelta(hours=1)
+# reconcile.py reads figures / dates as intervals, names by alias and a negation by what it governs. Its conflicts are
+# extra CANDIDATES here (the model, asked "can both be true?" twice, still decides). Counted always, used only when switched
+# on, as the build charter asks: a system is adopted when it beats the one it replaces (read `STATS` in the audit).
+RECONCILE_PROPOSALS = False
+STATS = {"reconcile_pairs": 0, "reconcile_new": 0}
 STATE_COMMON = 3       # content words two lines share when they ask one question about a state ("orange alert for Odisha")
 STATE_MAX = 2          # words that differ on either side: the answer ("orange" / "red")
 
@@ -195,6 +200,16 @@ def judge(router, texts: dict[int, str], times: dict[int, list], proposals: set[
                 kind = candidate(texts[p[0]], texts[p[1]], prof[p[0]], prof[p[1]], float(mat[row[p[0]], row[p[1]]]), need)
                 if kind:
                     cands[p] = kind
+    try:
+        from . import reconcile
+        for p, desc in reconcile.conflict_candidates(texts).items():
+            STATS["reconcile_pairs"] += 1
+            if p not in cands:
+                STATS["reconcile_new"] += 1
+                if RECONCILE_PROPOSALS:
+                    cands[p] = reconcile.KIND_OF.get(desc["facet"], "number")
+    except Exception:  # noqa: BLE001
+        pass
     cands = {p: k for p, k in cands.items() if p not in exclude}
     updates: dict[int, int] = {}
     ask = []

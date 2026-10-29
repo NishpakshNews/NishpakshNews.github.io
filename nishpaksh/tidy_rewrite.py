@@ -1,10 +1,10 @@
 """The writer for a merge of two overlapping lines (B9 step 2c). NOT connected: `tidy.tidy(..., rewrite=)` takes it.
 
-One small, concrete question for a simple model: "Write ONE sentence that says everything both lines say, nothing else."
-The model proposes; `tidy.verify_merge` decides (every figure, name, date, clock time and quotation of both lines in it,
-nothing new, one sentence, the same negation, no longer than both together). Following the charter, an answer that could
-merge facts is asked TWICE with the two lines in swapped order and kept only if BOTH answers pass the check; the first one
-is used. `ask(prompt) -> str | None` is the router's quality-tier call (a fake in tests); None = could not ask = no merge.
+The FALLBACK only: `tidy.tidy` first merges by code (`fusion.fuse`); this is asked for the pairs fusion cannot edit together.
+One small, concrete question, ASKED ONCE (owner, Oct 29 2026: asking a weak model twice only doubles its errors; what protects
+the article is the check, not the second ask). `tidy.verify_merge` decides (every figure, name, date, clock time and quotation
+of both lines in it, nothing new, one sentence, the same negation, the same claim strength, no longer than both together).
+`ask(prompt) -> str | None` is the router's quality-tier call (a fake in tests); None = could not ask = no merge.
 """
 from __future__ import annotations
 
@@ -45,13 +45,7 @@ def _clean(answer: str | None) -> str | None:
 
 
 def make_rewrite(ask):
-    """A `rewrite(a, b)` for `tidy.tidy`: asked twice (order swapped), both answers must pass the code check."""
+    """A `rewrite(a, b)` for `tidy.tidy`: asked once; the caller checks the answer with `verify_merge`."""
     def rewrite(a: str, b: str) -> str | None:
-        first = _clean(ask(PROMPT.format(a=a, b=b)))
-        if not first or not tidy.verify_merge(a, b, first)[0]:
-            return None
-        second = _clean(ask(PROMPT.format(a=b, b=a)))
-        if not second or not tidy.verify_merge(a, b, second)[0]:
-            return None
-        return first
+        return _clean(ask(PROMPT.format(a=a, b=b)))
     return rewrite

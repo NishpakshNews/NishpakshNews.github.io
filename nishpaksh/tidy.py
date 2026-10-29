@@ -42,6 +42,9 @@ QUESTION = 0.55    # weighted cosine from which two lines asked the same questio
 NEAR = 0.02        # figures this close are one figure written at two precisions, not a conflict (48 / 48.54)
 REWRITE_MIN = 0.55  # a merge is only asked of the writer from this cosine (below it the pair is reported, not offered)
 NEW_ROOTS = 2      # a merged sentence may use at most this many words neither original had (a joining word)
+# words that change HOW MUCH a sentence claims (restrictors, quantifiers, modals, conditions): a closed class of English
+_STRENGTH = frozenset("""only solely merely just alone all every each any some most few both either neither none except unless if
+may might could can would should must""".split())
 _LEANS = re.compile(r"(?i)^\s*(?:he|she|they|it|his|her|their|its|this|that|these|those|the latter|both)\b")
 GUARDED = {"disputed", "false"}            # a line in one of these colours is never folded into another
 
@@ -87,6 +90,12 @@ def relate_norm(s: str) -> str:
 def bag(p: Profile) -> frozenset:
     """What a line says: its root words and its figures (a figure is a word with a value)."""
     return frozenset(p.roots) | frozenset(f"#{n}" for n in p.nums)
+
+
+def claim_strength(text: str) -> frozenset:
+    """The restrictors, quantifiers and modals of a line ("only", "all", "may", "unless"). Two lines that differ here claim
+    different amounts, so one cannot stand for both; a merged sentence must carry exactly the set both lines carry."""
+    return frozenset(w for w in re.findall(r"[a-z']+", (text or "").lower()) if w in _STRENGTH)
 
 
 def ordinals(text: str) -> frozenset:
@@ -274,12 +283,43 @@ def _fold(host: dict, gone: dict) -> None:
     host.pop("parts", None)                  # which part belongs to whom is unknown: one colour
 
 
-def tidy(paragraphs: list[list[dict]], protect=frozenset(), nli_fn=None, rewrite=None, annotate=False) -> tuple[list[list[dict]], dict]:
+def _orphans(para: list[dict], gone: set, drop: int, keep: int) -> bool:
+    """Would taking line `drop` out leave the next line, which leans on it (He / She / It / This ...), after a line that is
+    not the survivor? A pronoun needs the sentence before it: dropping its antecedent in favour of a line elsewhere strands it."""
+    nxt = next((k for k in range(drop + 1, len(para)) if k not in gone), None)
+    if nxt is None or not _LEANS.match(para[nxt].get("text") or ""):
+        return False
+    prev = next((k for k in range(drop - 1, -1, -1) if k not in gone), None)
+    return prev != keep and nxt != keep
+
+
+def _reading_notes(a: str, b: str, merged: str) -> list:
+    """The readings of a figure that the merged sentence did not keep: [(kept, other)]."""
+    from .relate import Profile
+    out = []
+    for facet, x, y in reconcile.difference(a, b, Profile(a), Profile(b)).notes:
+        if x in merged and y not in merged:
+            out.append((x, y))
+        elif y in merged and x not in merged:
+            out.append((y, x))
+    return out
+
+
+def _variants(host: dict, gone: dict, notes) -> None:
+    """Another outlet's reading of a figure the host keeps, as data: {"shown", "value", "ids", "sources"}."""
+    for shown, other in notes:
+        host.setdefault("variants", []).append({"shown": shown, "value": other, "ids": list(gone.get("ids") or []),
+                                                "sources": list(gone.get("sources") or [])})
+
+
+def tidy(paragraphs: list[list[dict]], protect=frozenset(), nli_fn=None, rewrite=None, fuse=True) -> tuple[list[list[dict]], dict]:
     """The article with its repeats folded, and a report. Nothing is changed in place. `protect`: ids that are never
     folded (the lead's, a dispute's). `rewrite(a, b) -> str | None` makes one sentence of two overlapping lines; it is
-    optional and every answer is checked by `verify_merge`. `annotate`: a fold whose dropped line read a figure a little
-    differently puts that reading in brackets after the figure that stays (off by default: the house voice has no "another
-    report" wording; the owner decides)."""
+    optional and every answer is checked by `verify_merge`. `fuse`: two overlapping lines are first merged by CODE
+    (`fusion.fuse`: an edit of one line with the other's attachable detail); a model is only the fallback, asked once.
+    A fold whose dropped line read a figure a little differently keeps that reading as DATA on the line that stays
+    (`variants`: the value and the sources that gave it), never as words in the sentence: the site shows it on tap, the way it
+    already shows source numbers."""
     paras = [[dict(x) for x in para] for para in paragraphs]
     judged = pairs_of(paras, nli_fn)
     report = {"pairs": len(judged), "outcomes": {}, "folded": 0, "merged": 0, "merge_refused": 0, "skipped_guard": 0,
@@ -304,34 +344,49 @@ def tidy(paragraphs: list[list[dict]], protect=frozenset(), nli_fn=None, rewrite
             report["items"].append(item)
             continue
         if vd.outcome in ("same", "covered"):
+            if _orphans(para, gone, vd.drop, vd.keep):
+                report["skipped_guard"] += 1
+                item["applied"] = "guarded: the line after it would be left without its subject"
+                report["items"].append(item)
+                continue
             _fold(para[vd.keep], para[vd.drop])
-            if annotate:
-                for kept_fig, other_fig in vd.notes:
-                    para[vd.keep]["text"] = reconcile.annotate(para[vd.keep]["text"], kept_fig, other_fig)
+            _variants(para[vd.keep], para[vd.drop], vd.notes)
             gone.add((n, vd.drop))
             report["folded"] += 1
             item["applied"] = "folded"
-        elif vd.cos < REWRITE_MIN and max(vd.cont_a, vd.cont_b) < HELD:
-            item["applied"] = "candidate: weak"
-        elif rewrite is not None:
-            merged = None
-            try:
-                merged = rewrite(a["text"], b["text"])
-            except Exception:  # noqa: BLE001
-                merged = None
-            ok, why = verify_merge(a["text"], b["text"], merged) if merged else (False, "no answer")
+        else:
+            merged, how = None, ""
+            if fuse:                                           # by code: the lines' own words, an attachable detail added
+                from . import fusion
+                try:
+                    got = fusion.fuse(a["text"], b["text"])
+                except Exception:  # noqa: BLE001
+                    got = None
+                if got:
+                    merged, how = got["text"], "fusion"
+            if merged is None and rewrite is not None and (vd.cos >= REWRITE_MIN or max(vd.cont_a, vd.cont_b) >= HELD):
+                try:                                           # a model, asked once; the check below is what decides
+                    merged, how = rewrite(a["text"], b["text"]), "model"
+                except Exception:  # noqa: BLE001
+                    merged = None
+            if merged is None:
+                item["applied"] = "candidate"
+                report["items"].append(item)
+                continue
+            ok, why = tidy_check(a["text"], b["text"], merged)
             if ok:
+                notes = _reading_notes(a["text"], b["text"], merged)
                 a["text"] = merged.strip()
                 _fold(a, b)
+                _variants(a, b, notes)
                 gone.add((n, vd.b))
                 report["merged"] += 1
-                item["applied"] = "merged"
+                report.setdefault("merged_by", {})[how] = report.get("merged_by", {}).get(how, 0) + 1
+                item["applied"] = f"merged ({how})"
                 item["merged_text"] = a["text"]
             else:
                 report["merge_refused"] += 1
                 item["applied"] = f"refused: {why}"
-        else:
-            item["applied"] = "candidate"
         report["items"].append(item)
     out = []
     for n, para in enumerate(paras):
@@ -344,6 +399,10 @@ def tidy(paragraphs: list[list[dict]], protect=frozenset(), nli_fn=None, rewrite
 
 
 # --- the check on a merged sentence --------------------------------------------------------------------------------
+def tidy_check(a: str, b: str, merged: str | None) -> tuple[bool, str]:
+    return verify_merge(a, b, merged)
+
+
 def verify_merge(a: str, b: str, merged: str | None) -> tuple[bool, str]:
     """Is `merged` the two lines in one sentence and nothing else? Every figure, name, date, clock time and quotation of
     both is in it; nothing new; one sentence; the same negation. (The model proposes; this decides.)"""
@@ -354,6 +413,11 @@ def verify_merge(a: str, b: str, merged: str | None) -> tuple[bool, str]:
         return False, "more than one sentence"
     if len(m) > len(a) + len(b):
         return False, "longer than both together"
+    sa, sb = claim_strength(a), claim_strength(b)
+    if sa != sb:
+        return False, f"the lines claim different amounts ({sorted(sa ^ sb)})"
+    if claim_strength(m) != sa:
+        return False, "the sentence claims a different amount"
     pa, pb, pm = Profile(a), Profile(b), Profile(m)
     if pa.neg != pb.neg or pm.neg != pa.neg:
         return False, "negation"
