@@ -563,6 +563,25 @@
   .abar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; gap: 2px; margin: 16px 4px 0; transform-origin: left center; }
   .abar span { flex-basis: 0; min-width: 0; }
   .abar:empty { display: none; }
+  .abar.wave { gap: 3px; }
+  .abar.wave span { flex: 1 1 0; opacity: .3; animation: arcWv 2.4s ease-in-out infinite; }
+  .abar.wave span:nth-child(1) { background: #2f8a5b; } .abar.wave span:nth-child(2) { background: #2aa197; animation-delay: .2s; }
+  .abar.wave span:nth-child(3) { background: #4a86d6; animation-delay: .4s; } .abar.wave span:nth-child(4) { background: #7a4bb0; animation-delay: .6s; }
+  .abar.wave span:nth-child(5) { background: #d39a12; animation-delay: .8s; } .abar.wave span:nth-child(6) { background: #c0392b; animation-delay: 1s; }
+  .abar.wave span:nth-child(7) { background: #b0835f; animation-delay: 1.2s; }
+  .abar.arc-grow { animation: arcGrow 1000ms var(--ease) 1 both; }
+  .arc-wait { padding: 22px 4px 0; }
+  .arc-cap { font-size: 14px; opacity: .7; text-align: center; margin: 0 0 22px; animation: arcBreathe 2.8s ease-in-out infinite; }
+  .arc-bone { height: 14px; border-radius: 7px; background: currentColor; opacity: .08; margin: 0 0 14px; animation: arcBreathe 2.8s ease-in-out infinite; }
+  .arc-bone.short { width: 62%; }
+  #rise.arc-in > * { animation: arcRise 520ms var(--ease) 1 both; }
+  #rise.arc-in > *:nth-child(2) { animation-delay: 90ms; } #rise.arc-in > *:nth-child(n+3) { animation-delay: 160ms; }
+  @keyframes arcWv { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+  @keyframes arcBreathe { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+  @keyframes arcGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  @keyframes arcRise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+  .arc-bone { animation-name: arcBone; } @keyframes arcBone { 0%, 100% { opacity: .05; } 50% { opacity: .12; } }
+  @media (prefers-reduced-motion: reduce) { .abar.wave span, .arc-cap, .arc-bone, #rise.arc-in > *, .abar.arc-grow { animation: none; } .abar.wave span { opacity: .6; } }
   #sheet:not(.open) .abar { opacity: 0; }
   #sheet.anim:not(.open) .abar { transition: opacity 110ms ease; }
   .rise > .key { margin-top: 10px; }
@@ -1463,7 +1482,7 @@ const T = {
     localNote: "Grouped from this story alone; stable perspectives need more history.",
     empty: "No stories yet. A story appears once at least three independent outlets have covered it.",
     error: "Stories could not be loaded. Check your connection and try again.", retry: "Try again",
-    missing: "This story is no longer available.", loading: "Loading…",
+    missing: "This story is no longer available.", loading: "Loading…", arcWait: "Bringing this story back from the archive…", arcFrom: "From the archive",
     sections: {happened: "What happened", numbers: "By the numbers", say: "What they say", background: "Background",
                related: "Related events", explained: "Explained", next: "What next",
                performers: "Top performers", who: "Who they are", journey: "The journey so far",
@@ -1487,7 +1506,7 @@ const T = {
     localNote: "केवल इसी ख़बर के आधार पर समूह; स्थायी दृष्टिकोणों के लिए अभी और इतिहास चाहिए।",
     empty: "अभी कोई ख़बर नहीं। ख़बर तब दिखती है जब कम से कम तीन स्वतंत्र स्रोत उसे कवर करें।",
     error: "ख़बरें लोड नहीं हो सकीं। इंटरनेट जाँचें और दोबारा कोशिश करें।", retry: "दोबारा कोशिश करें",
-    missing: "यह ख़बर अब उपलब्ध नहीं है।", loading: "लोड हो रहा है…",
+    missing: "यह ख़बर अब उपलब्ध नहीं है।", loading: "लोड हो रहा है…", arcWait: "यह ख़बर अभिलेखागार से वापस लाई जा रही है…", arcFrom: "अभिलेखागार से",
     sections: {happened: "क्या हुआ", numbers: "आँकड़ों में", say: "किसने क्या कहा", background: "पृष्ठभूमि",
                related: "जुड़ी घटनाएँ", explained: "समझिए", next: "आगे क्या",
                performers: "शीर्ष प्रदर्शन", who: "परिचय", journey: "अब तक का सफ़र",
@@ -1761,7 +1780,7 @@ async function fromArchive(id) {
     if (!r.ok) return null;
     const p = await new Response(r.body.pipeThrough(new DecompressionStream("gzip"))).json();
     return {story_id: p.story_id, updated_at: p.written_at, headline_en: p.headline_en, headline_hi: p.headline_hi,
-            payload_en: p.payload_en, payload_hi: p.payload_hi};
+            payload_en: p.payload_en, payload_hi: p.payload_hi, img: p.img || null};
   } catch (e) { return null; }
 }
 function loadStory(id) {
@@ -1773,6 +1792,9 @@ function loadStory(id) {
   if (!storyCache.has(id)) {
     storyVer.set(id, ver);
     const p = (async () => {
+      // a story the live feed does not list (a thread link or an address to an old article) is most likely in the archive:
+      // asked there first, so it does not wait for two 15 s tries of the feed and a database call (owner, Oct 29 2026)
+      if (knownAt.size && !knownAt.has(id)) { const a = await fromArchive(id); if (a) return a; }
       // ?v=: the story's own stamp, else the minute. A file asked for before it reached the CDN is answered "missing"
       // from the cache for minutes; a new address is not (owner, Oct 11 2026). no-cache: a story's colours mature
       const u = `${FEED_URL}/story/${encodeURIComponent(id)}.json?v=${encodeURIComponent(knownAt.get(id) || Math.floor(Date.now() / 60000))}`;
@@ -2257,9 +2279,11 @@ function articleHtml(row) {
     ${persp ? `<div class="sec">${esc(t.perspectives)}</div><div class="paper persp">${persp}${p.perspective_mode === "story" ? `<br><span class="note">${esc(t.localNote)}</span>` : ""}</div>` : ""}
     ${whoHtml(p, t)}`;
 }
-function setSheetPicture(id) {
+function setSheetPicture(id, saved) {
   const c = (pool || []).find(x => String(x.id) === String(id)) || (cards || []).find(x => String(x.id) === String(id));
-  const pic = c && c.img && safeUrl(c.img.src) ? c.img : null;
+  // an archived article brings its own picture record (link, credit, faces, blur); a live one has the card's
+  const own = c && c.img ? c.img : saved;
+  const pic = own && safeUrl(own.src) ? own : null;
   const box = $("hpic");
   // the article arrives while the sheet is still opening and fillSheet runs again for the same story: the picture is
   // kept as it is, not rebuilt (a rebuilt one is blank until its images load and is not placed over the card's, so
@@ -2274,7 +2298,11 @@ function setSheetPicture(id) {
                        : `<span class="pic-credit">${esc(T[lang].photo)}: ${esc(pic.by || "")}</span>`) : "";
   const img = box.querySelector("img.sharp");
   if (img) { if (img.complete) fitPic(); else img.addEventListener("load", fitPic, {once: true}); }
-  if (img) img.addEventListener("error", () => { hbox.classList.remove("has-pic"); box.innerHTML = ""; }, {once: true});
+  // a picture that no longer loads: an archived one keeps its colours as the blur it was saved with, any other leaves the card as it is
+  if (img) img.addEventListener("error", () => {
+    if (pic.blur && /^data:image\//.test(pic.blur)) { box.dataset.src = ""; box.innerHTML = `<div class="hsoft arc-blur"><img class="soft" src="${esc(pic.blur)}" alt=""><div class="hwash"></div></div>`; }
+    else { hbox.classList.remove("has-pic"); box.innerHTML = ""; }
+  }, {once: true});
 }
 // the article's sections as a rail under the top: the one being read is filled, a tap goes there
 function buildRail() {
@@ -2468,7 +2496,7 @@ function fillSheet(row, card) {
   const t = T[lang];
   if (row) { sheetRow = row; $("abar").innerHTML = abarHtml(barCounts(((row.payload_en || {}).narrative || {}).paragraphs)); }
   else if (card) { sheetRow = null; $("abar").innerHTML = abarHtml(card.bar); }
-  setSheetPicture(row ? row.story_id : card && card.id);
+  setSheetPicture(row ? row.story_id : card && card.id, row && row.img);
   if (row) {
     const p = (lang === "hi" && row.payload_hi) || row.payload_en || {};
     const head = (lang === "hi" && row.headline_hi) || row.headline_en || p.headline || "";
@@ -2564,6 +2592,7 @@ async function openStory(id, fromCard, opts = {}) {
   const pending = loadStory(id);
   const quick = await Promise.race([pending, new Promise(r => setTimeout(() => r(undefined), 120))]);
   if (openId !== id) return;
+  if (!quick && !card) arcWait(); else arcDone();
   fillSheet(quick || null, card);
   prefetch(id);                                  // the audio and video cards open complete
   const r = fromCard && !opts.instant ? fromCard.getBoundingClientRect() : null;
@@ -2599,11 +2628,37 @@ async function openStory(id, fromCard, opts = {}) {
     const row = await pending;
     await done;                                  // never refilled mid-glide (the key card could change height under the headline)
     if (openId !== id) return;
-    if (row) fillSheet(row, card);
-    else $("rise").innerHTML = `<div class="paper essay"><p>${esc(T[lang].missing)}</p></div>`;
+    if (row) { fillSheet(row, card); arcDone(true); }
+    else { arcDone(); $("rise").innerHTML = `<div class="paper essay"><p>${esc(T[lang].missing)}</p></div>`; }
   }
   setTimeout(() => { if (openId === id) $("back").focus({preventScroll: true}); }, 480);
   schedulePeek(id);
+}
+/* The loading screen of an older article (owner, Oct 29 2026, canvas option B "The bar wakes"): an article that is not on the
+   deck has no card to open from, so the sheet opens on a clean frame: the seven colours of the bar wake one after the other
+   like a slow wave, a line says what is happening, and three quiet bones stand where the text will be. When the story
+   arrives the real bar grows from the left over the wave and the sections rise in. Transform and opacity only. */
+let arcWaiting = false;
+function arcWait() {
+  const t = T[lang];
+  arcWaiting = true;
+  sheetRow = null;
+  $("sheet-h").textContent = "";
+  setSheetPicture(null);
+  $("sheet-meta").textContent = t.arcFrom;
+  metaAt = null;
+  $("abar").className = "abar wave";
+  $("abar").innerHTML = "<span></span><span></span><span></span><span></span><span></span><span></span><span></span>";
+  $("rise").classList.remove("arc-in");
+  $("rise").innerHTML = `<div class="arc-wait" role="status"><div class="arc-cap">${esc(t.arcWait)}</div><div class="arc-bone"></div><div class="arc-bone"></div><div class="arc-bone short"></div></div>`;
+}
+function arcDone(arrived) {
+  if (!arcWaiting) return;
+  arcWaiting = false;
+  const bar = $("abar");
+  bar.classList.remove("wave");
+  if (arrived && !REDUCED.matches) { bar.classList.add("arc-grow"); setTimeout(() => bar.classList.remove("arc-grow"), 1100); }
+  if (arrived && !REDUCED.matches) { const r = $("rise"); r.classList.add("arc-in"); setTimeout(() => r.classList.remove("arc-in"), 1200); }
 }
 var underCard = null;
 function releaseUnder() { if (underCard) { underCard.classList.remove("under"); underCard = null; } }
@@ -5219,7 +5274,7 @@ function tallGuess(iw, ih) {
 }
 function focusOf(id) {
   const c = (pool || []).find(x => String(x.id) === String(id)) || (cards || []).find(x => String(x.id) === String(id));
-  const im = c && c.img;
+  const im = (c && c.img) || (sheetRow && String(sheetRow.story_id) === String(id) && sheetRow.img) || null;
   return im && Array.isArray(im.fc) && im.fc.length ? {fc: im.fc, ar: Number(im.ar) || 0} : null;
 }
 // the offset (px, <= 0) that puts image point `f` (0..1) at `target` px of a frame `frame` px long, for an image `len` px long
