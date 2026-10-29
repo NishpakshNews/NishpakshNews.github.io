@@ -60,6 +60,8 @@ def title_start(text: str, a: int) -> int | None:
     head = next((k for k in inside if toks[k].head not in inside or toks[k].head == k), None)
     if head is None:
         return None
+    if toks[head].dep in ("pobj", "appos"):
+        return None             # a name that is the object of a preposition ("Leader of the Opposition in the Lok Sabha Rahul Gandhi"): the title is a phrase with "of" / "in" in it, not a run
     k, taken = first - 1, []
     while k >= 0:
         t = toks[k]
@@ -101,7 +103,10 @@ def compare_title(system: int | None, listed: int, text: str, a: int) -> int:
         STATS["title:differ"] += 1
         sys_t, list_t = text[system:a].strip(), text[listed:a].strip()
         _note("title", f"system:{sys_t or '-'} | list:{list_t or '-'}")
-    return system
+    # the LONGER title wins (owner, Oct 29 2026: the system's run "Lok Sabha" was cut from "Leader of the Opposition in the Lok Sabha
+    # Rahul Gandhi" and the rest stayed in front of a bare surname): a title is taken whole or not at all, so a title either
+    # side found in full must never be shortened by the other; the system alone may add a title the list does not know.
+    return min(system, listed)
 
 
 def compare_name(system: str | None, listed: str) -> str:

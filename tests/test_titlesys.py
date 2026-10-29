@@ -67,3 +67,20 @@ def test_people_clean_takes_the_person_entity_and_falls_back_to_the_list(monkeyp
                             ("said", "VERB", "ROOT", 3), ("it", "PRON", "dobj", 3), (".", "PUNCT", "punct", 3)], [("Sarma", "PERSON")])
     assert people._clean("Zorbo Handler Sarma", t, 0) == "Sarma"
     assert people._clean("Chief Minister Siddaramaiah") == "Siddaramaiah"     # no text: the list
+
+
+def test_a_title_with_in_the_lok_sabha_is_cut_whole_or_not_at_all():
+    t = "Leader of the Opposition in the Lok Sabha Rahul Gandhi said it."
+    assert titles.title_before(t, "Rahul Gandhi") == "Leader of the Opposition in the Lok Sabha"
+    t2 = "He was in the Lok Sabha Rahul Gandhi said it."
+    assert titles.title_before(t2, "Rahul Gandhi") == ""          # "in the Lok Sabha" alone is no title
+
+
+def test_the_longer_title_wins_when_system_and_list_disagree(monkeypatch):
+    t = "Lok Sabha Leader of Opposition Rahul Gandhi said it."
+    a = t.index("Rahul")
+    listed = titles.title_start(t[:a])
+    assert listed == 0
+    assert titlesys.compare_title(a, listed, t, a) == 0           # the system said "no title": the list's full title stands
+    assert titlesys.compare_title(5, listed, t, a) == 0           # a shorter system run never cuts the list's title
+    assert titlesys.compare_title(0, a, t, a) == 0                # a title only the system knows is kept

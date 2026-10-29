@@ -61,7 +61,7 @@ def test_cut_off_is_a_sentence_without_a_verb(monkeypatch):
 
 def test_cut_off_is_false_without_part_of_speech():
     from nishpaksh import nlp
-    nlp.set_parser(None)
+    nlp.set_parser(lambda text: [nlp.Tok(0, "On", 0, 2, "on", "", "", "dep", 0)])      # an analyser that gives no part of speech
     assert N.cut_off("On Sunday US chief Adm.") is False
 
 

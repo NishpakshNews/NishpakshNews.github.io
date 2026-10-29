@@ -173,7 +173,7 @@ def ref_for(role_id: str | None) -> str | None:
 _CAP = re.compile(r"^[A-Z0-9]")
 
 
-def title_start(prefix: str, max_words: int = 7, extra: frozenset | set = frozenset(),
+def title_start(prefix: str, max_words: int = 9, extra: frozenset | set = frozenset(),
                 extra_person: frozenset | set = frozenset()) -> int:
     """Where the title phrase that ENDS `prefix` begins (an index into `prefix`; len(prefix) when there is none).
     `prefix` is the text right before a name. Words are taken backwards while they are title words, or capitalised
@@ -189,10 +189,30 @@ def title_start(prefix: str, max_words: int = 7, extra: frozenset | set = frozen
     tw = title_words() | set(extra)
     pw = person_title_words() | set(extra_person) | set(extra)
     take: list[tuple[str, int, int]] = []
-    for tok in reversed(toks):
+    start = len(toks) - 1
+    j, tail = len(toks), []                     # "... Opposition in the Lok Sabha | Rahul": a capitalised tail after "in" belongs to the title
+    while j > 0 and _CAP.match(toks[j - 1][0].strip(".,;:")) and toks[j - 1][0].strip(".,;:") not in tw \
+            and toks[j - 1][0].strip(".,;:").lower() not in _OPENERS and not re.search(r"[.,;:!?]$", toks[j - 1][0]):
+        tail.append(toks[j - 1])
+        j -= 1
+    if tail and j >= 1 and toks[j - 1][0].lower() == "the":
+        j -= 1                                  # "in the Lok Sabha"
+    if tail and j >= 1 and toks[j - 1][0].lower() == "in":
+        k2 = j - 2
+        if k2 >= 0 and toks[k2][0].lower() == "the":
+            k2 -= 1
+        if k2 >= 0 and toks[k2][0].strip(".,;:") in tw:
+            take = list(tail)
+            start = j - 1
+    for idx in range(start, -1, -1):
+        tok = toks[idx]
         w = tok[0]
         bare = w.strip(".,;:\"'\u2018\u2019\u201c\u201d")   # a quote mark glued to a word ("'Prime") is not part of it
-        if bare in tw or bare.lower() in ("of", "the") and take:
+        # "in" bridges only a title of the form "Leader of the Opposition in the Lok Sabha" (a title word right before it)
+        in_bridge = (bare.lower() == "in" and take and idx > 0 and (
+            toks[idx - 1][0].strip(".,;:") in tw
+            or (toks[idx - 1][0].lower() == "the" and idx > 1 and toks[idx - 2][0].strip(".,;:") in tw)))
+        if bare in tw or bare.lower() in ("of", "the") and take or in_bridge:
             take.append(tok)
         elif (_CAP.match(bare) and any(t[0].strip(".,;:") in tw for t in take) and bare.lower() not in _OPENERS
               and not re.search(r"[.,;:!?]$", w)):      # a word ending a sentence or clause is not part of the title
@@ -208,7 +228,7 @@ def title_start(prefix: str, max_words: int = 7, extra: frozenset | set = frozen
     return take[0][1]
 
 
-def title_start_in(text: str, a: int, max_words: int = 7, extra: frozenset | set = frozenset(),
+def title_start_in(text: str, a: int, max_words: int = 9, extra: frozenset | set = frozenset(),
                    extra_person: frozenset | set = frozenset()) -> int:
     """`title_start` for the name that starts at `a` in `text`: the analyser answers first (titlesys.py), the title list when it
     cannot, and every disagreement is counted (owner, Oct 28 2026)."""
@@ -217,7 +237,7 @@ def title_start_in(text: str, a: int, max_words: int = 7, extra: frozenset | set
     return titlesys.compare_title(titlesys.title_start(text, a), listed, text, a)
 
 
-def title_before(text: str, name: str, max_words: int = 7) -> str:
+def title_before(text: str, name: str, max_words: int = 9) -> str:
     """The title phrase written directly before `name` in `text` ("Assam Chief Minister" before "Himanta Biswa
     Sarma"), or "". See `title_start` for how the phrase is found."""
     m = re.search(rf"((?:[\w.&'()-]+\s+){{1,{max_words}}}){re.escape(name)}(?![\w-])", text)
