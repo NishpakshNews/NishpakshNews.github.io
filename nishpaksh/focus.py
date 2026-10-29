@@ -180,6 +180,19 @@ def look(data: bytes) -> dict:
     return {**col, **_faces_of(cv2, img)}
 
 
+def look_safe(data: bytes) -> dict:
+    """`look` in a child process: OpenCV's native code can segfault on a picture (Oct 29 2026: the whole feed export died with
+    exit 139 and the site's feed went stale), and a crash cannot be caught inside the process. A crash, a timeout or bad
+    output raises, so `attach` stores "no focus" for that picture and the export goes on."""
+    import subprocess  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+    r = subprocess.run([sys.executable, "-m", "nishpaksh.focus"], input=data, capture_output=True, timeout=30, check=False)
+    if r.returncode != 0:
+        raise RuntimeError(f"picture look exited {r.returncode}")
+    out = json.loads(r.stdout.decode("utf-8") or "{}")
+    return out if isinstance(out, dict) else {}
+
+
 def _faces_of(cv2, img) -> dict:
     if not MODEL.exists():
         return {}
@@ -202,13 +215,15 @@ def load_cache(root: pathlib.Path) -> dict:
         return {}
 
 
-def attach(pics: dict[str, dict], root: pathlib.Path, max_new: int = MAX_NEW, fetcher=fetch, looker=look,
+def attach(pics: dict[str, dict], root: pathlib.Path, max_new: int = MAX_NEW, fetcher=fetch, looker=None,
            budget: float = BUDGET) -> dict:
     """Add the focus to every picture in `pics` (story id -> img) from the cache, looking at up to `max_new` new ones.
     Writes the cache back (only the pictures in use and those looked at in the last CACHE_DAYS days). Returns stats."""
     stats = {"cached": 0, "looked": 0, "found": 0, "waiting": 0, "failed": 0}
-    if _cv() is None and looker is look:
-        return stats
+    if looker is None:
+        if _cv() is None:
+            return stats
+        looker = look_safe
     cache = load_cache(root)
     now = int(time.time())
     until = time.monotonic() + budget
@@ -249,3 +264,8 @@ def attach(pics: dict[str, dict], root: pathlib.Path, max_new: int = MAX_NEW, fe
     except OSError:
         pass
     return stats
+
+
+if __name__ == "__main__":      # child of look_safe: a picture on stdin, its focus as JSON on stdout
+    import sys
+    sys.stdout.write(json.dumps(look(sys.stdin.buffer.read())))
