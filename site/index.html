@@ -2926,7 +2926,10 @@ function toast(msg) {
 }
 $("share").addEventListener("click", async () => {
   if (!openId) return;
-  const url = `${location.origin}${location.pathname}?lang=${lang}#/story/${encodeURIComponent(openId)}`;
+  // the short share page (/s/<id>/, Hindi /hi/s/<id>/): chat apps read its preview (headline, opening, picture) and it
+  // sends the reader on to the article (nishpaksh/sharepages.py). Not the #/story/ address: robots never see the part after #.
+  const base = location.pathname.replace(/(?:hi\/)?(?:s\/[^/]*\/?)?(?:index\.html)?$/, "");
+  const url = `${location.origin}${base}${lang === "hi" ? "hi/" : ""}s/${encodeURIComponent(openId)}/`;
   const title = $("sheet-h").textContent || "Nishpaksh";
   if (navigator.share) {
     try { await navigator.share({title, text: title, url}); return; }

@@ -2,11 +2,12 @@ name: site
 
 # Publishes the reading site (site/) to GitHub Pages whenever it changes.
 # The page reads published stories straight from Supabase, so it needs no rebuild
-# when news changes, only when the page itself changes.
+# when news changes, only when the page itself changes. The share pages (link previews, nishpaksh/sharepages.py) are
+# the exception: the hourly job starts this workflow after it publishes the feed (publish_feed.sh).
 on:
   push:
     branches: [main]
-    paths: ["site/**", "live/**", ".github/workflows/site.yml"]
+    paths: ["site/**", "live/**", ".github/workflows/site.yml", ".github/scripts/build_site.sh"]
   workflow_dispatch: {}
 
 permissions:
@@ -26,15 +27,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: The audio made so far (nishpaksh/audio.py keeps it on the audio branch)
-        run: |
-          rm -rf _site && cp -r site _site && mkdir -p _site/audio _site/live
-          # "Understand by talking": the voice module and its intro words (and the intro recordings, once made) are served next to the page
-          cp live/talk.js live/intro.json _site/live/
-          cp live/intro-*.m4a _site/live/ 2>/dev/null || true
-          if git clone --quiet --depth 1 --branch audio "https://github.com/${GITHUB_REPOSITORY}.git" /tmp/audio 2>/dev/null; then
-            cp /tmp/audio/*.m4a /tmp/audio/*.json _site/audio/ 2>/dev/null || true
-          fi
+      - name: The site, its audio and the share pages (build_site.sh)
+        run: bash .github/scripts/build_site.sh
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

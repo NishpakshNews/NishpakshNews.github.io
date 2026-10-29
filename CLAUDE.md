@@ -236,6 +236,8 @@ Untuned: `PRIOR_WEIGHT`, `positions.MAX_AGE_HOURS`, `perspectives.CLEAR_AFTER`, 
 NLI thresholds (`nli.ENTAIL/CONTRA/UNSURE`, `fidelity.SUPPORT/CONTRA`), the clause splitter and the NER-based speaker keys on real
 stories, and tune settings then.
 
+**Share previews (Oct 29 2026, branch `share-previews`, owner: "show the article's thumbnail when shared on WhatsApp ... URLs not ugly"; NOT RUN on real data).** Link-preview robots never run the page nor see the `#/story/<id>` part, so shared links had no picture. `sharepages.py` (called by `feed.export`) writes a small page per live article, English `/s/<id>/` and Hindi `/hi/s/<id>/`, into the `feed` branch (`s/`, `hi/s/`): og/twitter tags (headline, opening sentences up to 200 characters, the card's outlet picture linked, else `icon-512.png`) and a redirect to `/?lang=..#/story/<id>`. `.github/scripts/build_site.sh` (used by `site.yml` AND `audio.yml`, since a Pages deploy replaces the whole site) copies them into the build; `publish_feed.sh` starts `site.yml` after each feed push. The share button shares the short address. Check on a phone after the first deploy: WhatsApp drops some pictures (too large, hotlink-blocked, too small) and caches a preview per URL. Tests: `tests/test_sharepages.py`.
+
 ## Hard constraints
 - Free tiers only. **No billing**, ever. Gemini free API (3 keys: `GEMINI_API_KEY`, `_2`, `_3`,
   separate projects; the owner decided this), Tavily free (1,000 credits/month, ≤31/day), Supabase free

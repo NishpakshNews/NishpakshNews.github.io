@@ -330,6 +330,11 @@ def export(store: Store, root: str | pathlib.Path) -> int:
         (root / f"{lang}.json").write_text(json.dumps({"generated_at": now, "sections": labels(lang),
                                                        "places": place_labels(lang), "stories": cards},
                                                       ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    try:                                  # the pages link previews read (WhatsApp ...): sharepages.py; never stops the export
+        from . import sharepages
+        log.info("feed: %d share pages", sharepages.write(root, manifest, pics, order))
+    except Exception as e:  # noqa: BLE001
+        log.warning("feed: share pages skipped: %s", e)
     (root / MANIFEST).write_text(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     (root / "README.md").write_text(
         "# Nishpaksh feed\n\nThe live articles as ready-made files for the reading site, rewritten every hour "

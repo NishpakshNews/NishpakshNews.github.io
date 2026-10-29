@@ -45,3 +45,10 @@ if [ -z "${FEED_REMOTE:-}" ] && [ -n "${GITHUB_REPOSITORY:-}" ] && [ "${FEED_LIV
   fi
 fi
 echo "feed published"
+
+# The share pages (link previews, nishpaksh/sharepages.py) are on the feed branch now; they reach the site with the
+# next Pages deploy. Started here, once the feed is pushed (a failure only means previews are an hour old).
+if [ -z "${FEED_REMOTE:-}" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
+  gh workflow run site.yml --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 && echo "site deploy started (share pages)" \
+    || echo "site deploy not started (share pages stay as they were)"
+fi
