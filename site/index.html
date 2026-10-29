@@ -927,7 +927,8 @@
   .nsw.u .nrow .dot { background: #2f3a72; }
   /* the buttons float over the bottom of the card, no strip behind them: the list scrolls under them */
   .nbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; gap: 10px; padding: 0 20px calc(16px + env(safe-area-inset-bottom)); pointer-events: none; }
-  .nbar > * { pointer-events: auto; box-shadow: 0 8px 22px rgba(22,26,56,.30), 0 1px 3px rgba(22,26,56,.18); }
+  .nbar::before { content: ""; position: absolute; z-index: -1; left: 8px; right: 8px; top: -14px; bottom: 6px; border-radius: 28px; background: #fff; opacity: .96; filter: blur(9px); }   /* a white glow behind the buttons lifts them off the text under them */
+  .nbar > * { pointer-events: auto; box-shadow: 0 8px 22px rgba(22,26,56,.28), 0 1px 3px rgba(22,26,56,.16); }
   .nbar .go { flex: 1; height: 48px; border: 0; border-radius: 14px; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; }
   .nbar .go[disabled] { opacity: .45; cursor: default; }
   .nbar .tr { flex: none; width: 48px; height: 48px; border-radius: 14px; border: 1px solid #dcdce3; background: #fff; color: #b2251c; display: flex; align-items: center; justify-content: center; cursor: pointer; }
