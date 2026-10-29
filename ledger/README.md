@@ -4,6 +4,16 @@ One record per hourly run, written after the desk step (`python -m nishpaksh.led
 Purpose: embedding use and outlet yield were hard to see; this keeps them, run after run, in the repository so
 the next session starts from numbers.
 
+## Pool and rhythm (Oct 29 2026)
+
+`pool`: `mode` (light, full, prime) of the run; `at_desk_start` ready stories when the job's first desk run began;
+`write_allowance` how many that desk run could publish (None: every seat); `after_first_desk` the count that decided light or full;
+`read` stories the run read; `end` ready at the end of the job; `desk_runs` and `desk_seconds` of the job's desk runs.
+`rhythm`: `hours_24h` articles written in each of the 24 completed hours before this record (oldest first), `empty_hours`,
+`mean_per_hour`, `sd_per_hour`, `longest_gap_min` between desk runs that wrote something, `first_in_job_min` from the job's start to its
+first article. Times are those of the desk's record (the end of its run), a few minutes before the feed shows the article.
+Consistency is the goal: no empty hours and a small spread, then more articles.
+
 ## Files
 - `LEDGER.md`: the readable summary of the last 8 days, regenerated every run.
 - `runs-YYYY-MM.jsonl`: one JSON object per run (kept 120 days). Fields below.
