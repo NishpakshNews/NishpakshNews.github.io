@@ -906,11 +906,32 @@
   .naudio button { width: 40px; height: 40px; border-radius: 50%; border: 0; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; flex: none; }
   .nrow { display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid #eeeef1; width: 100%; border-left: 0; border-right: 0; border-bottom: 0;
           background: none; text-align: start; color: var(--ink); cursor: pointer; }
-  .nbar { display: flex; gap: 8px; margin: 4px 0 0; }
-  .nbar button { flex: 1; height: 40px; border: 1px solid #dcdce3; border-radius: 12px; background: #fff; color: var(--ink); font-size: 14px; font-weight: 600; cursor: pointer; }
-  .nbar button[disabled] { opacity: .45; cursor: default; }
-  .flabel.nl { display: flex; align-items: center; justify-content: space-between; }
-  .flabel.nl button { border: 0; background: none; color: var(--muted); font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; padding: 4px 6px; }
+  /* notifications sheet (design D, owner Oct 29 2026): swipe a row to clear it, a bar at the bottom, unread tinted */
+  .nlab { display: flex; align-items: center; gap: 8px; white-space: nowrap; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 16px 6px 4px; }
+  html.hi .nlab { letter-spacing: 0; text-transform: none; font-size: 13px; }
+  .nchip { flex: none; background: #2f3a72; color: #fff; border-radius: 999px; font-size: 11px; letter-spacing: 0; padding: 2px 8px; text-transform: none; }
+  .naudio { align-items: flex-start; }
+  .naudio .t { flex: 1; min-width: 0; }
+  .naudio .exp { display: inline-block; margin-top: 6px; font-size: 11.5px; color: var(--muted); background: #fff; border-radius: 999px; padding: 2px 9px; }
+  .naudio .nx { width: 26px; height: 26px; border-radius: 50%; border: 0; background: rgba(0,0,0,.06); color: var(--muted); display: flex; align-items: center; justify-content: center; flex: none; cursor: pointer; margin: -2px -4px 0 0; }
+  .nsw { position: relative; overflow: hidden; border-radius: 14px; margin: 0 -12px; touch-action: pan-y; }
+  .nsw .nrm { position: absolute; top: 0; bottom: 0; right: 0; width: 96px; border: 0; background: #b2251c; color: #fff; font: inherit; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; }
+  .nsw .nrow { position: relative; z-index: 1; margin: 0; width: 100%; padding: 13px 12px; border: 0; border-radius: 14px; background: #fff; transition: transform 220ms var(--ease); }
+  .nsw.drag .nrow { transition: none; }
+  .nsw .nrm { opacity: 0; transition: opacity 0s linear 220ms; }   /* hidden at rest, so no red shows at the rounded corners */
+  .nsw.open .nrm, .nsw.drag .nrm { opacity: 1; transition: none; }
+  .nsw.u .nrow { background: #eff0f6; }
+  .nsw.open .nrow { box-shadow: 0 0 16px rgba(0,0,0,.12); }
+  .nrow .dot { background: transparent; }
+  .nsw.u .nrow .dot { background: #2f3a72; }
+  .nbar { position: sticky; bottom: 0; display: flex; gap: 10px; padding: 14px 0 2px; margin-top: 4px; background: linear-gradient(rgba(255,255,255,0), #fff 28%); }
+  .nbar .go { flex: 1; height: 48px; border: 0; border-radius: 14px; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; }
+  .nbar .go[disabled] { opacity: .45; cursor: default; }
+  .nbar .tr { flex: none; width: 48px; height: 48px; border-radius: 14px; border: 1px solid #dcdce3; background: #fff; color: #b2251c; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .nbar .no { flex: 1; height: 48px; border-radius: 14px; border: 1px solid #dcdce3; background: #fff; color: var(--ink); font-size: 16px; font-weight: 600; cursor: pointer; }
+  .nbar .yes { flex: 1; height: 48px; border-radius: 14px; border: 0; background: #b2251c; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; }
+  .nbar .ask { flex-basis: 100%; }
+  .nbar.confirm { flex-wrap: wrap; } .nbar .q { flex-basis: 100%; text-align: center; font-size: 14px; color: var(--muted); margin: 0 0 2px; }
   .nrow .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 7px; flex: none; }
   .rclock { border-radius: 18px; color: #fff; padding: 22px 20px; margin-top: 6px; }
   .rclock b.big { display: block; font-family: var(--head); font-size: 40px; font-weight: 600; line-height: 1.1; margin-top: 2px; }
@@ -4059,7 +4080,7 @@ Object.assign(ICON, {
   xs: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   bellg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3d4043" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
 });
-Object.assign(T.en, {notes: "Notifications", myAudio: "My audio", markAllRead: "Mark all as read", clearAll: "Clear all", clearAudio: "Clear", audioKept: "Audio is removed 36 hours after it is made.", noNotes: "Nothing yet. Follow a section, a state or a word and we will tell you when an article comes out.",
+Object.assign(T.en, {notes: "Notifications", myAudio: "My audio", markAllRead: "Mark all as read", clearAll: "Clear all", clearRow: "Clear", newN: n => `${n} new`, removedIn: h => h <= 1 ? "Removed within the hour" : `Removed in ${h} h`, confirmClear: "Clear all notifications?", cancelB: "Cancel", clearThis: "Clear", noNotes: "Nothing yet. Follow a section, a state or a word and we will tell you when an article comes out.",
   noAudio: "You have not asked for any audio yet.", ready: l => `${l} · ready`, making: l => `${l} · being made, usually within an hour`, failed: l => `${l} · could not be made`,
   followIntro: "We tell you every time an article comes out in what you follow. Tap the circle for all of it, the arrow to choose inside.",
   sectionsL: "Sections", placesL: "Places and names", states: "States", words: "Words and names", allOf: l => `All of ${l}`, all: "All",
@@ -4068,7 +4089,7 @@ Object.assign(T.en, {notes: "Notifications", myAudio: "My audio", markAllRead: "
   recapMaking: "Today's summary is being written. It will be here in a few minutes.", notifyMe: "Notify me when it is ready", listenRecap: "Listen",
   articles: n => `${n} stories today`, hm: (h, m) => `${h} h ${m} min`, recapReadyHint: "Ready", recapTimeHint: "11 pm", stop: "Stop following",
   coloursL: "When lines change colour", coloursIntro: "An article's words never change, but its colours do as more reports come in. We tell you when lines of any article turn the colours you pick, at most once an hour per article.", struckF: "struck through (replaced by later news)"});
-Object.assign(T.hi, {notes: "सूचनाएं", myAudio: "मेरे ऑडियो", markAllRead: "सब पढ़ा हुआ चिह्नित करें", clearAll: "सब हटाएं", clearAudio: "हटाएं", audioKept: "ऑडियो बनने के 36 घंटे बाद हट जाता है।", noNotes: "अभी कुछ नहीं। कोई खंड, राज्य या शब्द फ़ॉलो करें, नया लेख आने पर हम बताएंगे।",
+Object.assign(T.hi, {notes: "सूचनाएं", myAudio: "मेरे ऑडियो", markAllRead: "सब पढ़ा हुआ चिह्नित करें", clearAll: "सब हटाएं", clearRow: "हटाएं", newN: n => `${n} नई`, removedIn: h => h <= 1 ? "एक घंटे में हट जाएगा" : `${h} घंटे में हट जाएगा`, confirmClear: "सभी सूचनाएं हटाएं?", cancelB: "रद्द करें", clearThis: "हटाएं", noNotes: "अभी कुछ नहीं। कोई खंड, राज्य या शब्द फ़ॉलो करें, नया लेख आने पर हम बताएंगे।",
   noAudio: "आपने अभी कोई ऑडियो नहीं मांगा।", ready: l => `${l} · तैयार`, making: l => `${l} · बन रहा है, आमतौर पर एक घंटे में`, failed: l => `${l} · नहीं बन सका`,
   followIntro: "आप जो फ़ॉलो करते हैं, उसमें हर नया लेख आने पर हम बताते हैं। पूरा चुनने के लिए गोले पर, भीतर चुनने के लिए तीर पर टैप करें।",
   sectionsL: "खंड", placesL: "जगहें और नाम", states: "राज्य", words: "शब्द और नाम", allOf: l => `पूरा ${l}`, all: "सब",
@@ -4204,18 +4225,24 @@ bsheet.addEventListener("submit", async e => {
 }, true);
 
 /* Notifications: my audio first, then every notification (opening marks them read) */
-let notesData = null;
+let notesData = null, noteAsk = false, swipeAt = 0;
+const AUDIO_LIFE_H = 36;                                      // audio is removed this long after it was made (nishpaksh/audio.py)
 async function loadNotes() {
-  notesData = null;
+  notesData = null; noteAsk = false;
   try {
     const [notes, reqs] = await Promise.all([
       rest("notifications?select=id,kind,title,body,url,created_at,read_at&cleared_at=is.null&order=created_at.desc&limit=50"),
-      rest(`audio_requests?select=story_id,lang,status,requested_at,done_at&cleared_at=is.null&order=requested_at.desc&limit=20`)]);
-    // an audio is removed 36 h after it is made: a finished request whose file is gone is not listed
-    const files = await api("audio_files?select=key").catch(() => null);
+      rest("audio_requests?select=story_id,lang,status,requested_at,done_at&cleared_at=is.null&order=requested_at.desc&limit=20")]);
+    // an audio is removed 36 h after it is made: a finished request whose file is gone is not listed, the rest say when they go
+    const files = await api("audio_files?select=key,made_at").catch(() => null);
     if (Array.isArray(files)) {                               // (offline or failed: the list is left as it is)
-      const have = new Set(files.map(f => f.key));
-      for (let i = reqs.length - 1; i >= 0; i--) if (reqs[i].status === "done" && !have.has(`${reqs[i].story_id}-${reqs[i].lang}`)) reqs.splice(i, 1);
+      const made = new Map(files.map(f => [f.key, f.made_at]));
+      for (let i = reqs.length - 1; i >= 0; i--) {
+        const r = reqs[i], k = `${r.story_id}-${r.lang}`;
+        if (r.status !== "done") continue;
+        if (!made.has(k)) reqs.splice(i, 1);
+        else r.hoursLeft = Math.max(1, Math.ceil(AUDIO_LIFE_H - (Date.now() - new Date(made.get(k)).getTime()) / 3600e3));
+      }
     }
     const heads = {};
     await Promise.all([...new Set(reqs.map(r => String(r.story_id)))].map(async id => {
@@ -4225,49 +4252,102 @@ async function loadNotes() {
       heads[id] = row ? ((lang === "hi" && row.headline_hi) || row.headline_en) : "";
     }));
     notesData = {notes, reqs: reqs.map(r => ({...r, h: heads[String(r.story_id)] || ""}))};
-    const ids = notes.filter(n => !n.read_at).map(n => n.id);
-    if (ids.length) rest(`notifications?id=in.(${ids.join(",")})`, {method: "PATCH", body: JSON.stringify({read_at: new Date().toISOString()})})
-      .then(() => { unread = 0; paintBadge(); }).catch(() => {});
   } catch (e) { notesData = {notes: [], reqs: []}; }
   if (sheetKind === "notes") renderSheet();
 }
-/* the buttons of the notifications sheet: mark all read, clear all, clear the finished audio (a soft clear: the row is hidden, never deleted) */
-async function clearNotes(what) {
-  if (!notesData) return;
-  const now = new Date().toISOString();
-  try {
-    if (what === "audio") {
-      await rest("audio_requests?cleared_at=is.null&status=neq.queued", {method: "PATCH", body: JSON.stringify({cleared_at: now})});
-      notesData.reqs = notesData.reqs.filter(r => r.status === "queued");
-    } else if (what === "read") {
-      await rest("notifications?read_at=is.null&cleared_at=is.null", {method: "PATCH", body: JSON.stringify({read_at: now})});
-      notesData.notes.forEach(n => { n.read_at = n.read_at || now; });
-      unread = 0; paintBadge();
-    } else if (what === "all") {
-      await rest("notifications?cleared_at=is.null", {method: "PATCH", body: JSON.stringify({read_at: now, cleared_at: now})});
-      notesData.notes = []; unread = 0; paintBadge();
-    }
-  } catch (e) { toast(T[lang].error); return; }
-  if (sheetKind === "notes") renderSheet();
-}
+const nUnread = () => (notesData ? notesData.notes.filter(n => !n.read_at).length : 0);
 function notesHtml() {
   const t = T[lang];
   if (!notesData) return `<div class="bbody"><p class="bnote">…</p></div>`;
   const ln = l => l === "hi" ? t.hindi : t.english;
   const when = ts => { const d = new Date(ts); return d.toLocaleString(lang === "hi" ? "hi-IN" : "en-IN", {hour: "2-digit", minute: "2-digit", day: "numeric", month: "short", timeZone: "Asia/Kolkata"}); };
-  const audios = notesData.reqs.length ? notesData.reqs.map(r => `<div class="naudio"><div style="flex:1;min-width:0"><div class="h">${esc(r.h)}</div>
-      <div style="font-size:13px;font-weight:600;margin-top:3px;color:${r.status === "done" ? "var(--est)" : r.status === "failed" ? "var(--fal)" : "var(--dis)"}">${esc(r.status === "done" ? t.ready(ln(r.lang)) : r.status === "failed" ? t.failed(ln(r.lang)) : t.making(ln(r.lang)))}</div></div>
-      ${r.status === "done" ? `<button type="button" class="brand" data-nplay="${esc(r.story_id)}-${esc(r.lang)}" aria-label="${esc(t.play)}">${ICON.play}</button>` : r.status === "queued" ? `<span style="width:40px;display:flex;justify-content:center">${ICON.clock}</span>` : ""}</div>`).join("")
+  const audios = notesData.reqs.length ? notesData.reqs.map(r => `<div class="naudio"><div class="t"><div class="h">${esc(r.h)}</div>
+      <div style="font-size:13px;font-weight:600;margin-top:3px;color:${r.status === "done" ? "var(--est)" : r.status === "failed" ? "var(--fal)" : "var(--dis)"}">${esc(r.status === "done" ? t.ready(ln(r.lang)) : r.status === "failed" ? t.failed(ln(r.lang)) : t.making(ln(r.lang)))}</div>
+      ${r.status === "done" && r.hoursLeft ? `<span class="exp">${esc(t.removedIn(r.hoursLeft))}</span>` : ""}</div>
+      ${r.status === "done" ? `<button type="button" class="brand" data-nplay="${esc(r.story_id)}-${esc(r.lang)}" aria-label="${esc(t.play)}">${ICON.play}</button>` : r.status === "queued" ? `<span style="width:40px;display:flex;justify-content:center">${ICON.clock}</span>` : ""}
+      ${r.status !== "queued" ? `<button type="button" class="nx" data-naudio="${esc(r.story_id)}|${esc(r.lang)}" aria-label="${esc(t.clearThis)}">${ICON.xs}</button>` : ""}</div>`).join("")
     : `<p class="bnote" style="margin:6px 2px">${esc(t.noAudio)}</p>`;
-  const notes = notesData.notes.length ? notesData.notes.map(n => `<button type="button" class="nrow" data-nurl="${esc(n.url || "")}"><span class="dot" style="background:${n.read_at ? "transparent" : "#c0392b"}"></span>
+  const trash = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>`;
+  const notes = notesData.notes.length ? notesData.notes.map(n => `<div class="nsw${n.read_at ? "" : " u"}" data-nsw="${n.id}"><button type="button" class="nrm" data-nrm="${n.id}" tabindex="-1">${trash}${esc(t.clearRow)}</button>
+      <button type="button" class="nrow" data-nid="${n.id}" data-nurl="${esc(n.url || "")}"><span class="dot"></span>
       <span style="flex:1;min-width:0"><span style="display:block;font-size:15px;font-weight:${n.read_at ? 400 : 600};line-height:1.3">${esc(n.title)}</span><span class="bnote" style="display:block;margin-top:3px">${esc(n.body || "")}</span></span>
-      <span style="font-size:12px;color:#9a9ca3;white-space:nowrap">${esc(when(n.created_at))}</span></button>`).join("")
+      <span style="font-size:12px;color:#9a9ca3;white-space:nowrap">${esc(when(n.created_at))}</span></button></div>`).join("")
     : `<p class="bnote" style="margin:6px 2px">${esc(t.noNotes)}</p>`;
-  const anyAudio = notesData.reqs.some(r => r.status !== "queued"), anyNote = notesData.notes.length > 0, anyUnread = unread > 0 || notesData.notes.some(n => !n.read_at);
-  return `<div class="bbody" style="flex:1;min-height:0;gap:0"><div class="flabel nl" style="margin-top:4px"><span>${esc(t.myAudio)}</span>${anyAudio ? `<button type="button" data-nclear="audio">${esc(t.clearAudio)}</button>` : ""}</div>${audios}${notesData.reqs.length ? `<p class="bnote" style="margin:2px 2px 0;font-size:12px">${esc(t.audioKept)}</p>` : ""}
-    <div class="flabel" style="margin-top:18px">${esc(t.notes)}</div>
-    ${anyNote ? `<div class="nbar"><button type="button" data-nclear="read"${anyUnread ? "" : " disabled"}>${esc(t.markAllRead)}</button><button type="button" data-nclear="all">${esc(t.clearAll)}</button></div>` : ""}${notes}</div>`;
+  const u = nUnread();
+  const bar = !notesData.notes.length ? "" : noteAsk
+    ? `<div class="nbar confirm"><div class="q">${esc(t.confirmClear)}</div><button type="button" class="no" data-nclear="no">${esc(t.cancelB)}</button><button type="button" class="yes" data-nclear="all">${esc(t.clearAll)}</button></div>`
+    : `<div class="nbar"><button type="button" class="go brand" data-nclear="read"${u ? "" : " disabled"}>${esc(t.markAllRead)}</button><button type="button" class="tr" data-nclear="ask" aria-label="${esc(t.clearAll)}">${trash}</button></div>`;
+  return `<div class="bbody" style="flex:1;min-height:0;gap:0"><div class="nlab"><span>${esc(t.myAudio)}</span></div>${audios}
+    <div class="nlab" style="margin-top:18px"><span>${esc(t.notes)}</span>${u ? `<span class="nchip">${esc(t.newN(u))}</span>` : ""}</div>${notes}${bar}</div>`;
 }
+/* the sheet's own actions. A clear is soft: the row is hidden for this reader (cleared_at), never deleted */
+async function clearNotes(what, arg) {
+  if (!notesData) return;
+  const now = new Date().toISOString(), patch = (path, body) => rest(path, {method: "PATCH", body: JSON.stringify(body)});
+  try {
+    if (what === "ask") { noteAsk = true; renderSheet(); return; }
+    if (what === "no") { noteAsk = false; renderSheet(); return; }
+    if (what === "read") {
+      await patch("notifications?read_at=is.null&cleared_at=is.null", {read_at: now});
+      notesData.notes.forEach(n => { n.read_at = n.read_at || now; });
+    } else if (what === "all") {
+      await patch("notifications?cleared_at=is.null", {read_at: now, cleared_at: now});
+      notesData.notes = []; noteAsk = false;
+    } else if (what === "one") {
+      const id = Number(arg);
+      await patch(`notifications?id=eq.${id}`, {read_at: now, cleared_at: now});
+      notesData.notes = notesData.notes.filter(n => n.id !== id);
+    } else if (what === "audio") {
+      const [sid, l] = String(arg).split("|");
+      await patch(`audio_requests?story_id=eq.${encodeURIComponent(sid)}&lang=eq.${encodeURIComponent(l)}&status=neq.queued`, {cleared_at: now});
+      notesData.reqs = notesData.reqs.filter(r => !(String(r.story_id) === sid && r.lang === l));
+    }
+  } catch (e) { toast(T[lang].error); return; }
+  unread = nUnread(); paintBadge();
+  if (sheetKind === "notes") renderSheet();
+}
+async function markNoteRead(id) {
+  const n = notesData && notesData.notes.find(x => x.id === Number(id));
+  if (!n || n.read_at) return;
+  n.read_at = new Date().toISOString(); unread = nUnread(); paintBadge();
+  rest(`notifications?id=eq.${Number(id)}`, {method: "PATCH", body: JSON.stringify({read_at: n.read_at})}).catch(() => {});
+}
+/* swipe a notification left to show Clear (a long swipe clears it); one row open at a time */
+(function () {
+  const OPEN = 96, FAR = 190;
+  let row = null, sx = 0, sy = 0, base = 0, dx = 0, mode = "";             // mode: "" until the direction is known, then "h" or "v"
+  const rowOf = e => e.target.closest && e.target.closest(".nsw");
+  const slide = (sw, x, anim) => { sw.classList.toggle("drag", !anim); sw.querySelector(".nrow").style.transform = `translateX(${x}px)`; sw.classList.toggle("open", x < 0); };
+  const closeOthers = keep => bsheet.querySelectorAll(".nsw.open").forEach(o => { if (o !== keep) { slide(o, 0, true); delete o.dataset.x; } });
+  bsheet.addEventListener("pointerdown", e => {
+    if (sheetKind !== "notes" || e.target.closest(".nrm")) return;
+    const sw = rowOf(e); if (!sw) return;
+    closeOthers(sw);
+    row = sw; sx = e.clientX; sy = e.clientY; base = Number(sw.dataset.x || 0); dx = 0; mode = "";
+  });
+  bsheet.addEventListener("pointermove", e => {
+    if (!row) return;
+    const mx = e.clientX - sx, my = e.clientY - sy;
+    if (!mode) {
+      if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+      mode = Math.abs(mx) > Math.abs(my) ? "h" : "v";
+      if (mode === "h") { try { row.setPointerCapture(e.pointerId); } catch (err) { /* ok */ } }
+    }
+    if (mode !== "h") return;
+    dx = Math.min(0, Math.max(-(FAR + 40), base + mx));
+    slide(row, dx, false);
+  });
+  const end = () => {
+    if (!row) return;
+    const sw = row, was = mode; row = null; mode = "";
+    if (was !== "h") return;
+    swipeAt = Date.now();
+    if (dx <= -FAR) { clearNotes("one", sw.dataset.nsw); return; }
+    const open = dx < -OPEN / 2;
+    sw.dataset.x = open ? -OPEN : 0; slide(sw, open ? -OPEN : 0, true);
+  };
+  bsheet.addEventListener("pointerup", end); bsheet.addEventListener("pointercancel", end);
+})();
 
 /* Daily recap: before 11 pm, when and how long; then the day's articles, Listen, and Notify me */
 let recapData = null;
@@ -4322,9 +4402,15 @@ bsheet.addEventListener("click", async e => {
   if (sheetKind === "follow" && (b.dataset.fsub || b.dataset.fall || b.dataset.fone || b.dataset.fword)) { e.stopImmediatePropagation(); followClick(b); return; }
   if (b.dataset.fback) { e.stopImmediatePropagation(); followSub = null; renderSheet(); return; }
   if (b.dataset.nclear) { e.stopImmediatePropagation(); clearNotes(b.dataset.nclear); return; }
+  if (b.dataset.naudio) { e.stopImmediatePropagation(); clearNotes("audio", b.dataset.naudio); return; }
+  if (b.dataset.nrm) { e.stopImmediatePropagation(); clearNotes("one", b.dataset.nrm); return; }
   if (b.dataset.nplay) { e.stopImmediatePropagation(); const k = b.dataset.nplay; closeSheet(); playAudio(k); return; }
   if (b.dataset.nurl !== undefined) {
     e.stopImmediatePropagation();
+    if (Date.now() - swipeAt < 350) return;                  // the end of a swipe is not a tap
+    const sw = b.closest(".nsw");
+    if (sw && sw.classList.contains("open")) { sw.dataset.x = 0; sw.querySelector(".nrow").style.transform = ""; sw.classList.remove("open"); return; }   // a tap closes an open row
+    if (b.dataset.nid) markNoteRead(b.dataset.nid);
     const m = (b.dataset.nurl || "").match(/#\/story\/(\d+)/);
     closeSheet();
     if (m) setTimeout(() => { history.pushState({story: m[1]}, "", `#/story/${m[1]}`); openedFromDeck = true; openStory(m[1], null, {instant: true, noHistory: true}); }, 80);
