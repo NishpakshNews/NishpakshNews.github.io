@@ -462,24 +462,3 @@ def describe(ta: str, tb: str, d: Difference | None = None) -> dict:
     if "weekday" in detail:
         out["note"] = "a weekday written beside one of the dates is not the day of that date"
     return out
-
-
-def conflict_candidates(texts: dict[int, str], min_cos: float = QUESTION_COS) -> dict[tuple[int, int], dict]:
-    """Pairs of statements of one story that answer one question two ways, by the typed reading above: {(a, b): descriptor}.
-    A pair whose names differ on both sides is another subject, not a dispute. Proposals only: the dispute gate and the
-    model asked 'can both be true?' decide."""
-    from . import tidy
-    from .relate import Profile
-    ids = sorted(texts)
-    prof = {i: Profile(texts[i]) for i in ids}
-    W = tidy.weights(list(prof.values()))
-    out = {}
-    for k, a in enumerate(ids):
-        for b in ids[k + 1:]:
-            cos = tidy.measures(W, tidy.bag(prof[a]), tidy.bag(prof[b]))[0]
-            if cos < min_cos:
-                continue
-            d = difference(texts[a], texts[b], prof[a], prof[b])
-            if d.conflicts and not any(f == "names" for f, _ in d.soft) and tidy.ordinals(texts[a]) == tidy.ordinals(texts[b]):
-                out[(a, b)] = describe(texts[a], texts[b], d)
-    return out
