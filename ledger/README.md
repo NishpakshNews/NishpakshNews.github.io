@@ -35,6 +35,11 @@ the next session starts from numbers.
   `excluded_terms` {"list:word": n} count the code exclusions at every step. `now` holds readings that are not
   sums: `cap_left` (of `embed_daily_cap` today), `allowance` (what the pacing curve opens now), `passed_waiting`
   (passed, waiting for slice room), `undecided` (headlines still to ask).
+- `shadow` (Oct 29 2026): what tidy / fusion / insert WOULD have done to the pages published or matured this run (nothing is
+  changed): `stories`, `lines`, `pairs`, `outcomes` (same / covered / overlap / conflict / distinct), `folded`, `stories_with_fold`,
+  `to_one_sentence`, `inspector_repeats` (what the current code counts), `weekday_errors`, `also_lines`, `also_would_insert`,
+  `also_why_not`, and up to 5 `sample_folds`, `sample_overlaps`, `sample_inserted` to READ. Any sampled fold or insertion that is
+  not right is a false positive: the systems stay off until a day of samples has none.
 - `problems`: the run's health problems and failed steps.
 
 ## Reading it
