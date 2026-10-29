@@ -138,8 +138,22 @@ class Settings:
     # a light pipeline when many stories are already ready (owner, Oct 28 2026: the desk is the bottleneck, ~20 were ready
     # and the pipeline still spent 30 of its 42 minutes reading and analysing more): at or above this many ready stories
     # the run only fetches, groups and rates, and reads/analyses at most `light_read_allowance` stories. 0 = never light.
-    light_ready_min: int = 8
+    # Oct 29 2026 (owner): the desk now runs FIRST in every job, so this count is taken AFTER it has written; 8 -> 4 (the desk
+    # writes at most about 4 an hour, so 4 left is a cushion for the next hour's first desk run).
+    light_ready_min: int = 4
     light_read_allowance: int = 2
+    # a light run also reads this many NEW express stories (they used to wait for a full run, so with the pool mostly above the
+    # threshold none was ever read and no express article was written); stories already begun are always finished
+    light_express_allowance: int = 1
+    # an almost empty pool (fewer ready stories than this at the start of a job) is primed BEFORE the desk: the best waiting
+    # stories are read and analysed first (`python -m nishpaksh.run --prime`), so the first desk run has something to write
+    prime_below: int = 2
+    prime_read_allowance: int = 2
+    # a full run is a REFILL (owner, Oct 29 2026): it prepares as many stories as the pool is short of `refill_target`, counting
+    # that about `refill_yield` of the stories read become ready, instead of always the whole queue (`prep_queue`).
+    # No clock is involved; the run's own time budget stays only as a safety net.
+    refill_target: int = 8
+    refill_yield: float = 0.5
     desk_per_hour: int = 2               # articles the writer publishes in one clock hour from any story (owner)
     desk_beat_seat: int = 2              # ...plus this many for Domains, Sport or express stories only (express.py: Oct 13 2026, 1 -> 2); empty if none is ready
     desk_tries: int = 5                  # stories the writer job tries per run before giving up

@@ -384,6 +384,14 @@ def main() -> None:
     skipping = refused_last_run(store)
     router.skip_models(skipping)
     stats = work(store, router, until=t0 + a.minutes * 60)
+    # how many articles this run published, for the workflow: the job's first desk run publishes the feed at once only if
+    # there is something new in it (hourly.yml, Oct 29 2026)
+    if os.environ.get("GITHUB_OUTPUT"):
+        try:
+            with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                f.write(f"published={len(stats.get('published') or [])}\n")
+        except OSError:
+            pass
     from .compose import finish_translations
     steps: dict[str, int] = {}                                   # seconds of each step after the writing, to see where the rest of the run went
 

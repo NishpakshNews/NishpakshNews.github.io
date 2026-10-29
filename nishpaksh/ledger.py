@@ -400,12 +400,37 @@ def _embed_used(store, day: str) -> dict | None:
     return {"total": sum(by_key.values()), "by_key": by_key}
 
 
+def merge_desk_reports(reports: list[dict]) -> dict | None:
+    """One desk record for a job. Since Oct 29 2026 the desk runs twice in a job (before and after the pipeline): the first
+    report gives the state at the start (seats, ready, already this hour), and what was written, tried or skipped is the
+    sum of both."""
+    reports = [r for r in reports if r]
+    if not reports:
+        return None
+    out = dict(reports[0])
+    for r in reports[1:]:
+        for key in ("published", "express"):
+            if r.get(key):
+                out[key] = list(out.get(key) or []) + list(r[key])
+        if "tried" in r:
+            out["tried"] = int(out.get("tried") or 0) + int(r["tried"] or 0)
+        for key in ("skipped", "short"):
+            if isinstance(r.get(key), dict):
+                merged = dict(out.get(key) or {})
+                for k, v in r[key].items():
+                    merged[k] = merged[k] + v if isinstance(v, int) and isinstance(merged.get(k), int) else v
+                out[key] = merged
+        if isinstance(r.get("beat_seat"), list):
+            out["beat_seat"] = (out["beat_seat"] if isinstance(out.get("beat_seat"), list) else []) + r["beat_seat"]
+    return out
+
+
 def _desk_report(store, since: dt.datetime) -> dict | None:
     from sqlalchemy import select
     from .db import diagnostics
-    row = store.one(select(diagnostics.c.report).where(diagnostics.c.kind == "desk", diagnostics.c.created_at >= since)
-                    .order_by(diagnostics.c.created_at.desc()).limit(1))
-    return (row or {}).get("report")
+    rows = store.rows(select(diagnostics.c.report).where(diagnostics.c.kind == "desk", diagnostics.c.created_at >= since)
+                      .order_by(diagnostics.c.created_at.asc()))
+    return merge_desk_reports([r.get("report") for r in rows])
 
 
 def record(store, directory: pathlib.Path) -> dict | None:

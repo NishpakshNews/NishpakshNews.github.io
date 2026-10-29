@@ -8,6 +8,11 @@ name: hourly-pipeline
 # must not overlap, so the desk now runs as soon as the pipeline finishes (pipeline 17 min on average, 31 at
 # most; desk 7, at most 23: Oct 8-10 2026). Their own time budgets are unchanged.
 #
+# The order since Oct 29 2026 (owner): the DESK RUNS FIRST. A full run (the refill) can take over an hour, and for all of it
+# nothing was published. Now the job starts by writing what is ready (after "priming" an almost empty pool), saves and
+# publishes the feed at once, and only then runs the pipeline; the desk runs again after it for the seats still unused and the
+# stories the pipeline made ready. The ready count that decides a light or a full run is therefore taken after the writing.
+#
 # Started every hour at :05 by Supabase (pg_cron -> workflow_dispatch, see supabase/migrations). The gate
 # lets the Supabase trigger through only if no run has started recently. "Run workflow" (manual) always
 # goes ahead.
@@ -50,9 +55,9 @@ jobs:
     needs: gate
     if: needs.gate.outputs.go == 'true'
     runs-on: ubuntu-latest
-    # Safety net only. The pipeline stops starting new work at 45 minutes and the desk at 20; this limit
-    # should never be what ends a healthy run.
-    timeout-minutes: 110
+    # Safety net only. The pipeline stops starting new work at 45 minutes and each desk run at 28; this limit
+    # should never be what ends a healthy run. (110 -> 180 on Oct 29 2026: the job now holds two desk runs and two saves.)
+    timeout-minutes: 180
     permissions:
       contents: write          # the newsroom backup, the archive and feed branches
       actions: write           # start the audio job when a reader asked for audio (audio.yml)
@@ -75,6 +80,10 @@ jobs:
       RUN_TRIGGER: ${{ github.event.inputs.reason || github.event_name }}
     steps:
       - uses: actions/checkout@v4
+      - name: Note when this job started
+        # the gate spaces the hours by the start of the run; the pipeline now starts only after the first desk run, so
+        # its `runs` row takes the start of the JOB (nishpaksh/run.py, RUN_STARTED_AT)
+        run: echo "RUN_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%S)" >> "$GITHUB_ENV"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -90,8 +99,56 @@ jobs:
       - name: Load the newsroom
         id: restore
         run: bash .github/scripts/newsroom.sh restore
+      - name: Prime an almost empty pool
+        # fewer than `prime_below` stories ready: the best waiting stories are read and analysed BEFORE the first desk run, so it
+        # has something to write. Nothing happens when the pool is fine. Never stops the hour.
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+          GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+          GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
+        run: python -m nishpaksh.run --prime
+      - name: Write and publish first (the desk)
+        id: desk_first
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
+        continue-on-error: true      # a failed first desk run must not skip the pipeline
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+          GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+          GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}   # the Translator project's key: quality tier only (models.yaml keys)
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: python -m nishpaksh.desk --minutes 28
+      # What the first desk run wrote is saved and published NOW (only when it published something; if its output is missing,
+      # the steps run). Same order and same safety as at the end: save first, then the copy, the feed, the notifications.
+      - name: Save the newsroom (first desk run)
+        id: save_first
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' && steps.desk_first.outputs.published != '0' }}
+        run: bash .github/scripts/newsroom.sh save
+      - name: Keep the copy in the cache (first desk run)
+        if: ${{ !cancelled() && steps.save_first.outcome == 'success' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .newsroom/cache
+          key: newsroom-${{ github.run_id }}-${{ github.run_attempt }}-first
+      - name: Copy the live articles to Supabase (first desk run)
+        if: ${{ !cancelled() && steps.save_first.outcome == 'success' }}
+        continue-on-error: true
+        run: python -m nishpaksh.mirror
+      - name: Publish the feed (first desk run)
+        id: feed_first
+        if: ${{ !cancelled() && steps.save_first.outcome == 'success' }}
+        continue-on-error: true
+        run: bash .github/scripts/publish_feed.sh
+      - name: Send notifications (first desk run)
+        if: ${{ !cancelled() && steps.save_first.outcome == 'success' && steps.feed_first.outcome == 'success' }}
+        continue-on-error: true
+        run: python -m nishpaksh.notify --send-only
       - name: Run pipeline
         id: pipeline
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
@@ -103,8 +160,12 @@ jobs:
         # a story leaves the newsroom only after its page is pushed (nishpaksh/pagearchive.py)
         if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
         run: bash .github/scripts/archive_pages.sh
-      - name: Write and publish (the desk)
-        if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
+      - name: Write and publish again (the desk)
+        # only after a FULL run (a refill, owner Oct 29 2026): the seats the first run left unused and the stories the refill has
+        # just made ready. After a light run the first run has used the seats and the next hour's first run takes what is new.
+        # If the pipeline failed or left no answer, this step runs as well.
+        id: desk
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' && steps.pipeline.outputs.light != 'true' }}
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}

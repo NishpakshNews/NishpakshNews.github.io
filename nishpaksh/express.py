@@ -764,14 +764,15 @@ def _now_utc() -> dt.datetime:
     return utcnow()
 
 
-def focus(store, now: dt.datetime | None = None) -> set[int]:
+def focus(store, now: dt.datetime | None = None, limit: int | None = None) -> set[int]:
     """The express stories to read and analyse this run: those already begun, plus the newest `reads_per_run`
-    that have not been read at all. The cap is the express lane's own; it never takes a place from the
-    preparation queue (priority.py)."""
+    that have not been read at all (`limit` replaces that number: a light run passes its own small allowance).
+    The cap is the express lane's own; it never takes a place from the preparation queue (priority.py)."""
     cands = candidates(store, now)
     begun = {sid for sid, c in cands.items() if c["read"]}
-    new = _reading_order({sid: c for sid, c in cands.items() if not c["read"]}, int(setting("reads_per_run", 3)))
-    take = new[:int(setting("reads_per_run", 3))]
+    n_new = int(setting("reads_per_run", 3)) if limit is None else max(0, int(limit))
+    new = _reading_order({sid: c for sid, c in cands.items() if not c["read"]}, n_new)
+    take = new[:n_new]
     bump("story_candidates", len(cands))
     bump("story_begun", len(begun))
     bump("story_started", len(take))

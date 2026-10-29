@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import logging
+import math
 import os
 import time
 from collections import Counter
@@ -27,6 +29,19 @@ def _light_pick(store: Store, queue_ids: list[int], allowance: int) -> list[int]
         return []
     dirty = {r["id"] for r in store.rows(select(stories.c.id).where(stories.c.dirty.is_(True), stories.c.id.in_(list(queue_ids))))}
     return [sid for sid in queue_ids if sid in dirty][:allowance]
+
+
+def refill_size(ready_n: int | None) -> int:
+    """How many stories of the queue a FULL run prepares (owner, Oct 29 2026: a full run is a refill, not "everything").
+    The pool is short of `refill_target` by `need` stories; about `refill_yield` of the stories read become ready, so
+    read need / yield of them, never fewer than a light run's allowance and never more than the whole queue. The ready
+    count unknown (the count failed): the whole queue, as before."""
+    whole = SETTINGS.prep_queue
+    if ready_n is None:
+        return whole
+    need = max(0, SETTINGS.refill_target - ready_n)
+    k = math.ceil(need / max(0.1, SETTINGS.refill_yield))
+    return max(1, min(whole, max(SETTINGS.light_read_allowance, k)))
 
 
 def _parallel(items: list, fn, until: float, workers: int) -> list:
@@ -59,9 +74,12 @@ def _parallel(items: list, fn, until: float, workers: int) -> list:
 
 
 def run(store: Store | None = None, backend=None, time_budget_min: float = 40, ingest_news: bool = True,
-        verify_budget: dict | None = None, search_news: bool | None = None, then_write: bool = False) -> dict:
+        verify_budget: dict | None = None, search_news: bool | None = None, then_write: bool = False,
+        prime: bool = False) -> dict:
     """One pipeline run. `then_write` runs the writing desk right after (local runs and tests; in
-    production the desk is its own workflow)."""
+    production the desk is its own step of the job). `prime` (owner, Oct 29 2026) is the short run before the first desk
+    of a job whose pool is almost empty: no news is fetched or searched, only the best waiting stories are read and
+    analysed (a light run's steps with `prime_read_allowance`); it leaves no row in `runs`."""
     from . import extract, ingest, match, perspectives, priority, stories as story_mod, verify, wire
     search_news = ingest_news if search_news is None else search_news
 
@@ -76,7 +94,16 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         backend = [GeminiBackend(k) for k in keys]
         log.info("using %d Gemini API key(s)", len(keys))
     from .db import insert as _insert, runs as _runs, utcnow as _now
-    run_id = store.insert_returning_id(_runs, dict(started_at=_now(), trigger=os.environ.get("RUN_TRIGGER", "manual")))
+    # the job's own start (RUN_STARTED_AT, set by hourly.yml): the desk now runs before the pipeline, and the gate spaces
+    # the hours by this time, so it must be the start of the job and not of the pipeline step (owner, Oct 29 2026)
+    started = _now()
+    try:
+        if os.environ.get("RUN_STARTED_AT"):
+            started = dt.datetime.fromisoformat(os.environ["RUN_STARTED_AT"]).replace(tzinfo=None)
+    except ValueError:
+        pass
+    run_id = None if prime else store.insert_returning_id(
+        _runs, dict(started_at=started, trigger=os.environ.get("RUN_TRIGGER", "manual")))
     router = Router(load_yaml("models.yaml")["tiers"], backend, store)
     router.resolve()
     stats: dict = {}
@@ -111,15 +138,22 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     # LIGHT run (owner, Oct 28 2026): with many stories already ready the desk is the bottleneck, so the pipeline fetches,
     # groups and rates (the news stays fresh, new articles join their stories) but does not prepare more stories than
     # `light_read_allowance`; the search for more outlets, the blocked-page reads and the picture look-ups wait.
-    light = False
-    if SETTINGS.light_ready_min > 0:
+    # The count is taken AFTER the first desk run of the job (hourly.yml), so it is what the next hour has to write.
+    light = bool(prime)
+    ready_n: int | None = None
+    if SETTINGS.light_ready_min > 0 or prime:
         try:
             from . import desk as _desk
             ready_n = len(_desk.ready(store))
-            light = ready_n >= SETTINGS.light_ready_min
-            stats["light"] = {"ready": ready_n, "min": SETTINGS.light_ready_min, "on": light}
+            if not prime:
+                light = ready_n >= SETTINGS.light_ready_min
+            stats["light"] = {"ready": ready_n, "min": SETTINGS.light_ready_min, "on": light, "prime": bool(prime)}
         except Exception as e:  # noqa: BLE001 - a full run is the safe default
             log.warning("ready count for the light run failed: %s", str(e)[:150])
+    # a full run prepares what the pool is short of, not the whole queue (refill_size); a light run never uses this
+    stats.setdefault("light", {"ready": ready_n, "min": SETTINGS.light_ready_min, "on": light, "prime": bool(prime)})
+    refill_k = None if light else refill_size(ready_n)
+    stats["refill"] = None if light else {"ready": ready_n, "target": SETTINGS.refill_target, "queue": refill_k}
 
     from . import events
     step("events", lambda: stats.__setitem__("events", events.refresh(store)))   # learned order of events, once a day
@@ -142,13 +176,13 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         # the stories being prepared for the writer (ranked in earlier runs) are searched first
         with timed("search"):
             stats["search"] = step("search", lambda: discover.discover(store, tavily, until=t0 + 8 * 60,
-                                                                       focus=set(priority.queue(store)), bank=bank))
+                                                                       focus=set(priority.queue(store, size=refill_k)), bank=bank))
     stats["retracted_headline_only"] = extract.retract_unreadable(store)
     if tavily is not None and not light:
         # pages we could not read, in stories worth reading (grouped in earlier runs)
         with timed("tavily"):
             stats["tavily_pages_read"] = step("tavily", lambda: extract.read_blocked_pages(
-                store, tavily, SETTINGS.tavily_extract_pages_per_run, focus=set(priority.queue(store)), bank=bank))
+                store, tavily, SETTINGS.tavily_extract_pages_per_run, focus=set(priority.queue(store, size=refill_k)), bank=bank))
     with timed("grouping"):
         stats["wire_assigned"] = wire.assign_wire_groups(store)
         stats["grouped"] = step("grouping", lambda: story_mod.group_stories(store, router))   # a failure must not stop reading and writing
@@ -160,14 +194,15 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     # with 3+ sources is rated from its headlines; the best `prep_queue` of them are prepared
     with timed("rating"):
         stats["rated"] = step("priority", lambda: priority.rank_new(store, router))
-    queue_ids = priority.queue(store)
+    queue_ids = priority.queue(store, size=refill_k)
     focus = set(queue_ids)
     stats["queue"] = len(focus)
     # express stories (express.py): their own small reading cap, read from one outlet; apart from the queue.
-    # A light run does not read them (their reading waits for a full run); its allowance goes to the queue's best stories.
+    # A light run reads only `light_express_allowance` NEW ones (it read none until Oct 29 2026, so with the pool above the
+    # threshold no express story was ever read); those already begun are finished; the queue's allowance is separate.
     if light:
-        express_ids = set()
-        picked = _light_pick(store, queue_ids, SETTINGS.light_read_allowance)
+        express_ids = step("express_focus", lambda: _express.focus(store, limit=SETTINGS.light_express_allowance)) or set()
+        picked = _light_pick(store, queue_ids, SETTINGS.prime_read_allowance if prime else SETTINGS.light_read_allowance)
         focus = set(picked)
         stats["light"]["read"] = picked
     else:
@@ -351,8 +386,9 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
         stats["systems"] = auditcount.snapshot()      # where a technical system and the old list it replaced disagreed
     except Exception:  # noqa: BLE001
         pass
-    stats["health"] = health(store, stats)
-    store.exec(update(_runs).where(_runs.c.id == run_id).values(finished_at=_now(), stats=stats))
+    if run_id is not None:          # a prime run leaves no record: it is not one of the hours
+        stats["health"] = health(store, stats)
+        store.exec(update(_runs).where(_runs.c.id == run_id).values(finished_at=_now(), stats=stats))
     log.info("run complete: %s", stats)
     return stats
 
@@ -459,12 +495,30 @@ def main() -> None:
     p.add_argument("--time-budget", type=float, default=40, help="minutes")
     p.add_argument("--no-ingest", action="store_true")
     p.add_argument("--no-search", action="store_true")
+    p.add_argument("--prime", action="store_true",
+                   help="before the first desk run: if fewer than `prime_below` stories are ready, read and analyse the best waiting stories")
     p.add_argument("-v", "--verbose", action="store_true")
     a = p.parse_args()
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     try:
-        run(time_budget_min=a.time_budget, ingest_news=not a.no_ingest, search_news=not (a.no_search or a.no_ingest))
+        if a.prime:
+            store = Store(database_url())
+            store.init()
+            from . import desk
+            n = len(desk.ready(store))
+            if n >= SETTINGS.prime_below:
+                log.info("prime: %d stories ready (at least %d): nothing to prepare first", n, SETTINGS.prime_below)
+                return
+            log.info("prime: only %d stories ready: reading and analysing the best waiting ones first", n)
+            run(store=store, time_budget_min=a.time_budget, ingest_news=False, search_news=False, prime=True)
+            return
+        stats = run(time_budget_min=a.time_budget, ingest_news=not a.no_ingest, search_news=not (a.no_search or a.no_ingest))
+        # for the workflow: the second desk run (after the pipeline) is only for a full run, i.e. a refill (owner, Oct 29 2026)
+        if os.environ.get("GITHUB_OUTPUT"):
+            light = bool(((stats or {}).get("light") or {}).get("on"))
+            with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                f.write(f"light={'true' if light else 'false'}\n")
     except BaseException as e:  # noqa: BLE001
         # GitHub job logs are not readable from where the pipeline is maintained: keep the traceback
         if not isinstance(e, SystemExit) or e.code not in (0, None):
