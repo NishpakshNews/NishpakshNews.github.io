@@ -925,15 +925,16 @@
   .nsw.open .nrow { box-shadow: 0 0 16px rgba(0,0,0,.12); }
   .nrow .dot { background: transparent; }
   .nsw.u .nrow .dot { background: #2f3a72; }
-  .nbar { flex: none; position: relative; z-index: 2; display: flex; gap: 10px; padding: 12px 20px calc(14px + env(safe-area-inset-bottom)); background: #fff;
-          box-shadow: 0 -10px 22px rgba(22,26,56,.13), 0 -1px 0 rgba(22,26,56,.06); }   /* a rail above the card: the list scrolls behind it */
+  /* the buttons float over the bottom of the card, no strip behind them: the list scrolls under them */
+  .nbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; gap: 10px; padding: 0 20px calc(16px + env(safe-area-inset-bottom)); pointer-events: none; }
+  .nbar > * { pointer-events: auto; box-shadow: 0 8px 22px rgba(22,26,56,.30), 0 1px 3px rgba(22,26,56,.18); }
   .nbar .go { flex: 1; height: 48px; border: 0; border-radius: 14px; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; }
   .nbar .go[disabled] { opacity: .45; cursor: default; }
   .nbar .tr { flex: none; width: 48px; height: 48px; border-radius: 14px; border: 1px solid #dcdce3; background: #fff; color: #b2251c; display: flex; align-items: center; justify-content: center; cursor: pointer; }
   .nbar .no { flex: 1; height: 48px; border-radius: 14px; border: 1px solid #dcdce3; background: #fff; color: var(--ink); font-size: 16px; font-weight: 600; cursor: pointer; }
   .nbar .yes { flex: 1; height: 48px; border-radius: 14px; border: 0; background: #b2251c; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; }
   .nbar .ask { flex-basis: 100%; }
-  .nbar.confirm { flex-wrap: wrap; } .nbar .q { flex-basis: 100%; text-align: center; font-size: 14px; color: var(--muted); margin: 0 0 2px; }
+  .nbar.confirm { flex-wrap: wrap; row-gap: 10px; } .nbar .q { flex-basis: 100%; box-shadow: none; text-align: center; font-size: 14px; color: var(--ink); background: #fff; border-radius: 14px; padding: 10px 12px; margin: 0; box-shadow: 0 8px 22px rgba(22,26,56,.22); }
   .nrow .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 7px; flex: none; }
   .rclock { border-radius: 18px; color: #fff; padding: 22px 20px; margin-top: 6px; }
   .rclock b.big { display: block; font-family: var(--head); font-size: 40px; font-weight: 600; line-height: 1.1; margin-top: 2px; }
@@ -4279,7 +4280,7 @@ function notesHtml() {
   const bar = !notesData.notes.length ? "" : noteAsk
     ? `<div class="nbar confirm"><div class="q">${esc(t.confirmClear)}</div><button type="button" class="no" data-nclear="no">${esc(t.cancelB)}</button><button type="button" class="yes" data-nclear="all">${esc(t.clearAll)}</button></div>`
     : `<div class="nbar"><button type="button" class="go brand" data-nclear="read"${u ? "" : " disabled"}>${esc(t.markAllRead)}</button><button type="button" class="tr" data-nclear="ask" aria-label="${esc(t.clearAll)}">${trash}</button></div>`;
-  return `<div class="bbody" style="flex:1;min-height:0;gap:0"><div class="nlab"><span>${esc(t.myAudio)}</span></div>${audios}
+  return `<div class="bbody" style="flex:1;min-height:0;gap:0;padding-bottom:${notesData.notes.length ? (noteAsk ? 150 : 96) : 22}px"><div class="nlab"><span>${esc(t.myAudio)}</span></div>${audios}
     <div class="nlab" style="margin-top:18px"><span>${esc(t.notes)}</span>${u ? `<span class="nchip">${esc(t.newN(u))}</span>` : ""}</div>${notes}</div>${bar}`;
 }
 /* the sheet's own actions. A clear is soft: the row is hidden for this reader (cleared_at), never deleted */
