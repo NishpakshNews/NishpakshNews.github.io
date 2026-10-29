@@ -2929,7 +2929,14 @@ $("share").addEventListener("click", async () => {
   // the short share page (/s/<id>/, Hindi /hi/s/<id>/): chat apps read its preview (headline, opening, picture) and it
   // sends the reader on to the article (nishpaksh/sharepages.py). Not the #/story/ address: robots never see the part after #.
   const base = location.pathname.replace(/(?:hi\/)?(?:s\/[^/]*\/?)?(?:index\.html)?$/, "");
-  const url = `${location.origin}${base}${lang === "hi" ? "hi/" : ""}s/${encodeURIComponent(openId)}/`;
+  const shortUrl = `${location.origin}${base}${lang === "hi" ? "hi/" : ""}s/${encodeURIComponent(openId)}/`;
+  // use the share page only when it exists (it is built hourly; a brand-new article or an older deploy has none): else the plain link
+  let url = `${location.origin}${base}?lang=${lang}#/story/${encodeURIComponent(openId)}`;
+  try {
+    const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 1500);
+    const r = await fetch(shortUrl, {method: "HEAD", cache: "no-store", signal: ac.signal}); clearTimeout(t);
+    if (r.ok) url = shortUrl;
+  } catch (e) {}
   const title = $("sheet-h").textContent || "Nishpaksh";
   if (navigator.share) {
     try { await navigator.share({title, text: title, url}); return; }
