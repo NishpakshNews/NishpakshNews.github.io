@@ -907,6 +907,7 @@
   .nrow { display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid #eeeef1; width: 100%; border-left: 0; border-right: 0; border-bottom: 0;
           background: none; text-align: start; color: var(--ink); cursor: pointer; }
   /* notifications sheet (design D, owner Oct 29 2026): swipe a row to clear it, a bar at the bottom, unread tinted */
+  .nlab, .naudio, .nsw, .bbody > .bnote { flex-shrink: 0; }   /* a long list scrolls; its rows are never squeezed */
   .nlab { display: flex; align-items: center; gap: 8px; white-space: nowrap; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 16px 6px 4px; }
   html.hi .nlab { letter-spacing: 0; text-transform: none; font-size: 13px; }
   .nchip { flex: none; background: #2f3a72; color: #fff; border-radius: 999px; font-size: 11px; letter-spacing: 0; padding: 2px 8px; text-transform: none; }
@@ -924,7 +925,8 @@
   .nsw.open .nrow { box-shadow: 0 0 16px rgba(0,0,0,.12); }
   .nrow .dot { background: transparent; }
   .nsw.u .nrow .dot { background: #2f3a72; }
-  .nbar { position: sticky; bottom: 0; display: flex; gap: 10px; padding: 14px 0 2px; margin-top: 4px; background: linear-gradient(rgba(255,255,255,0), #fff 28%); }
+  .nbar { flex: none; position: relative; z-index: 2; display: flex; gap: 10px; padding: 12px 20px calc(14px + env(safe-area-inset-bottom)); background: #fff;
+          box-shadow: 0 -10px 22px rgba(22,26,56,.13), 0 -1px 0 rgba(22,26,56,.06); }   /* a rail above the card: the list scrolls behind it */
   .nbar .go { flex: 1; height: 48px; border: 0; border-radius: 14px; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; }
   .nbar .go[disabled] { opacity: .45; cursor: default; }
   .nbar .tr { flex: none; width: 48px; height: 48px; border-radius: 14px; border: 1px solid #dcdce3; background: #fff; color: #b2251c; display: flex; align-items: center; justify-content: center; cursor: pointer; }
@@ -4278,7 +4280,7 @@ function notesHtml() {
     ? `<div class="nbar confirm"><div class="q">${esc(t.confirmClear)}</div><button type="button" class="no" data-nclear="no">${esc(t.cancelB)}</button><button type="button" class="yes" data-nclear="all">${esc(t.clearAll)}</button></div>`
     : `<div class="nbar"><button type="button" class="go brand" data-nclear="read"${u ? "" : " disabled"}>${esc(t.markAllRead)}</button><button type="button" class="tr" data-nclear="ask" aria-label="${esc(t.clearAll)}">${trash}</button></div>`;
   return `<div class="bbody" style="flex:1;min-height:0;gap:0"><div class="nlab"><span>${esc(t.myAudio)}</span></div>${audios}
-    <div class="nlab" style="margin-top:18px"><span>${esc(t.notes)}</span>${u ? `<span class="nchip">${esc(t.newN(u))}</span>` : ""}</div>${notes}${bar}</div>`;
+    <div class="nlab" style="margin-top:18px"><span>${esc(t.notes)}</span>${u ? `<span class="nchip">${esc(t.newN(u))}</span>` : ""}</div>${notes}</div>${bar}`;
 }
 /* the sheet's own actions. A clear is soft: the row is hidden for this reader (cleared_at), never deleted */
 async function clearNotes(what, arg) {
