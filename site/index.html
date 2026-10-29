@@ -913,16 +913,23 @@
   .nchip { flex: none; background: #2f3a72; color: #fff; border-radius: 999px; font-size: 11px; letter-spacing: 0; padding: 2px 8px; text-transform: none; }
   .naudio { align-items: flex-start; }
   .naudio .t { flex: 1; min-width: 0; }
-  .naudio .exp { display: inline-block; margin-top: 6px; font-size: 11.5px; color: var(--muted); background: #fff; border-radius: 999px; padding: 2px 9px; }
-  .naudio .nx { width: 26px; height: 26px; border-radius: 50%; border: 0; background: rgba(0,0,0,.06); color: var(--muted); display: flex; align-items: center; justify-content: center; flex: none; cursor: pointer; margin: -2px -4px 0 0; }
+  .naudio .exp { display: flex; align-items: center; gap: 5px; margin-top: 5px; font-size: 13px; color: var(--muted); }
   .nsw { position: relative; overflow: hidden; border-radius: 14px; margin: 0 -12px; touch-action: pan-y; }
   .nsw .nrm { position: absolute; top: 0; bottom: 0; right: 0; width: 96px; border: 0; background: #b2251c; color: #fff; font: inherit; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; }
-  .nsw .nrow { position: relative; z-index: 1; margin: 0; width: 100%; padding: 13px 12px; border: 0; border-radius: 14px; background: #fff; transition: transform 220ms var(--ease); }
-  .nsw.drag .nrow { transition: none; }
+  .nsw { -webkit-user-select: none; user-select: none; }
+  .nsw .swin { position: relative; z-index: 1; margin: 0; width: 100%; transition: transform 220ms var(--ease); }
+  .nsw .nrow.swin { padding: 13px 12px; border: 0; border-radius: 14px; background: #fff; }
+  .nsw.na { margin: 6px 0; border-radius: 16px; }
+  .nsw .naudio.swin { padding: 12px 14px; border-radius: 16px; background: #f6f6f9; }
+  .nsw.drag .swin { transition: none; }
   .nsw .nrm { opacity: 0; transition: opacity 0s linear 220ms; }   /* hidden at rest, so no red shows at the rounded corners */
   .nsw.open .nrm, .nsw.drag .nrm { opacity: 1; transition: none; }
-  .nsw.u .nrow { background: #eff0f6; }
-  .nsw.open .nrow { box-shadow: 0 0 16px rgba(0,0,0,.12); }
+  .nsw.u .nrow.swin { background: #eff0f6; }
+  .nsw.open .swin { box-shadow: 0 0 16px rgba(0,0,0,.12); }
+  .nsw.out .swin { transform: translateX(-112%) !important; opacity: 0; transition: transform 420ms var(--ease) var(--d, 0ms), opacity 260ms ease-in calc(var(--d, 0ms) + 160ms); }
+  .nsw.out .nrm { opacity: 0; transition: none; }
+  .nsw.gone { height: 0 !important; margin-top: 0 !important; margin-bottom: 0 !important; transition: height 240ms var(--ease), margin 240ms var(--ease); }
+  .nlink { margin-inline-start: auto; border: 0; background: none; color: #2f3a72; font: inherit; font-size: 13.5px; font-weight: 600; letter-spacing: 0; text-transform: none; padding: 4px 6px; cursor: pointer; }
   .nrow .dot { background: transparent; }
   .nsw.u .nrow .dot { background: #2f3a72; }
   /* the buttons float over the bottom of the card, no strip behind them: the list scrolls under them */
@@ -4084,7 +4091,7 @@ Object.assign(ICON, {
   xs: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   bellg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3d4043" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
 });
-Object.assign(T.en, {notes: "Notifications", myAudio: "My audio", markAllRead: "Mark all as read", clearAll: "Clear all", clearRow: "Clear", newN: n => `${n} new`, removedIn: h => h <= 1 ? "Removed within the hour" : `Removed in ${h} h`, confirmClear: "Clear all notifications?", cancelB: "Cancel", clearThis: "Clear", noNotes: "Nothing yet. Follow a section, a state or a word and we will tell you when an article comes out.",
+Object.assign(T.en, {notes: "Notifications", myAudio: "My audio", markAllRead: "Mark all as read", clearAll: "Clear all", clearRow: "Clear", newN: n => `${n} new`, removedIn: h => h <= 1 ? "Removed within the hour" : `Removed in ${h} h`, confirmClear: "Clear all notifications?", cancelB: "Cancel", clearThis: "Clear", clearFinished: "Clear finished", removesIn: h => h <= 1 ? "Removes itself within the hour" : `Removes itself in ${h} h`, noNotes: "Nothing yet. Follow a section, a state or a word and we will tell you when an article comes out.",
   noAudio: "You have not asked for any audio yet.", ready: l => `${l} · ready`, making: l => `${l} · being made, usually within an hour`, failed: l => `${l} · could not be made`,
   followIntro: "We tell you every time an article comes out in what you follow. Tap the circle for all of it, the arrow to choose inside.",
   sectionsL: "Sections", placesL: "Places and names", states: "States", words: "Words and names", allOf: l => `All of ${l}`, all: "All",
@@ -4093,7 +4100,7 @@ Object.assign(T.en, {notes: "Notifications", myAudio: "My audio", markAllRead: "
   recapMaking: "Today's summary is being written. It will be here in a few minutes.", notifyMe: "Notify me when it is ready", listenRecap: "Listen",
   articles: n => `${n} stories today`, hm: (h, m) => `${h} h ${m} min`, recapReadyHint: "Ready", recapTimeHint: "11 pm", stop: "Stop following",
   coloursL: "When lines change colour", coloursIntro: "An article's words never change, but its colours do as more reports come in. We tell you when lines of any article turn the colours you pick, at most once an hour per article.", struckF: "struck through (replaced by later news)"});
-Object.assign(T.hi, {notes: "सूचनाएं", myAudio: "मेरे ऑडियो", markAllRead: "सब पढ़ा हुआ चिह्नित करें", clearAll: "सब हटाएं", clearRow: "हटाएं", newN: n => `${n} नई`, removedIn: h => h <= 1 ? "एक घंटे में हट जाएगा" : `${h} घंटे में हट जाएगा`, confirmClear: "सभी सूचनाएं हटाएं?", cancelB: "रद्द करें", clearThis: "हटाएं", noNotes: "अभी कुछ नहीं। कोई खंड, राज्य या शब्द फ़ॉलो करें, नया लेख आने पर हम बताएंगे।",
+Object.assign(T.hi, {notes: "सूचनाएं", myAudio: "मेरे ऑडियो", markAllRead: "सब पढ़ा हुआ चिह्नित करें", clearAll: "सब हटाएं", clearRow: "हटाएं", newN: n => `${n} नई`, removedIn: h => h <= 1 ? "एक घंटे में हट जाएगा" : `${h} घंटे में हट जाएगा`, confirmClear: "सभी सूचनाएं हटाएं?", cancelB: "रद्द करें", clearThis: "हटाएं", clearFinished: "पूरे हुए हटाएं", removesIn: h => h <= 1 ? "एक घंटे में अपने-आप हट जाएगा" : `${h} घंटे में अपने-आप हट जाएगा`, noNotes: "अभी कुछ नहीं। कोई खंड, राज्य या शब्द फ़ॉलो करें, नया लेख आने पर हम बताएंगे।",
   noAudio: "आपने अभी कोई ऑडियो नहीं मांगा।", ready: l => `${l} · तैयार`, making: l => `${l} · बन रहा है, आमतौर पर एक घंटे में`, failed: l => `${l} · नहीं बन सका`,
   followIntro: "आप जो फ़ॉलो करते हैं, उसमें हर नया लेख आने पर हम बताते हैं। पूरा चुनने के लिए गोले पर, भीतर चुनने के लिए तीर पर टैप करें।",
   sectionsL: "खंड", placesL: "जगहें और नाम", states: "राज्य", words: "शब्द और नाम", allOf: l => `पूरा ${l}`, all: "सब",
@@ -4265,15 +4272,20 @@ function notesHtml() {
   if (!notesData) return `<div class="bbody"><p class="bnote">…</p></div>`;
   const ln = l => l === "hi" ? t.hindi : t.english;
   const when = ts => { const d = new Date(ts); return d.toLocaleString(lang === "hi" ? "hi-IN" : "en-IN", {hour: "2-digit", minute: "2-digit", day: "numeric", month: "short", timeZone: "Asia/Kolkata"}); };
-  const audios = notesData.reqs.length ? notesData.reqs.map(r => `<div class="naudio"><div class="t"><div class="h">${esc(r.h)}</div>
+  const clockS = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`;
+  const trashS = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>`;
+  const audios = notesData.reqs.length ? notesData.reqs.map(r => {
+    const card = `<div class="naudio${r.status === "queued" ? "" : " swin"}"><div class="t"><div class="h">${esc(r.h)}</div>
       <div style="font-size:13px;font-weight:600;margin-top:3px;color:${r.status === "done" ? "var(--est)" : r.status === "failed" ? "var(--fal)" : "var(--dis)"}">${esc(r.status === "done" ? t.ready(ln(r.lang)) : r.status === "failed" ? t.failed(ln(r.lang)) : t.making(ln(r.lang)))}</div>
-      ${r.status === "done" && r.hoursLeft ? `<span class="exp">${esc(t.removedIn(r.hoursLeft))}</span>` : ""}</div>
-      ${r.status === "done" ? `<button type="button" class="brand" data-nplay="${esc(r.story_id)}-${esc(r.lang)}" aria-label="${esc(t.play)}">${ICON.play}</button>` : r.status === "queued" ? `<span style="width:40px;display:flex;justify-content:center">${ICON.clock}</span>` : ""}
-      ${r.status !== "queued" ? `<button type="button" class="nx" data-naudio="${esc(r.story_id)}|${esc(r.lang)}" aria-label="${esc(t.clearThis)}">${ICON.xs}</button>` : ""}</div>`).join("")
+      ${r.status === "done" && r.hoursLeft ? `<div class="exp">${clockS}<span>${esc(t.removesIn(r.hoursLeft))}</span></div>` : ""}</div>
+      ${r.status === "done" ? `<button type="button" class="brand" data-nplay="${esc(r.story_id)}-${esc(r.lang)}" aria-label="${esc(t.play)}">${ICON.play}</button>` : r.status === "queued" ? `<span style="width:40px;display:flex;justify-content:center">${ICON.clock}</span>` : ""}</div>`;
+    return r.status === "queued" ? card : `<div class="nsw na" data-asw="${esc(r.story_id)}|${esc(r.lang)}"><button type="button" class="nrm" data-nrma="${esc(r.story_id)}|${esc(r.lang)}" tabindex="-1">${trashS}${esc(t.clearRow)}</button>${card}</div>`;
+  }).join("")
     : `<p class="bnote" style="margin:6px 2px">${esc(t.noAudio)}</p>`;
+  const anyFinished = notesData.reqs.some(r => r.status !== "queued");
   const trash = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>`;
   const notes = notesData.notes.length ? notesData.notes.map(n => `<div class="nsw${n.read_at ? "" : " u"}" data-nsw="${n.id}"><button type="button" class="nrm" data-nrm="${n.id}" tabindex="-1">${trash}${esc(t.clearRow)}</button>
-      <button type="button" class="nrow" data-nid="${n.id}" data-nurl="${esc(n.url || "")}"><span class="dot"></span>
+      <button type="button" class="nrow swin" data-nid="${n.id}" data-nurl="${esc(n.url || "")}"><span class="dot"></span>
       <span style="flex:1;min-width:0"><span style="display:block;font-size:15px;font-weight:${n.read_at ? 400 : 600};line-height:1.3">${esc(n.title)}</span><span class="bnote" style="display:block;margin-top:3px">${esc(n.body || "")}</span></span>
       <span style="font-size:12px;color:#9a9ca3;white-space:nowrap">${esc(when(n.created_at))}</span></button></div>`).join("")
     : `<p class="bnote" style="margin:6px 2px">${esc(t.noNotes)}</p>`;
@@ -4281,13 +4293,30 @@ function notesHtml() {
   const bar = !notesData.notes.length ? "" : noteAsk
     ? `<div class="nbar confirm"><div class="q">${esc(t.confirmClear)}</div><button type="button" class="no" data-nclear="no">${esc(t.cancelB)}</button><button type="button" class="yes" data-nclear="all">${esc(t.clearAll)}</button></div>`
     : `<div class="nbar"><button type="button" class="go brand" data-nclear="read"${u ? "" : " disabled"}>${esc(t.markAllRead)}</button><button type="button" class="tr" data-nclear="ask" aria-label="${esc(t.clearAll)}">${trash}</button></div>`;
-  return `<div class="bbody" style="flex:1;min-height:0;gap:0;padding-bottom:${notesData.notes.length ? (noteAsk ? 150 : 96) : 22}px"><div class="nlab"><span>${esc(t.myAudio)}</span></div>${audios}
+  return `<div class="bbody" style="flex:1;min-height:0;gap:0;padding-bottom:${notesData.notes.length ? (noteAsk ? 150 : 96) : 22}px"><div class="nlab"><span>${esc(t.myAudio)}</span>${anyFinished ? `<button type="button" class="nlink" data-nclear="finished">${esc(t.clearFinished)}</button>` : ""}</div>${audios}
     <div class="nlab" style="margin-top:18px"><span>${esc(t.notes)}</span>${u ? `<span class="nchip">${esc(t.newN(u))}</span>` : ""}</div>${notes}</div>${bar}`;
 }
-/* the sheet's own actions. A clear is soft: the row is hidden for this reader (cleared_at), never deleted */
+/* the sheet's own actions. A clear is soft: the row is hidden for this reader (cleared_at), never deleted.
+   Rows leave by sliding out to the left, one after another, and the gap closes (no motion when the reader asked for less) */
+const REDUCE_MOTION = matchMedia("(prefers-reduced-motion: reduce)").matches;
+function flyOut(sws, stagger) {
+  sws = sws.filter(Boolean);
+  if (!sws.length || REDUCE_MOTION) return Promise.resolve();
+  const last = Math.min((sws.length - 1) * stagger, 420);
+  sws.forEach((sw, i) => { sw.style.setProperty("--d", `${Math.min(i * stagger, 420)}ms`); sw.classList.add("out"); });
+  return new Promise(res => setTimeout(() => {
+    sws.forEach(sw => { sw.style.height = `${sw.offsetHeight}px`; });
+    void bsheet.offsetHeight;
+    sws.forEach(sw => sw.classList.add("gone"));
+    setTimeout(res, 250);
+  }, last + 430));
+}
+let clearing = false;
 async function clearNotes(what, arg) {
-  if (!notesData) return;
+  if (!notesData || clearing) return;
   const now = new Date().toISOString(), patch = (path, body) => rest(path, {method: "PATCH", body: JSON.stringify(body)});
+  const rows = () => [...bsheet.querySelectorAll(".nsw[data-nsw]")], cards = () => [...bsheet.querySelectorAll(".nsw[data-asw]")];
+  clearing = true;
   try {
     if (what === "ask") { noteAsk = true; renderSheet(); return; }
     if (what === "no") { noteAsk = false; renderSheet(); return; }
@@ -4295,18 +4324,23 @@ async function clearNotes(what, arg) {
       await patch("notifications?read_at=is.null&cleared_at=is.null", {read_at: now});
       notesData.notes.forEach(n => { n.read_at = n.read_at || now; });
     } else if (what === "all") {
-      await patch("notifications?cleared_at=is.null", {read_at: now, cleared_at: now});
+      await Promise.all([patch("notifications?cleared_at=is.null", {read_at: now, cleared_at: now}), flyOut(rows(), 45)]);
       notesData.notes = []; noteAsk = false;
     } else if (what === "one") {
       const id = Number(arg);
-      await patch(`notifications?id=eq.${id}`, {read_at: now, cleared_at: now});
+      await Promise.all([patch(`notifications?id=eq.${id}`, {read_at: now, cleared_at: now}), flyOut(rows().filter(r => r.dataset.nsw === String(id)), 0)]);
       notesData.notes = notesData.notes.filter(n => n.id !== id);
     } else if (what === "audio") {
       const [sid, l] = String(arg).split("|");
-      await patch(`audio_requests?story_id=eq.${encodeURIComponent(sid)}&lang=eq.${encodeURIComponent(l)}&status=neq.queued`, {cleared_at: now});
+      await Promise.all([patch(`audio_requests?story_id=eq.${encodeURIComponent(sid)}&lang=eq.${encodeURIComponent(l)}&status=neq.queued`, {cleared_at: now}),
+                         flyOut(cards().filter(c => c.dataset.asw === String(arg)), 0)]);
       notesData.reqs = notesData.reqs.filter(r => !(String(r.story_id) === sid && r.lang === l));
+    } else if (what === "finished") {
+      await Promise.all([patch("audio_requests?cleared_at=is.null&status=neq.queued", {cleared_at: now}), flyOut(cards(), 60)]);
+      notesData.reqs = notesData.reqs.filter(r => r.status === "queued");
     }
-  } catch (e) { toast(T[lang].error); return; }
+  } catch (e) { toast(T[lang].error); if (sheetKind === "notes") renderSheet(); return; }
+  finally { clearing = false; }
   unread = nUnread(); paintBadge();
   if (sheetKind === "notes") renderSheet();
 }
@@ -4319,15 +4353,15 @@ async function markNoteRead(id) {
 /* swipe a notification left to show Clear (a long swipe clears it); one row open at a time */
 (function () {
   const OPEN = 96, FAR = 190;
-  let row = null, sx = 0, sy = 0, base = 0, dx = 0, mode = "";             // mode: "" until the direction is known, then "h" or "v"
+  let row = null, sx = 0, sy = 0, base = 0, dx = 0, mode = "", lastTarget = null;             // mode: "" until the direction is known, then "h" or "v"
   const rowOf = e => e.target.closest && e.target.closest(".nsw");
-  const slide = (sw, x, anim) => { sw.classList.toggle("drag", !anim); sw.querySelector(".nrow").style.transform = `translateX(${x}px)`; sw.classList.toggle("open", x < 0); };
+  const slide = (sw, x, anim) => { sw.classList.toggle("drag", !anim); sw.querySelector(".swin").style.transform = `translateX(${x}px)`; sw.classList.toggle("open", x < 0); };
   const closeOthers = keep => bsheet.querySelectorAll(".nsw.open").forEach(o => { if (o !== keep) { slide(o, 0, true); delete o.dataset.x; } });
   bsheet.addEventListener("pointerdown", e => {
     if (sheetKind !== "notes" || e.target.closest(".nrm")) return;
     const sw = rowOf(e); if (!sw) return;
     closeOthers(sw);
-    row = sw; sx = e.clientX; sy = e.clientY; base = Number(sw.dataset.x || 0); dx = 0; mode = "";
+    row = sw; sx = e.clientX; sy = e.clientY; base = Number(sw.dataset.x || 0); dx = 0; mode = ""; lastTarget = e.target;
   });
   bsheet.addEventListener("pointermove", e => {
     if (!row) return;
@@ -4344,9 +4378,12 @@ async function markNoteRead(id) {
   const end = () => {
     if (!row) return;
     const sw = row, was = mode; row = null; mode = "";
-    if (was !== "h") return;
+    if (was !== "h") {                                           // a plain tap on an open audio card closes it (a notification row does that in its click handler)
+      if (sw.classList.contains("na") && sw.classList.contains("open") && !(lastTarget && lastTarget.closest("button"))) { sw.dataset.x = 0; slide(sw, 0, true); }
+      return;
+    }
     swipeAt = Date.now();
-    if (dx <= -FAR) { clearNotes("one", sw.dataset.nsw); return; }
+    if (dx <= -FAR) { if (sw.dataset.nsw) clearNotes("one", sw.dataset.nsw); else clearNotes("audio", sw.dataset.asw); return; }
     const open = dx < -OPEN / 2;
     sw.dataset.x = open ? -OPEN : 0; slide(sw, open ? -OPEN : 0, true);
   };
@@ -4406,14 +4443,14 @@ bsheet.addEventListener("click", async e => {
   if (sheetKind === "follow" && (b.dataset.fsub || b.dataset.fall || b.dataset.fone || b.dataset.fword)) { e.stopImmediatePropagation(); followClick(b); return; }
   if (b.dataset.fback) { e.stopImmediatePropagation(); followSub = null; renderSheet(); return; }
   if (b.dataset.nclear) { e.stopImmediatePropagation(); clearNotes(b.dataset.nclear); return; }
-  if (b.dataset.naudio) { e.stopImmediatePropagation(); clearNotes("audio", b.dataset.naudio); return; }
+  if (b.dataset.nrma) { e.stopImmediatePropagation(); clearNotes("audio", b.dataset.nrma); return; }
   if (b.dataset.nrm) { e.stopImmediatePropagation(); clearNotes("one", b.dataset.nrm); return; }
   if (b.dataset.nplay) { e.stopImmediatePropagation(); const k = b.dataset.nplay; closeSheet(); playAudio(k); return; }
   if (b.dataset.nurl !== undefined) {
     e.stopImmediatePropagation();
     if (Date.now() - swipeAt < 350) return;                  // the end of a swipe is not a tap
     const sw = b.closest(".nsw");
-    if (sw && sw.classList.contains("open")) { sw.dataset.x = 0; sw.querySelector(".nrow").style.transform = ""; sw.classList.remove("open"); return; }   // a tap closes an open row
+    if (sw && sw.classList.contains("open")) { sw.dataset.x = 0; sw.querySelector(".swin").style.transform = ""; sw.classList.remove("open"); return; }   // a tap closes an open row
     if (b.dataset.nid) markNoteRead(b.dataset.nid);
     const m = (b.dataset.nurl || "").match(/#\/story\/(\d+)/);
     closeSheet();
