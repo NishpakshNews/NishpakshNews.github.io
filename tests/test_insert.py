@@ -57,3 +57,14 @@ def test_the_inserted_line_keeps_its_own_colour_and_input_is_untouched():
     line = next(x for p in new for x in p if "shipyards" in x["text"])
     assert line["class"] == "single" and "_inserted" not in line
     assert PARAS == before
+
+
+def test_a_sibling_subject_needs_the_model_and_stays_out_without_it():
+    from nishpaksh import insert as I
+    paras = [[{"text": "The Cabinet approved the Container Manufacturing Promotion Scheme on Wednesday."},
+              {"text": "The scheme will boost domestic container manufacturing in India."}]]
+    also = [{"id": 1, "text": "The Cabinet also approved the Khelo India Sports Goods Manufacturing Scheme with an outlay of 1,856 crore rupees.", "role": "related"}]
+    _, r = I.insert(paras, also, "Cabinet approves container manufacturing scheme")
+    assert r["inserted"] == 0
+    _, r = I.insert(paras, also, "Cabinet approves container manufacturing scheme", ask=lambda p: "ANOTHER")
+    assert r["inserted"] == 0

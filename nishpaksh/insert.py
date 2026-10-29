@@ -68,12 +68,37 @@ def form_problem(text: str, outlets: set[str] = frozenset(), speaker: str | None
     return None
 
 
+SUBJECT_PROMPT = """A news article has this headline. Is the extra line about the SAME subject as the headline, or about ANOTHER one
+of the same kind (another scheme, case, match, person, place or event that the article merely mentions)?
+
+Answer with exactly one word: SAME, ANOTHER or UNSURE.
+
+Example
+HEADLINE: Cabinet approves scheme to boost domestic container manufacturing
+LINE: The Cabinet also approved the Khelo India Sports Goods Manufacturing Scheme with an outlay of 1,856 crore.
+ANSWER: ANOTHER
+HEADLINE: Bharatiya Rail sets 25 November deadline for 1,265 posts
+LINE: The selection process for Master Posts includes a computer based test and document verification.
+ANSWER: SAME
+HEADLINE: Cyclone Arnab upgraded by the weather department
+LINE: Maximum temperature in Shimla is estimated at 23 degrees.
+ANSWER: ANOTHER
+
+HEADLINE: {h}
+LINE: {t}
+ANSWER:"""
+
 _GENERIC = {"india", "indian", "govern", "state", "centr", "union", "minist", "court", "suprem"}
 
 
 def _alias(x: str, y: str) -> bool:
     from .reconcile import names_alias
     return names_alias(x, y)
+
+
+def shared_names(p: Profile, profiles: list[Profile]) -> set[str]:
+    setting = _setting(profiles)
+    return {n for n in p.names if n not in _GENERIC and any(n in q.names for q in profiles)} - setting
 
 
 def _setting(profiles: list[Profile]) -> set[str]:
@@ -85,7 +110,8 @@ def _setting(profiles: list[Profile]) -> set[str]:
     return {n for n, c in count.items() if c > limit}
 
 
-def judge_line(line: dict, written: list[str], profiles: list[Profile], W, anchor: Profile, outlets: set[str]) -> dict:
+def judge_line(line: dict, written: list[str], profiles: list[Profile], W, anchor: Profile, outlets: set[str],
+               ask=None, headline: str = "") -> dict:
     """{"ok": bool, "why": reason, "place": (paragraph line index, cos) | None} for one `also` line."""
     text = line.get("text") or ""
     bad = form_problem(text, outlets, line.get("speaker"))
@@ -117,7 +143,14 @@ def judge_line(line: dict, written: list[str], profiles: list[Profile], W, ancho
         w_all = sum(W.w(n) for n in mine)
         w_in = sum(W.w(n) for n in mine if any(n == m or _alias(n, m) for m in story_names))
         if w_all and w_in / w_all < NAME_COVER:
-            return {"ok": False, "why": "names something the story does not (another subject)"}
+            # New names beside a name the story has are either a detail of it ("Master Posts") or a sibling (another scheme).
+            # No weight tells them apart; ONE closed model question does, and without it the line stays out.
+            word = None
+            if ask is not None and shared_names(p, profiles):
+                m = re.match(r"\W*([A-Za-z]+)", ask(SUBJECT_PROMPT.format(h=headline, t=text)) or "")
+                word = m.group(1).upper() if m else None
+            if word != "SAME":
+                return {"ok": False, "why": "names something the story does not (another subject)"}
     tied = bool(shared) or cos_anchor >= TIE_COS
     if line.get("role") == "related" and not shared:
         return {"ok": False, "why": "another event"}
@@ -128,7 +161,7 @@ def judge_line(line: dict, written: list[str], profiles: list[Profile], W, ancho
     return {"ok": True, "why": "belongs", "place": (best, round(best_cos, 2)), "shared": sorted(shared)[:4]}
 
 
-def insert(paragraphs: list[list[dict]], also: list[dict], headline: str = "", shade=None, source_index=None) -> tuple[list[list[dict]], dict]:
+def insert(paragraphs: list[list[dict]], also: list[dict], headline: str = "", shade=None, source_index=None, ask=None) -> tuple[list[list[dict]], dict]:
     """The paragraphs with the lines that belong inserted, and a report. Nothing is changed in place."""
     paras = [[dict(x) for x in para] for para in paragraphs]
     flat = [(n, k) for n, para in enumerate(paras) for k in range(len(para))]
@@ -141,7 +174,7 @@ def insert(paragraphs: list[list[dict]], also: list[dict], headline: str = "", s
     outlets = {s.get("outlet") for x in also for s in x.get("sources") or [] if isinstance(s, dict)}
     report = {"lines": len(also), "inserted": 0, "why_not": {}, "items": []}
     # strongest tie first, so two lines about one point land in the order of their nearness
-    judged = [(judge_line(x, written, profiles, W, anchor, outlets), x) for x in also]
+    judged = [(judge_line(x, written, profiles, W, anchor, outlets, ask, headline), x) for x in also]
     room = max(1, int(len(written) * MAX_SHARE))
     for res, x in sorted(judged, key=lambda t: -(t[0].get("place", (0, 0))[1] if t[0]["ok"] else -1)):
         item = {"text": x.get("text"), **{k: v for k, v in res.items() if k != "ok"}, "ok": res["ok"]}

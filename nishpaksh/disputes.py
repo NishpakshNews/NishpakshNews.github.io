@@ -46,7 +46,8 @@ UPDATE_GAP = dt.timedelta(hours=1)
 # extra CANDIDATES here (the model, asked "can both be true?" twice, still decides). Counted always, used only when switched
 # on, as the build charter asks: a system is adopted when it beats the one it replaces (read `STATS` in the audit).
 RECONCILE_PROPOSALS = False
-STATS = {"reconcile_pairs": 0, "reconcile_new": 0}
+STATS = {"reconcile_pairs": 0, "reconcile_new": 0, "staged_different": 0, "staged_unresolved": 0}
+STAGED_ASK = None      # the one-word model question of `conflict_judge` (router call); None = the staged check is not used
 STATE_COMMON = 3       # content words two lines share when they ask one question about a state ("orange alert for Odisha")
 STATE_MAX = 2          # words that differ on either side: the answer ("orange" / "red")
 
@@ -207,6 +208,15 @@ def judge(router, texts: dict[int, str], times: dict[int, list], proposals: set[
             if p not in cands:
                 STATS["reconcile_new"] += 1
                 if RECONCILE_PROPOSALS:
+                    if STAGED_ASK is not None:
+                        from . import conflict_judge
+                        res = conflict_judge.judge(texts[p[0]], texts[p[1]], STAGED_ASK)
+                        if res["outcome"] == "different":
+                            STATS["staged_different"] += 1
+                            continue
+                        if res["outcome"] == "unresolved":
+                            STATS["staged_unresolved"] += 1
+                            continue
                     cands[p] = reconcile.KIND_OF.get(desc["facet"], "number")
     except Exception:  # noqa: BLE001
         pass

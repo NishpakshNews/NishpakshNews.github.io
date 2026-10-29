@@ -125,3 +125,24 @@ def test_conflict_candidates_name_what_is_disputed_and_leave_other_subjects_alon
     assert list(got) == [(1, 2)]
     d = got[(1, 2)]
     assert d["kind"] == "date" and len(d["values"]) == 2 and "Cabinet" in d["question"]
+
+
+def test_conflict_judge_stages():
+    from nishpaksh import conflict_judge as C
+    punjab = ("Rain will continue in Punjab for 3 days.", "Rain will continue across north India for 5 days.")
+    same = ("Police said 12 people were arrested in the raid.", "Police said 14 people were arrested in the raid.")
+    calls = []
+
+    def ask(p):
+        calls.append(p)
+        if "Punjab" in p and p.startswith("Two lines from news"):
+            return "SCOPE"
+        if "arrested in the raid" in p and p.startswith("Two lines from news"):
+            return "EVENT"           # implausible: the lines differ only in the figure
+        return "1: x\n2: y"          # not in the lines
+    assert C.judge(*punjab, ask)["outcome"] == "different"
+    assert C.judge(*same, ask)["outcome"] == "unresolved" and len(calls) == 3   # implausible -> other question -> unverified
+    assert C.judge(*same, None)["outcome"] == "unresolved"
+    assert C.judge(*same, lambda p: "SAME")["outcome"] == "real"
+    ex = ("Four people were killed in the 2024 blast at the mill.", "One person was killed in the 2023 blast at the plant.")
+    assert C.judge(*ex, lambda p: "UNSURE" if p.startswith("Two lines from") else "1: the 2024 blast at the mill\n2: the 2023 blast at the plant")["outcome"] == "different"
