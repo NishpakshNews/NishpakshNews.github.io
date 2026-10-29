@@ -324,6 +324,11 @@ the next session starts from numbers.
   `excluded_terms` {{"list:word": n}} count the code exclusions at every step. `now` holds readings that are not
   sums: `cap_left` (of `embed_daily_cap` today), `allowance` (what the pacing curve opens now), `passed_waiting`
   (passed, waiting for slice room), `undecided` (headlines still to ask).
+- `shadow` (Oct 29 2026): what tidy / fusion / insert WOULD have done to the pages published or matured this run (nothing is
+  changed): `stories`, `lines`, `pairs`, `outcomes` (same / covered / overlap / conflict / distinct), `folded`, `stories_with_fold`,
+  `to_one_sentence`, `inspector_repeats` (what the current code counts), `weekday_errors`, `also_lines`, `also_would_insert`,
+  `also_why_not`, and up to 5 `sample_folds`, `sample_overlaps`, `sample_inserted` to READ. Any sampled fold or insertion that is
+  not right is a false positive: the systems stay off until a day of samples has none.
 - `problems`: the run's health problems and failed steps.
 
 ## Reading it
@@ -433,6 +438,44 @@ def _desk_report(store, since: dt.datetime) -> dict | None:
     return merge_desk_reports([r.get("report") for r in rows])
 
 
+SAMPLES = 5
+
+
+def shadow_from_pages(pages: dict) -> dict:
+    """What the shadow systems (tidy, fusion, insert; owner Oct 29 2026: nothing of them touches an article yet) would have done
+    to these finished pages {story id: {"headline", "paragraphs": [[line]], "also": [...], "lead": [ids]}}. Plain data in, plain
+    data out, no model, no quota. Samples are kept so a later session can READ the decisions: any fold or placed line that is not
+    right is a false positive, and the adoption bar is none."""
+    from .tools import insert_shadow, tidy_shadow
+    paras = {sid: [[dict(x) for x in para if (x.get("text") or "").strip()] for para in (p.get("paragraphs") or [])] for sid, p in pages.items()}
+    protect = {sid: {int(i) for i in (p.get("lead") or []) if isinstance(i, int)} for sid, p in pages.items()}
+    t = tidy_shadow.run(paras, protect)
+    i = insert_shadow.run({sid: {"headline": p.get("headline"), "paragraphs": paras[sid], "also": p.get("also") or []} for sid, p in pages.items()})
+    return {"stories": t["stories"], "lines": t["lines"], "pairs": t["pairs"], "outcomes": t["outcomes"], "folded": t["folded"],
+            "stories_with_fold": t["stories_with_fold"], "stories_with_overlap": t["stories_with_overlap"],
+            "to_one_sentence": t["to_one_sentence"], "inspector_repeats": t["inspector_repeats"], "weekday_errors": t["weekday_errors"],
+            "also_lines": i["lines"], "also_would_insert": i["inserted"], "also_why_not": i["why_not"],
+            "sample_folds": [{"a": f.get("a_text"), "b": f.get("b_text")} for f in t["folds"][:SAMPLES]],
+            "sample_overlaps": [{"a": f.get("a_text"), "b": f.get("b_text")} for f in t["candidates"][:SAMPLES]],
+            "sample_inserted": [{"story": x["story"], "text": x["text"]} for x in i["placed"][:SAMPLES]]}
+
+
+def _shadow(store, since: dt.datetime) -> dict | None:
+    """The shadow systems on the articles published or matured since `since` (at most 12). Never raises; a failure is recorded."""
+    try:
+        from sqlalchemy import text as sql
+        pages = {}
+        with store.engine.begin() as c:
+            for sid, pay in c.execute(sql("select story_id, payload_en from published where updated_at >= :t order by updated_at desc limit 12"),
+                                      {"t": since}):
+                if pay:
+                    pages[str(sid)] = {"headline": pay.get("headline"), "paragraphs": (pay.get("narrative") or {}).get("paragraphs") or [],
+                                       "also": pay.get("also") or [], "lead": pay.get("lead") or []}
+        return shadow_from_pages(pages) if pages else None
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e)[:200]}
+
+
 def record(store, directory: pathlib.Path) -> dict | None:
     from sqlalchemy import select
     from .db import runs
@@ -444,6 +487,9 @@ def record(store, directory: pathlib.Path) -> dict | None:
     started = run["started_at"]
     entry = build_entry(run, _desk_report(store, started - dt.timedelta(minutes=5)), _outlet_table(store),
                         _intake(store, started - dt.timedelta(minutes=1)), _embed_used(store, pt_day(started)))
+    shadow = _shadow(store, started - dt.timedelta(minutes=5))
+    if shadow:
+        entry["shadow"] = shadow
     write_all(directory, entry)
     return entry
 

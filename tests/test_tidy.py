@@ -133,3 +133,15 @@ def test_a_paragraph_that_falls_to_one_sentence_is_counted():
     b = L("The deadline for the Station Master posts is 25 November 2026, the Board said on Tuesday.", [2])
     out, rep = tidy.tidy([[a, b], [L("Applications opened on Tuesday.", [3])]])
     assert rep["to_one_sentence"] == 1 and [len(p) for p in out] == [1, 1]
+
+
+def test_ledger_shadow_records_without_touching_pages():
+    from nishpaksh import ledger
+    pages = {"1": {"headline": "Cabinet approves container scheme", "lead": [],
+                   "paragraphs": [[{"text": "The Union Cabinet approved the Container Manufacturing Promotion Scheme on Wednesday."},
+                                   {"text": "The scheme aims to build domestic container production for Indian shipping lines."}]],
+                   "also": []}}
+    import copy
+    before = copy.deepcopy(pages)
+    out = ledger.shadow_from_pages(pages)
+    assert pages == before and out["stories"] == 1 and "sample_folds" in out and out["also_would_insert"] == 0
