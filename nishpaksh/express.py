@@ -764,6 +764,9 @@ def _now_utc() -> dt.datetime:
     return utcnow()
 
 
+LAST_NEW = 0
+
+
 def focus(store, now: dt.datetime | None = None, limit: int | None = None) -> set[int]:
     """The express stories to read and analyse this run: those already begun, plus the newest `reads_per_run`
     that have not been read at all (`limit` replaces that number: a light run passes its own small allowance).
@@ -773,6 +776,8 @@ def focus(store, now: dt.datetime | None = None, limit: int | None = None) -> se
     n_new = int(setting("reads_per_run", 3)) if limit is None else max(0, int(limit))
     new = _reading_order({sid: c for sid, c in cands.items() if not c["read"]}, n_new)
     take = new[:n_new]
+    global LAST_NEW
+    LAST_NEW = len(take)                    # how many NEW stories this call started (a light run's reading allowance is shared)
     bump("story_candidates", len(cands))
     bump("story_begun", len(begun))
     bump("story_started", len(take))

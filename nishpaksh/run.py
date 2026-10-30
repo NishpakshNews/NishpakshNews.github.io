@@ -212,10 +212,14 @@ def run(store: Store | None = None, backend=None, time_budget_min: float = 40, i
     # A light run reads only `light_express_allowance` NEW ones (it read none until Oct 29 2026, so with the pool above the
     # threshold no express story was ever read); those already begun are finished; the queue's allowance is separate.
     if light:
-        express_ids = step("express_focus", lambda: _express.focus(store, limit=SETTINGS.light_express_allowance)) or set()
-        picked = _light_pick(store, queue_ids, SETTINGS.prime_read_allowance if prime else read_allowance(ready_n))
+        # the light run's reading allowance is ONE total (owner, Oct 30 2026): a new express story takes a place from it
+        # (at most `light_express_allowance`), the queue gets the rest. Express stories already begun are finished.
+        total = SETTINGS.prime_read_allowance if prime else read_allowance(ready_n)
+        express_ids = step("express_focus", lambda: _express.focus(store, limit=min(SETTINGS.light_express_allowance, total))) or set()
+        picked = _light_pick(store, queue_ids, max(0, total - _express.LAST_NEW))
         focus = set(picked)
         stats["light"]["read"] = picked
+        stats["light"]["express_new"] = _express.LAST_NEW
     else:
         express_ids = step("express_focus", lambda: _express.focus(store)) or set()
         focus |= express_ids

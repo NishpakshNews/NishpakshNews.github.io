@@ -405,12 +405,20 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
         queue = [s for s in queue if s in done] + [s for s in queue if s not in done]
     except Exception:  # noqa: BLE001
         pass
+    # one express story is written first, outside the write allowance and the tries (owner, Oct 30 2026): express stories are
+    # short and were crowded out by the queue. Only if it can take a beat seat; a failure just moves on to the normal queue.
+    guaranteed: int | None = None
+    if beat_room > 0:
+        guaranteed = next((s for s in queue if s in express_ids), None)
+        if guaranteed is not None:
+            queue = [guaranteed] + [s for s in queue if s != guaranteed]
+            stats["express_first"] = guaranteed
     review_s = write_s = 0.0
     for n, sid in enumerate(queue):
         # a try is a story the writer was asked to write; stories turned away before that (not a
         # follow-up yet, no headline) do not use one up, but at most DESK_LOOK stories are looked at
         if (room <= 0 and beat_room <= 0) or stats["tried"] >= max_tries or n >= DESK_LOOK + 5 * extra \
-                or (allowed is not None and len(stats["published"]) >= allowed) \
+                or (allowed is not None and len(stats["published"]) - (guaranteed in stats["published"]) >= allowed) \
                 or (until and time.time() > until):
             break
         beat = sid in beats
@@ -448,7 +456,8 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
                 stats.setdefault("lowered_bar", {})[str(sid)] = compose.LAST_OUTCOME["detail"]["lowered_bar"]
             if sid in express_ids:
                 stats.setdefault("express", []).append(sid)
-            stats["tried"] += 1
+            if sid != guaranteed:
+                stats["tried"] += 1
             if beat and beat_room > 0:
                 beat_room -= 1
                 stats.setdefault("beat_seat", []).append(sid)
@@ -457,7 +466,8 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
             continue
         why = compose.LAST_OUTCOME.get("outcome", "?")
         if why in ("written short", "headline failed"):
-            stats["tried"] += 1
+            if sid != guaranteed:
+                stats["tried"] += 1
             if why == "written short" and compose.LAST_OUTCOME.get("detail"):    # which check failed, with the numbers
                 stats.setdefault("short", {})[str(sid)] = compose.LAST_OUTCOME["detail"]
         else:
