@@ -1099,9 +1099,28 @@
   /* voice and pace: the settings panel inside the card */
   .tkcard { max-height: calc(100vh - 40px); max-height: calc(100dvh - 40px); overflow-y: auto; scrollbar-width: none; }
   .tkcard::-webkit-scrollbar { display: none; }
-  .tkcard .tkopen { align-self: center; min-height: 40px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; }
+  /* Mute and Voice and pace (owner, Oct 30 2026): a glass pair at the foot of the card, the same material as the floating button.
+     Muted: the Mute button turns solid indigo, the voice goes flat and the blue glow goes out (only while the guide is not speaking). */
+  .tkpair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+  .tkpill { height: 44px; border: 0; border-radius: 22px; padding: 0 10px; min-width: 0; white-space: nowrap; cursor: pointer; color: #2f3a72; font-size: 14px; font-weight: 600;
+            display: inline-flex; align-items: center; justify-content: center; gap: 7px; background: rgba(255,255,255,0.7);
+            -webkit-backdrop-filter: blur(12px) saturate(1.3); backdrop-filter: blur(12px) saturate(1.3);
+            box-shadow: inset 0 0 0 1px rgba(74,134,214,0.45), 0 0 20px rgba(74,134,214,0.28);
+            transition: background-color 250ms ease, color 250ms ease, box-shadow 250ms ease, opacity 200ms ease, transform 120ms ease; }
+  .tkpill b { font-weight: 600; }
+  .tkpill:active { transform: translateY(2px); }
+  .tkpill[disabled] { opacity: 0.45; cursor: default; pointer-events: none; }
+  .tkmute .i-off, .tkcard.muted .tkmute .i-mic { display: none; }
+  .tkcard.muted .tkmute .i-off { display: block; }
+  .tkcard.muted .tkmute { background: var(--brand); color: #fff; box-shadow: 0 0 18px rgba(47,58,114,0.35); }
+  .tkcard.muted[data-ph="listening"], .tkcard.muted[data-ph="listening"][data-think] { background: #fff; animation: none; box-shadow: 0 0 0 1.5px var(--edge), 0 20px 56px rgba(22,26,56,0.3); }
+  .tkcard.muted[data-ph="listening"] .tkstage::before { opacity: 0; }
+  .tkcard.muted[data-ph="listening"] .tkstage i, .tkcard.muted[data-ph][data-think] .tkstage i { transform: scaleY(0.14); opacity: 0.4; animation: none; }
+  .tkfloat .mbadge { position: absolute; right: -4px; bottom: -4px; width: 22px; height: 22px; border-radius: 50%; background: var(--brand); color: #fff; border: 2px solid #fff;
+                     display: flex; align-items: center; justify-content: center; opacity: 0; scale: 0.6; transition: opacity 200ms ease, scale 250ms var(--ease); pointer-events: none; }
+  .tkfloat.muted .mbadge { opacity: 1; scale: 1; }
   .tkopts { display: none; text-align: start; padding-top: 6px; }
-  .tkcard.set .tkstage, .tkcard.set .tkline, .tkcard.set .tkhint, .tkcard.set .tkslot, .tkcard.set .tkopen { display: none; }
+  .tkcard.set .tkstage, .tkcard.set .tkline, .tkcard.set .tkhint, .tkcard.set .tkslot, .tkcard.set .tkpair { display: none; }
   .tkcard.set .tkopts { display: block; }
   .tkopts .orow { margin-top: 14px; }
   .tkopts .olab { margin: 0 0 6px 2px; font-size: 13px; font-weight: 700; color: var(--muted); }
@@ -4506,6 +4525,9 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("mess
    - leaving the article, switching language or playing the audio ends the conversation. */
 Object.assign(ICON, {
   talk: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5a2.5 2.5 0 0 1-2.5 2.5H11l-4.2 3.6a.5.5 0 0 1-.8-.4V17H6.5A2.5 2.5 0 0 1 4 14.5v-9A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5z"/><path d="M8.5 9.5V11M12 7.5V13M15.5 9v2"/></svg>',
+  mic: '<svg class="i-mic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>',
+  micoff: '<svg class="i-off" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 9.3V6a3 3 0 0 0-5.9-.8M9 9v2a3 3 0 0 0 4.6 2.5"/><path d="M5.5 11a6.5 6.5 0 0 0 10.2 5.3M18.5 11a6.4 6.4 0 0 1-.6 2.7M12 17.5V21"/><path d="M3.5 3.5l17 17"/></svg>',
+  sliders: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>',
   min: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3d4043" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>',
 });
 Object.assign(T.en, {
@@ -4520,6 +4542,7 @@ Object.assign(T.en, {
   talkPriv: "Your voice is processed by Google's Gemini to answer you. Nishpaksh does not keep it.",
   talkLangEnd: "Conversation ended because the language changed.",
   talkReading: "Reading: ",
+  talkMute: "Mute", talkUnmute: "Unmute", talkMuted: "You're muted", talkMutedHint: "The guide cannot hear you. Tap Unmute to talk again.",
   talkRecap: "Talk about today's news", talkRecapShort: "Talk about it", talkReadyR: "Ask anything about today's news", talkListeningHintR: "Ask about any story in today's recap.",
   talkMsg: {idle: "It went quiet, so the conversation ended.", time: "A conversation can last 8 minutes at most.", closed: "The conversation ended.", goaway: "The conversation ended.",
             limit: "You have used your conversations for this hour. Try again in a little while.", limitHour: "You have used your conversations for this hour. The next reset is at {t}.", limitDay: "You have used your conversations for today. The next reset is at {t}.", busy: "Many readers are talking right now. Try again in a minute.",
@@ -4538,6 +4561,7 @@ Object.assign(T.hi, {
   talkPriv: "जवाब देने के लिए आपकी आवाज़ Google के Gemini से प्रोसेस होती है। निष्पक्ष उसे सहेजता नहीं।",
   talkLangEnd: "भाषा बदली, इसलिए बातचीत ख़त्म हो गई।",
   talkReading: "पढ़ रहे हैं: ",
+  talkMute: "म्यूट करें", talkUnmute: "अनम्यूट करें", talkMuted: "आप म्यूट हैं", talkMutedHint: "गाइड आपको सुन नहीं सकता। फिर से बोलने के लिए अनम्यूट दबाएँ।",
   talkRecap: "आज की ख़बरों पर बात करें", talkRecapShort: "बात करें", talkReadyR: "आज की ख़बरों के बारे में कुछ भी पूछिए", talkListeningHintR: "आज के सार की किसी भी ख़बर के बारे में पूछिए।",
   talkMsg: {idle: "कुछ देर कोई आवाज़ नहीं आई, इसलिए बातचीत ख़त्म हो गई।", time: "एक बातचीत ज़्यादा से ज़्यादा 8 मिनट की हो सकती है।", closed: "बातचीत ख़त्म हो गई।", goaway: "बातचीत ख़त्म हो गई।",
             limit: "इस घंटे की बातचीत पूरी हो गई। थोड़ी देर बाद फिर कोशिश करें।", limitHour: "इस घंटे की बातचीत पूरी हो गई। अगला रीसेट {t} पर होगा।", limitDay: "आज की बातचीत पूरी हो गई। अगला रीसेट {t} पर होगा।", busy: "अभी बहुत से पाठक बात कर रहे हैं। थोड़ी देर में फिर कोशिश करें।",
@@ -4560,6 +4584,7 @@ Object.assign(T.hi, {
 
 const TK = {
   view: "main",       // main | set (the voice and pace panel)
+  muted: false,        // the reader's microphone is muted (the guide can still speak)
   nudges: {},          // pace / tone / accent asked for while connecting: said once the guide is listening
   ui: "closed",        // closed | card | mini
   phase: "ready",      // ready (not started) | live | ended
@@ -4675,13 +4700,13 @@ function tkBuild() {
     <div class="tkline" role="status" aria-live="polite"></div>
     <p class="tkhint"></p>
     <div class="tkslot"><p class="tkcap" aria-live="off"></p><button type="button" class="bgo brand tkgo" data-tk="go"></button></div>
-    <button type="button" class="blink tkopen" data-tk="openset"></button>
+    <div class="tkpair"><button type="button" class="tkpill tkmute" data-tk="mute" aria-pressed="false">${ICON.mic}${ICON.micoff}<b></b></button><button type="button" class="tkpill tkopen" data-tk="openset">${ICON.sliders}<b></b></button></div>
     <div class="tkopts"></div>
     <p class="tkpriv"></p></div>`;
   TK.card = TK.wrap.firstElementChild;
   const btn = document.createElement("button");
   btn.type = "button"; btn.className = "tkfloat";
-  btn.innerHTML = `<span class="ic">${ICON.talk}</span><span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>`;
+  btn.innerHTML = `<span class="ic">${ICON.talk}</span><span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="mbadge" aria-hidden="true">${ICON.micoff}</span>`;
   const probe = document.createElement("div"); probe.className = "tkprobe"; TK.probe = probe;
   fl.el = btn;
   document.body.append(TK.veil, TK.wrap, btn, probe);
@@ -4695,6 +4720,7 @@ function tkBuild() {
     const b = e.target.closest("[data-tk]"); if (!b) return;
     if (b.dataset.tk === "openset") { TK.view = "set"; tkPaint(); }
     else if (b.dataset.tk === "back") { TK.view = "main"; tkPaint(); }
+    else if (b.dataset.tk === "mute") tkToggleMute();
     else if (b.dataset.tk === "reset") tkSetStyle({...STYLE_DEFAULT});
     else if (b.dataset.tk === "min") tkMin();
     else if (b.dataset.tk === "close") tkEndAll({focus: true});
@@ -4926,11 +4952,17 @@ function tkPaint() {
   c.querySelector(".tkname").textContent = set ? t.tkSet : t.talkName;
   lb.dataset.tk = set ? "back" : "min"; lb.innerHTML = set ? ICON.back : ICON.min; lb.setAttribute("aria-label", set ? t.tkBack : t.talkMin);
   c.querySelector('[data-tk="close"]').setAttribute("aria-label", t.close);
-  c.querySelector(".tkopen").textContent = t.tkSet;
+  c.querySelector(".tkopen b").textContent = t.tkSet;
+  const mb = c.querySelector(".tkmute"), canMute = TK.phase === "live" && ["speaking", "listening", "thinking"].includes(ph) && TK.st !== "connecting";
+  c.classList.toggle("muted", TK.muted && TK.phase === "live");
+  mb.disabled = !canMute; mb.setAttribute("aria-pressed", String(TK.muted && TK.phase === "live"));
+  mb.querySelector("b").textContent = TK.muted && TK.phase === "live" ? t.talkUnmute : t.talkMute;
+  mb.setAttribute("aria-label", mb.querySelector("b").textContent);
   tkPaintSet();
   const isErr = errs.includes(TK.reason), msg = TK.reason === "limit" ? tkLimitText(t) : (t.talkMsg[TK.reason] || t.talkMsg.other);
   const words = {ready: [TK.recap ? t.talkReadyR : t.talkReady, t.talkReadyHint], connecting: [t.talkConnecting, t.talkConnectingHint], speaking: [t.talkSpeaking, t.talkSpeakingHint], thinking: [t.talkThinking, TK.slow ? t.talkSlowHint : t.talkThinkingHint],
                  listening: [t.talkListening, TK.reading ? t.talkReading + TK.reading : TK.recap ? t.talkListeningHintR : t.talkListeningHint], ended: [isErr ? t.talkCant : t.talkEnded, msg]}[ph];
+  if (TK.muted && TK.phase === "live" && ph === "listening" && !think) { words[0] = t.talkMuted; words[1] = t.talkMutedHint; }
   const line = c.querySelector(".tkline");
   line.textContent = words[0];
   if (think) { const d = document.createElement("span"); d.className = "tkdots"; d.setAttribute("aria-hidden", "true"); d.innerHTML = '<i style="--j:0"></i><i style="--j:1"></i><i style="--j:2"></i>'; line.appendChild(d); }
@@ -4946,6 +4978,7 @@ function tkPaint() {
     fl.el.setAttribute("aria-label", t.talkOpen);
     fl.el.classList.toggle("speaking", ph === "speaking");
     fl.el.classList.toggle("connecting", ph === "connecting");
+    fl.el.classList.toggle("muted", TK.muted && TK.phase === "live");
     fl.el.classList.toggle("thinking", ph === "thinking");
   }
 }
@@ -4974,11 +5007,17 @@ function onRecapTalkTap(day) {
   tkShowCard({ready: !TK.mod, recap: day});
   if (TK.mod) tkBegin();
 }
+function tkToggleMute() {
+  if (TK.phase !== "live" || !TK.talk) return;
+  TK.muted = !TK.muted;
+  try { TK.talk.setMuted(TK.muted); } catch (e) { TK.muted = !TK.muted; }
+  tkPaint();
+}
 function tkBegin() {
   if (!TK.mod || TK.phase === "live") return;
   const t = talkInstance();
   if (player.el && !player.el.paused) player.el.pause();       // two voices at once would be noise
-  TK.phase = "live"; TK.st = "connecting"; TK.reason = ""; TK.reading = ""; TK.cap = ""; TK.capLineId = null; TK.capSegments = []; TK.capFinal = false; TK.nudges = {}; TK.view = "main";
+  TK.phase = "live"; TK.st = "connecting"; TK.muted = false; TK.reason = ""; TK.reading = ""; TK.cap = ""; TK.capLineId = null; TK.capSegments = []; TK.capFinal = false; TK.nudges = {}; TK.view = "main";
   tkPaint();
   t.start(TK.recap ? {recap: TK.recap, lang: TK.lang, style: tkStyle()} : {storyId: Number(TK.storyId), lang: TK.lang, style: tkStyle()});
 }
@@ -4992,7 +5031,7 @@ function tkLimitText(t) {
 }
 function tkEnded({reason, resetsAt, scope}) {
   if (TK.ui === "closed" || reason === "stopped") return;      // we stopped it ourselves
-  TK.phase = "ended"; TK.reason = reason; TK.cap = ""; TK.capLineId = null; TK.capSegments = []; TK.capFinal = false; TK.resetsAt = reason === "limit" ? resetsAt || null : null; TK.limitScope = scope || "hour";
+  TK.phase = "ended"; TK.muted = false; TK.reason = reason; TK.cap = ""; TK.capLineId = null; TK.capSegments = []; TK.capFinal = false; TK.resetsAt = reason === "limit" ? resetsAt || null : null; TK.limitScope = scope || "hour";
   tkUnlight();
   if (!me && !TK.recap && (reason === "network" || reason === "login")) {   // the session was ended elsewhere: sign in again (the recap needs sign-in to open at all)
     tkEndAll({noHistory: true});
@@ -5042,7 +5081,7 @@ function tkShowCard({ready, recap}) {
   TK.recap = recap || null;
   TK.storyId = recap ? "recap" : String(openId); TK.lang = lang;
   htmlEl.classList.toggle("talk-recap", !!recap);
-  if (TK.ui === "closed") { TK.view = "main"; TK.phase = "ready"; TK.st = "idle"; TK.reason = ""; TK.reading = ""; TK.cap = ""; TK.capLineId = null; TK.capSegments = []; TK.capFinal = false; }     // tkBegin makes it live
+  if (TK.ui === "closed") { TK.view = "main"; TK.phase = "ready"; TK.st = "idle"; TK.muted = false; TK.reason = ""; TK.reading = ""; TK.cap = ""; TK.capLineId = null; TK.capSegments = []; TK.capFinal = false; }     // tkBegin makes it live
   const a = $("rise").querySelector(".acts"); if (a) a.classList.remove("peek");
   const fromEl = recap ? bsheet.querySelector(".rtalk") : $("rise").querySelector(".acts .talkbtn");      // always the button itself, even when the banner was tapped
   const r = fromEl ? fromEl.getBoundingClientRect() : {left: innerWidth - 70, top: innerHeight - 70, width: FL, height: FL};
@@ -5085,7 +5124,7 @@ function tkEndAll(o = {}) {
   const was = TK.ui;
   if (was === "closed") return;
   const live = TK.phase === "live", wasRecap = !!TK.recap;
-  TK.ui = "closed"; TK.phase = "ready"; TK.st = "idle"; TK.cap = ""; TK.capLineId = null; TK.capSegments = []; TK.capFinal = false; TK.view = "main"; TK.nudges = {};
+  TK.ui = "closed"; TK.phase = "ready"; TK.st = "idle"; TK.muted = false; TK.cap = ""; TK.capLineId = null; TK.capSegments = []; TK.capFinal = false; TK.view = "main"; TK.nudges = {};
   if (live && TK.talk) { try { TK.talk.stop(); } catch (e) { /* already over */ } }
   tkUnlight();
   if (was === "card") {

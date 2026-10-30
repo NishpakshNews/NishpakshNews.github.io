@@ -33,7 +33,7 @@ export function createTalk(o) {
     start: async (a) => { window.__log.push(["start", a]); set("connecting"); },
     stop: () => { window.__log.push(["stop"]); set("ended"); o.onEnd({ reason: "stopped" }); },
     nudge: (t) => { window.__log.push(["nudge", t]); },
-    skipIntro() {}, setMuted() {},
+    skipIntro() {}, setMuted: (m) => { window.__log.push(["mute", !!m]); },
     get state() { return state; },
   };
 }`;
@@ -52,7 +52,7 @@ function serve() {
 
 async function open({ lang = "en", width = 390, height = 844, signedIn = true, withModule = true, reducedMotion = "no-preference" } = {}) {
   const srv = await serve(), port = srv.address().port;
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
   const ctx = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, reducedMotion, serviceWorkers: "block" });
   await ctx.addInitScript(([signedIn, lang]) => {
     try {

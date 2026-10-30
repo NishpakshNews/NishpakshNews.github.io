@@ -671,7 +671,7 @@ export function createTalk(opts) {
       introDone = true;
       maybeOpenMic();
       touch();
-      idleTimer = setInterval(() => { if (Date.now() - lastActive > IDLE_SECONDS * 1000) end("idle"); }, 2000);
+      idleTimer = setInterval(() => { if (!muted && Date.now() - lastActive > IDLE_SECONDS * 1000) end("idle"); }, 2000);     // a muted reader is not "gone quiet": the 8-minute limit still ends it
       const max = (grant.max_seconds || 480) * 1000;
       wrapTimer = setTimeout(() => proto?.send({ realtimeInput: { text: "The conversation is about to end. Say a short goodbye in one sentence." } }), Math.max(0, max - WRAP_UP_SECONDS * 1000));
       maxTimer = setTimeout(() => end("time"), max);
@@ -690,6 +690,7 @@ export function createTalk(opts) {
     skipIntro: () => { try { introWake?.(); introStop?.(); interrupt(); } catch { /* done */ } },
     setMuted: (m) => {
       muted = !!m;
+      if (!muted) touch();                // unmuting is activity: the idle clock starts again
       if (muted && ws && ws.readyState === 1) ws.send(JSON.stringify({ realtimeInput: { audioStreamEnd: true } }));   // flush what was heard
     },
     // how much of the guide's current speech has been HEARD so far, 0..1 (1 when nothing is playing): the captions follow it so the words keep the pace of the voice
