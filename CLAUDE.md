@@ -917,6 +917,15 @@ stories, and tune settings then.
   page reads its feed/archive from that repo; `pagearchive` uses `GITHUB_REPOSITORY`; both Supabase dispatch
   functions call `public.dispatch_workflow` (migration `20261008000100_repo_moved.sql`) with the Vault token
   `github_dispatch_token`, a fine-grained token for this repo (Actions: read and write).
+- **GitHub Actions cache egress (Oct 30 2026):** at 01:50 IST a cache restore stalled for 10 min (pip) and 2 min (models) and
+  failed with "Egress is over the account limit". Measured from the Caches page: pip 590 MB + HF models 910 MB + newsroom
+  copy 70 MB = ~1.57 GB restored per hourly run (~40 GB a day), and the newsroom copy was saved under a new key twice an
+  hour (123 caches, 9.43 of 10 GB used). Decisions: (1) no `cache: pip` anywhere (it saved ~9 s a run); (2) the newsroom
+  copy lives only on the `newsroom` branch (`newsroom.sh restore` already cloned it every run; the clone is now retried
+  4 times); (3) the Hugging Face models come straight from the Hub (`.github/scripts/fetch_models.py`, 4 tries; a model
+  that cannot be fetched is loaded lazily as before). Cause of the stall is NOT proven (GitHub status showed no Git
+  incident; Actions component not checked). Revert = revert the commit "Stop using the Actions cache"; if a model ever
+  fails to download, add an optional `HF_TOKEN` secret, then a copy on a GitHub Release as a second source.
 - **Egress (Oct 8 2026):** Supabase free = 5 GB/month; the first week used 12.5 GB, ~85% of it the pipeline re-reading
   article text, embeddings and minhashes every run. `heavy.py`: those columns are selected as md5 and served from a
   local SQLite cache (kept by actions/cache in hourly.yml, `NISHPAKSH_HEAVY_CACHE`), fetched only when new or changed;
