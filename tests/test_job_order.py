@@ -78,10 +78,10 @@ def test_workflow_writes_first_and_publishes_before_the_pipeline():
     assert by["Write and publish first (the desk)"]["continue-on-error"] is True
     assert by["Prime an almost empty pool"]["continue-on-error"] is True
     assert "!cancelled()" in by["Run pipeline"]["if"] and "restore" in by["Run pipeline"]["if"]
-    # saved and published early only when something was published; the cache key differs from the final one
+    # saved and published early only when something was published
     assert "published != '0'" in by["Save the newsroom (first desk run)"]["if"]
-    keys = [s["with"]["key"] for s in steps if (s.get("uses") or "").startswith("actions/cache/save")]
-    assert len(keys) == 2 and keys[0] != keys[1]
+    # the newsroom lives on the `newsroom` branch only: no Actions-cache copy (its egress stalled the job, Oct 30 2026)
+    assert not [s for s in steps if (s.get("uses") or "").startswith("actions/cache")]
     assert job["timeout-minutes"] >= 150
     # the second desk run is for a full run only: skipped when the pipeline reports a light run
     assert "steps.pipeline.outputs.light != 'true'" in by["Write and publish again (the desk)"]["if"]

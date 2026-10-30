@@ -5,9 +5,12 @@
 # run logs (nishpaksh/db.py READER_TABLES). Supabase's free egress (5 GB a month) was used ~10x over by the
 # pipeline reading its own data back every hour.
 #
-# The copy is kept twice, ENCRYPTED (the repo is public and the copy holds outlets' article text):
-#   1. the Actions cache (fast), key newsroom-<run>-<attempt>, at .newsroom/cache/
-#   2. the `newsroom` branch (backup), one commit force-pushed, in parts of PART_MB (40) MB, under GitHub's 50 MB warning
+# The copy is kept ENCRYPTED (the repo is public and the copy holds outlets' article text) on the `newsroom` branch:
+# one commit force-pushed, in parts of PART_MB (40) MB, under GitHub's 50 MB warning.
+# (Until Oct 30 2026 a second copy lived in the Actions cache under a new key twice an hour. It was dropped: every
+# restore already cloned the branch, so the cache copy was the same download twice, and its saves and the other
+# caches filled the repository's 10 GB cache quota and hit the cache service's egress limit. $CACHE is now only the
+# job's staging folder; a copy found there, if any, is still compared by stamp.)
 # Each copy carries a stamp (UTC time of the save + run id); restore takes the newer of the two.
 #
 #   newsroom.sh restore     load the newest copy into the local Postgres (fails if there is none: the job
@@ -106,9 +109,14 @@ restore() {
   local cache_stamp="" branch_stamp="" pick=""
   if [ -s "$CACHE/newsroom.dump.enc" ] && [ -s "$CACHE/stamp" ]; then cache_stamp="$(cat "$CACHE/stamp")"; fi
   rm -rf "$DIR/branch"
-  if git clone --quiet --depth 1 --branch "$BRANCH" "$REMOTE" "$DIR/branch" 2>/dev/null && [ -s "$DIR/branch/stamp" ]; then
-    branch_stamp="$(cat "$DIR/branch/stamp")"
-  fi
+  # the branch is now the only durable copy: a failed clone is retried before the job gives up
+  for attempt in 1 2 3 4; do
+    rm -rf "$DIR/branch"
+    if git clone --quiet --depth 1 --branch "$BRANCH" "$REMOTE" "$DIR/branch" 2>/dev/null && [ -s "$DIR/branch/stamp" ]; then
+      branch_stamp="$(cat "$DIR/branch/stamp")"; break
+    fi
+    echo "branch clone failed (try $attempt)"; sleep $((attempt * 10))
+  done
   echo "cache copy:  ${cache_stamp:-none}"
   echo "branch copy: ${branch_stamp:-none}"
   if [ -z "$cache_stamp" ] && [ -z "$branch_stamp" ]; then
@@ -151,7 +159,7 @@ save() {
   encrypt "$DIR/out.dump" "$DIR/out.enc"
   rm -f "$DIR/out.dump"
   echo "newsroom copy: $(du -h "$DIR/out.enc" | cut -f1), stamp $stamp"
-  # 1. the cache copy (the workflow's actions/cache/save step stores $CACHE after this)
+  # 1. the staging copy in $CACHE (no longer stored in the Actions cache)
   mv "$DIR/out.enc" "$CACHE/newsroom.dump.enc"
   echo "$stamp" > "$CACHE/stamp"
   # 2. the branch copy: one commit, force-pushed, so the branch never grows

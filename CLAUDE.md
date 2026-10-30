@@ -20,7 +20,7 @@ every outlet that covered it, and colours every sentence by how well it is suppo
 ## The rebuild (Oct 25 2026, branch `rebuild`; owner: "build the technical systems first, delete what they replace, audit once at the end")
 **Working agreement:** build every system first, delete the hand-made code it replaces, and only then run ONE audit / hypothesis-test
 pass and tune settings. No audit after each build, no hand-tweaking, no word lists, no fixes for single cases.
-**Built on established libraries** (`requirements-nlp.txt`, installed by `.github/actions/nlp-setup`; HF models cached by actions/cache;
+**Built on established libraries** (`requirements-nlp.txt`, installed by `.github/actions/nlp-setup`; HF models downloaded from the Hub by `.github/scripts/fetch_models.py` (no Actions cache since Oct 30 2026);
 `murmurhash<1.0.14` is pinned because spaCy 3.8 overflows on newer ones): spaCy `en_core_web_lg` (NER + dependency parse), a local
 multilingual NLI cross-encoder (mDeBERTa-v3 XNLI) via transformers, sentence-transformers `paraphrase-multilingual-MiniLM-L12-v2`
 (stemming TF-IDF fallback), scikit-learn (TF-IDF, agglomerative clustering), networkx, rapidfuzz. All have test backends

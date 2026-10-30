@@ -87,15 +87,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
       - run: pip install -r requirements.txt
       - uses: ./.github/actions/nlp-setup
-      - name: Find the newsroom copy in the cache
-        uses: actions/cache/restore@v4
-        with:
-          path: .newsroom/cache
-          key: newsroom-${{ github.run_id }}
-          restore-keys: newsroom-
       - name: Load the newsroom
         id: restore
         run: bash .github/scripts/newsroom.sh restore
@@ -127,12 +120,6 @@ jobs:
         id: save_first
         if: ${{ !cancelled() && steps.restore.outcome == 'success' && steps.desk_first.outputs.published != '0' }}
         run: bash .github/scripts/newsroom.sh save
-      - name: Keep the copy in the cache (first desk run)
-        if: ${{ !cancelled() && steps.save_first.outcome == 'success' }}
-        uses: actions/cache/save@v4
-        with:
-          path: .newsroom/cache
-          key: newsroom-${{ github.run_id }}-${{ github.run_attempt }}-first
       - name: Copy the live articles to Supabase (first desk run)
         if: ${{ !cancelled() && steps.save_first.outcome == 'success' }}
         continue-on-error: true
@@ -186,12 +173,6 @@ jobs:
         id: save
         if: ${{ always() && steps.restore.outcome == 'success' }}
         run: bash .github/scripts/newsroom.sh save
-      - name: Keep the copy in the cache
-        if: ${{ always() && steps.save.outcome == 'success' }}
-        uses: actions/cache/save@v4
-        with:
-          path: .newsroom/cache
-          key: newsroom-${{ github.run_id }}-${{ github.run_attempt }}
       # Everything below runs only once this hour's work is safely saved: an article shown on the site but lost
       # from the newsroom would be written and published a second time next hour.
       - name: Copy the live articles to Supabase
