@@ -919,6 +919,13 @@
   .nsw { -webkit-user-select: none; user-select: none; }
   .nsw .swin { position: relative; z-index: 1; margin: 0; width: 100%; transition: transform 220ms var(--ease); }
   .nsw .nrow.swin { padding: 13px 12px; border: 0; border-radius: 14px; background: #fff; }
+  /* Mark all as read (owner, Oct 31 2026: a soothing, smooth change): the list is not redrawn. Each unread row settles in place,
+     top to bottom, a few hundredths of a second after the one above (--rd, set in script): its tint melts to white, its dot
+     shrinks away and its title eases from bold to regular. Only colour, opacity and a scale change; nothing moves or resizes. */
+  .nsw .nrow.swin { transition: transform 220ms var(--ease), background-color 760ms ease var(--rd, 0ms); }
+  .nrow .ntt { display: block; font-size: 15px; font-weight: 400; line-height: 1.3; transition: font-weight 760ms ease var(--rd, 0ms); }
+  .nsw.u .nrow .ntt { font-weight: 600; }
+  .nsw.u.settle .nrow .ntt { font-weight: 400; }
   .nsw.na { margin: 6px 0; border-radius: 16px; }
   .nsw .naudio.swin { padding: 12px 14px; border-radius: 16px; background: #f6f6f9; }
   .nsw.drag .swin { transition: none; }
@@ -932,6 +939,16 @@
   .nlink { margin-inline-start: auto; border: 0; background: none; color: #2f3a72; font: inherit; font-size: 13.5px; font-weight: 600; letter-spacing: 0; text-transform: none; padding: 4px 6px; cursor: pointer; }
   .nrow .dot { background: transparent; }
   .nsw.u .nrow .dot { background: #2f3a72; }
+  .nrow .dot { transition: opacity 520ms ease var(--rd, 0ms), transform 620ms var(--ease) var(--rd, 0ms); }
+  .nsw.u.settle .nrow.swin { background: #fff; }
+  .nsw.u.settle .nrow .dot { opacity: 0; transform: scale(.3); }
+  .nchip { transition: opacity 480ms ease, transform 520ms var(--ease); transform-origin: left center; }
+  .nchip.off { opacity: 0; transform: scale(.85); }
+  /* the bar's button: a tick pops in beside "All read" and the button stays lit (it is the answer, not a disabled control) */
+  .nbar .go { transition: opacity 300ms ease; }
+  .nbar .go.done, .nbar .go.done[disabled] { opacity: 1; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: default; }
+  .nbar .go .tick { display: inline-flex; animation: bpop .32s cubic-bezier(.3,1.6,.6,1); }
+  @media (prefers-reduced-motion: reduce) { .nsw .nrow.swin, .nrow .ntt, .nrow .dot, .nchip, .nbar .go .tick { transition-duration: 1ms !important; transition-delay: 0ms !important; animation: none !important; } }
   /* the buttons float over the bottom of the card, no strip behind them: the list scrolls under them */
   .nbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; gap: 10px; padding: 0 20px calc(16px + env(safe-area-inset-bottom)); pointer-events: none; }
   .nbar::before { content: ""; position: absolute; z-index: -1; left: 8px; right: 8px; top: -14px; bottom: 6px; border-radius: 28px; background: #fff; opacity: .96; filter: blur(9px); }   /* a white glow behind the buttons lifts them off the text under them */
@@ -4161,7 +4178,7 @@ Object.assign(ICON, {
   xs: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   bellg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3d4043" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
 });
-Object.assign(T.en, {notes: "Notifications", myAudio: "My audio", markAllRead: "Mark all as read", clearAll: "Clear all", clearRow: "Clear", newN: n => `${n} new`, removedIn: h => h <= 1 ? "Removed within the hour" : `Removed in ${h} h`, confirmClear: "Clear all notifications?", cancelB: "Cancel", clearThis: "Clear", clearFinished: "Clear finished", removesIn: h => h <= 1 ? "Removes itself within the hour" : `Removes itself in ${h} h`, noNotes: "Nothing yet. Follow a section, a state or a word and we will tell you when an article comes out.",
+Object.assign(T.en, {notes: "Notifications", myAudio: "My audio", markAllRead: "Mark all as read", allRead: "All read", clearAll: "Clear all", clearRow: "Clear", newN: n => `${n} new`, removedIn: h => h <= 1 ? "Removed within the hour" : `Removed in ${h} h`, confirmClear: "Clear all notifications?", cancelB: "Cancel", clearThis: "Clear", clearFinished: "Clear finished", removesIn: h => h <= 1 ? "Removes itself within the hour" : `Removes itself in ${h} h`, noNotes: "Nothing yet. Follow a section, a state or a word and we will tell you when an article comes out.",
   noAudio: "You have not asked for any audio yet.", ready: l => `${l} · ready`, making: l => `${l} · being made, usually within an hour`, failed: l => `${l} · could not be made`,
   followIntro: "We tell you every time an article comes out in what you follow. Tap the circle for all of it, the arrow to choose inside.",
   sectionsL: "Sections", placesL: "Places and names", states: "States", words: "Words and names", allOf: l => `All of ${l}`, all: "All",
@@ -4170,7 +4187,7 @@ Object.assign(T.en, {notes: "Notifications", myAudio: "My audio", markAllRead: "
   recapMaking: "Today's summary is being written. It will be here in a few minutes.", notifyMe: "Notify me when it is ready", listenRecap: "Listen",
   articles: n => `${n} stories today`, hm: (h, m) => `${h} h ${m} min`, recapReadyHint: "Ready", recapTimeHint: "11 pm", stop: "Stop following",
   coloursL: "When lines change colour", coloursIntro: "An article's words never change, but its colours do as more reports come in. We tell you when lines of any article turn the colours you pick, at most once an hour per article.", struckF: "struck through (replaced by later news)"});
-Object.assign(T.hi, {notes: "सूचनाएं", myAudio: "मेरे ऑडियो", markAllRead: "सब पढ़ा हुआ चिह्नित करें", clearAll: "सब हटाएं", clearRow: "हटाएं", newN: n => `${n} नई`, removedIn: h => h <= 1 ? "एक घंटे में हट जाएगा" : `${h} घंटे में हट जाएगा`, confirmClear: "सभी सूचनाएं हटाएं?", cancelB: "रद्द करें", clearThis: "हटाएं", clearFinished: "पूरे हुए हटाएं", removesIn: h => h <= 1 ? "एक घंटे में अपने-आप हट जाएगा" : `${h} घंटे में अपने-आप हट जाएगा`, noNotes: "अभी कुछ नहीं। कोई खंड, राज्य या शब्द फ़ॉलो करें, नया लेख आने पर हम बताएंगे।",
+Object.assign(T.hi, {notes: "सूचनाएं", myAudio: "मेरे ऑडियो", markAllRead: "सब पढ़ा हुआ चिह्नित करें", allRead: "सब पढ़ लिया", clearAll: "सब हटाएं", clearRow: "हटाएं", newN: n => `${n} नई`, removedIn: h => h <= 1 ? "एक घंटे में हट जाएगा" : `${h} घंटे में हट जाएगा`, confirmClear: "सभी सूचनाएं हटाएं?", cancelB: "रद्द करें", clearThis: "हटाएं", clearFinished: "पूरे हुए हटाएं", removesIn: h => h <= 1 ? "एक घंटे में अपने-आप हट जाएगा" : `${h} घंटे में अपने-आप हट जाएगा`, noNotes: "अभी कुछ नहीं। कोई खंड, राज्य या शब्द फ़ॉलो करें, नया लेख आने पर हम बताएंगे।",
   noAudio: "आपने अभी कोई ऑडियो नहीं मांगा।", ready: l => `${l} · तैयार`, making: l => `${l} · बन रहा है, आमतौर पर एक घंटे में`, failed: l => `${l} · नहीं बन सका`,
   followIntro: "आप जो फ़ॉलो करते हैं, उसमें हर नया लेख आने पर हम बताते हैं। पूरा चुनने के लिए गोले पर, भीतर चुनने के लिए तीर पर टैप करें।",
   sectionsL: "खंड", placesL: "जगहें और नाम", states: "राज्य", words: "शब्द और नाम", allOf: l => `पूरा ${l}`, all: "सब",
@@ -4356,7 +4373,7 @@ function notesHtml() {
   const trash = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>`;
   const notes = notesData.notes.length ? notesData.notes.map(n => `<div class="nsw${n.read_at ? "" : " u"}" data-nsw="${n.id}"><button type="button" class="nrm" data-nrm="${n.id}" tabindex="-1">${trash}${esc(t.clearRow)}</button>
       <button type="button" class="nrow swin" data-nid="${n.id}" data-nurl="${esc(n.url || "")}"><span class="dot"></span>
-      <span style="flex:1;min-width:0"><span style="display:block;font-size:15px;font-weight:${n.read_at ? 400 : 600};line-height:1.3">${esc(n.title)}</span><span class="bnote" style="display:block;margin-top:3px">${esc(n.body || "")}</span></span>
+      <span style="flex:1;min-width:0"><span class="ntt">${esc(n.title)}</span><span class="bnote" style="display:block;margin-top:3px">${esc(n.body || "")}</span></span>
       <span style="font-size:12px;color:#9a9ca3;white-space:nowrap">${esc(when(n.created_at))}</span></button></div>`).join("")
     : `<p class="bnote" style="margin:6px 2px">${esc(t.noNotes)}</p>`;
   const u = nUnread();
@@ -4381,6 +4398,28 @@ function flyOut(sws, stagger) {
     setTimeout(res, 250);
   }, last + 430));
 }
+/* Mark all as read: every unread row settles in place, top to bottom (see the CSS under ".nsw .nrow.swin"). The "N new" chip
+   fades, the button shows a tick and "All read". Resolves when the last row has finished; with reduced motion it is instant. */
+function settleRead() {
+  const t = T[lang];
+  const rows = [...bsheet.querySelectorAll(".nsw.u[data-nsw]")], chip = bsheet.querySelector(".nchip"), btn = bsheet.querySelector('.nbar .go[data-nclear="read"]');
+  const finish = () => {
+    rows.forEach(r => { r.classList.remove("u", "settle"); r.style.removeProperty("--rd"); });
+    if (chip) chip.remove();
+  };
+  if (btn) {
+    btn.classList.add("done"); btn.disabled = true;
+    btn.innerHTML = `<span class="tick"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg></span><span>${esc(t.allRead)}</span>`;
+  }
+  if (!rows.length || REDUCE_MOTION) { finish(); return Promise.resolve(); }
+  const STEP = 55, CAP = 520;                                  // a gentle wave down the list; a long list does not take longer than half a second to start
+  rows.forEach((r, i) => { r.style.setProperty("--rd", `${Math.min(i * STEP, CAP)}ms`); });
+  void bsheet.offsetHeight;                                    // the start state is painted before the change, so every transition runs
+  rows.forEach(r => r.classList.add("settle"));
+  if (chip) chip.classList.add("off");
+  const last = Math.min((rows.length - 1) * STEP, CAP);
+  return new Promise(res => setTimeout(() => { finish(); res(); }, last + 820));
+}
 let clearing = false;
 async function clearNotes(what, arg) {
   if (!notesData || clearing) return;
@@ -4391,8 +4430,11 @@ async function clearNotes(what, arg) {
     if (what === "ask") { noteAsk = true; renderSheet(); return; }
     if (what === "no") { noteAsk = false; renderSheet(); return; }
     if (what === "read") {
-      await patch("notifications?read_at=is.null&cleared_at=is.null", {read_at: now});
+      // the rows settle while the request is on its way; a failure draws the sheet again as it really is (the catch below)
+      await Promise.all([patch("notifications?read_at=is.null&cleared_at=is.null", {read_at: now}), settleRead()]);
       notesData.notes.forEach(n => { n.read_at = n.read_at || now; });
+      unread = nUnread(); paintBadge();
+      return;                                                  // the sheet is not redrawn: it already shows the read state, and a redraw would jump the list to the top
     } else if (what === "all") {
       await Promise.all([patch("notifications?cleared_at=is.null", {read_at: now, cleared_at: now}), flyOut(rows(), 45)]);
       notesData.notes = []; noteAsk = false;
