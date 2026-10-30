@@ -109,7 +109,7 @@ def build_entry(run: dict, desk: dict | None, outlets: dict | None, intake: dict
     if desk:
         entry["desk"] = {k: desk[k] for k in ("published", "seats", "ready", "ready_beat", "tried", "skipped",
                                               "beat_seat", "beat_seat_empty", "already_this_hour", "short", "write_allowance",
-                                              "runs", "seconds", "run_log", "fill") if k in desk}
+                                              "runs", "seconds", "run_log", "fill", "headlines") if k in desk}
         if desk.get("express"):
             entry["desk"]["express"] = desk["express"]
     return entry

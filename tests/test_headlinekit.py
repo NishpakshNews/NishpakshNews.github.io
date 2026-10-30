@@ -69,3 +69,41 @@ def test_market_reads_hindi_and_english_on_one_scale():
 
 def test_market_is_neutral_without_voices_or_embedding():
     assert kit.evaluate(T[:1])["seeds"] == [] and kit.evaluate(None)["best"] is None
+
+
+def test_seeds_are_adaptive_two_to_four():
+    from nishpaksh import embed
+    embed.set_backend(_fake_embed)
+    try:
+        m = kit.evaluate(T, reference="A building collapsed in Delhi and 40 died.")
+        assert kit.SEED_MIN <= len(m["seeds"]) <= kit.SEED_MAX and len(m["all"]) == 4
+    finally:
+        embed.set_backend(None)
+
+
+def test_write_headline_retries_only_when_ours_is_outside_the_top_three_and_records_it():
+    from nishpaksh import embed, news
+    embed.set_backend(_fake_embed)
+    item = {"id": 1, "text": "A building collapsed in Delhi and 40 people died.", "n_sources": 3, "role": "core", "time": {}}
+    titles = T + [{"outlet": "H", "title": "दिल्ली में इमारत ढही, ४० की मौत"},
+                  {"outlet": "I", "title": "Delhi building collapse: 40 killed"}]
+
+    class R:
+        calls = 0
+
+        def __init__(self, seq):
+            self.seq = seq
+
+        def call(self, tier, prompt, **k):
+            h = self.seq[min(self.calls, len(self.seq) - 1)]
+            self.calls += 1
+            return type("X", (), {"data": {"headlines": [h]}})()
+    try:
+        r = R(["Delhi building collapse leaves 40 dead, families wait for news"])        # on topic: in the top three, one call
+        news.write_headline(r, item, {1: item}, item["text"], set(), titles=titles)
+        assert r.calls == 1 and news.HEADLINE_STATS["rank"] <= 3 and news.HEADLINE_STATS["outlets"]
+        r = R(["Parliament row over price rise grows", "Parliament row over price rise worsens"])   # off topic: second call
+        news.write_headline(r, item, {1: item}, item["text"], set(), titles=titles)
+        assert r.calls == 2 and news.HEADLINE_STATS["retried"] is True
+    finally:
+        embed.set_backend(None)

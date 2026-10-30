@@ -40,6 +40,15 @@ REVIEW_SHARE = 0.6        # of the desk's time, at most this much goes to review
 REVIEW_HOLDS = 2          # desk looks a story may wait for its review to finish
 
 
+def _note_headline(stats: dict, sid) -> None:
+    """Keep the headline step's numbers of a published story (rank among the outlets', retry, scores) for the ledger."""
+    try:
+        from .news import headline_record
+        stats.setdefault("headlines", {})[str(sid)] = headline_record()
+    except Exception:  # noqa: BLE001 - tuning data never stops a publication
+        pass
+
+
 def _review_open(store, sid: int) -> bool:
     """True while the story's review still has unasked questions and has been waited for fewer than REVIEW_HOLDS times."""
     try:
@@ -358,6 +367,7 @@ def fill_work(store: Store, router: Router, now: dt.datetime | None = None) -> d
                                      seconds_to_publish=round(time.time() - t_work))
                 if (compose.LAST_OUTCOME.get("detail") or {}).get("lowered_bar"):
                     stats.setdefault("lowered_bar", {})[str(sid)] = compose.LAST_OUTCOME["detail"]["lowered_bar"]
+                _note_headline(stats, sid)
                 break
             why = compose.LAST_OUTCOME.get("outcome", "?")
             detail = compose.LAST_OUTCOME.get("detail") or {}
@@ -452,6 +462,7 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
         write_s += time.time() - t1
         if ok:
             stats["published"].append(sid)
+            _note_headline(stats, sid)
             if (compose.LAST_OUTCOME.get("detail") or {}).get("lowered_bar"):      # published below 80%: marked for reading
                 stats.setdefault("lowered_bar", {})[str(sid)] = compose.LAST_OUTCOME["detail"]["lowered_bar"]
             if sid in express_ids:

@@ -1002,6 +1002,12 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
                                                  parents=[x["headline"] for x in payload.get("parents") or []],
                                                  titles=[{"outlet": x.get("outlet"), "title": x["title"]}
                                                          for x in payload.get("sources") or [] if x.get("title")])
+    if essay_good:
+        try:
+            from .news import HEADLINE_STATS
+            dossier.record(store, story_id, "headline", {**HEADLINE_STATS, "headline": payload.get("headline")})
+        except Exception:  # noqa: BLE001 - the record is for tuning; it never holds an article back
+            pass
     headline_missing = essay_good and not payload.get("headline")
     if not essay_good or headline_missing:
         # which check failed, with the numbers (owner, Oct 11 2026, story 16981): kept with the failure and in the log

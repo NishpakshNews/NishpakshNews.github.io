@@ -498,6 +498,17 @@ def _disputed_answers(news: dict, items: dict[int, dict]) -> tuple[set[str], str
     return answers, versions
 
 
+HEADLINE_STATS: dict = {}     # what the last write_headline saw and chose (compose records it in the dossier: the data to tune from)
+
+
+def headline_record() -> dict:
+    """The last headline's tuning data, trimmed for the ledger (ids are added by the caller)."""
+    h = dict(HEADLINE_STATS)
+    h["outlets"] = [{k: v for k, v in o.items() if k != "t"} for o in (h.get("outlets") or [])[:8]]
+    h["cands"] = (h.get("cands") or [])[:4]
+    return h
+
+
 def write_headline(router: Router | None, news: dict, items: dict[int, dict], lead: str, banned: set[str],
                    thread: str = "", latest: dict | None = None, taken: list[str] = (),
                    parents: list[str] = (), titles=()) -> str | None:
@@ -528,6 +539,11 @@ def write_headline(router: Router | None, news: dict, items: dict[int, dict], le
     from . import headlinekit as kit
     pool = [news] + ([latest] if latest else []) + others + [i for i in items.values() if i not in others and i is not news]
     market = kit.evaluate(titles, reference=lead or news["text"])     # every outlet headline, both languages, on one scale
+    HEADLINE_STATS.clear()
+    HEADLINE_STATS.update({"v": 1, "voices": len(market["all"]), "weights": kit.WEIGHTS, "calls": 0, "retried": False,
+                           "outlets": [{"o": r["outlet"], "q": round(r["q"], 3), "c": r.get("c"), "hi": bool(re.search("[\u0900-\u097F]", r["title"])),
+                                        "t": r["title"][:90]} for r in market["all"][:12]],
+                           "seeds": [round(r["q"], 3) for r in market["seeds"]], "cands": []})
     kb = kit.blocks(titles, pool, market["seeds"])   # {} / "" everywhere when it cannot read anything: the old prompt
     cons, quoted = kb["cons"], kb["quoted"]
     prompt = HEADLINE_PROMPT.format(
@@ -548,12 +564,17 @@ def write_headline(router: Router | None, news: dict, items: dict[int, dict], le
 
     def rank(hs: list[str]) -> list[tuple[float, str]]:
         """(score, headline) best first; q = the same embedding scale the outlets' headlines are on."""
-        qs = kit.evaluate(titles, reference=lead or news["text"], candidates=hs)["cands"] if market["seeds"] else []
+        ev = kit.evaluate(titles, reference=lead or news["text"], candidates=hs) if market["seeds"] else {}
+        qs = ev.get("cands") or []
         qs = qs if len(qs) == len(hs) else [0.0] * len(hs)
+        cc = ev.get("cand_c") if len(ev.get("cand_c") or []) == len(hs) else [None] * len(hs)
+        comps.update({h: c for h, c in zip(hs, cc)})
         return sorted(((score(h, qv), h, qv) for h, qv in zip(hs, qs)), key=lambda r: -r[0]), qs
+    comps: dict = {}
     best_ours: list[tuple[float, str, float]] = []
     for attempt in range(2):          # a second call only when all candidates fail
         try:
+            HEADLINE_STATS["calls"] += 1
             res = router.call("page", prompt, json_out=True, max_output_tokens=450)
         except (QuotaExhausted, Exception) as e:  # noqa: BLE001
             log.info("headline not written: %s", e)
@@ -583,11 +604,17 @@ def write_headline(router: Router | None, news: dict, items: dict[int, dict], le
             ranked, _ = rank(good)
             best_ours = sorted(best_ours + ranked, key=lambda r: -r[0])
             top = best_ours[0]
-            # ours must beat the outlets' best on the shared scale; one more call when it does not (never a third)
-            if attempt == 1 or market["best"] is None or top[2] >= market["best"]:
-                log.info("headline q=%.2f outlets' best=%s", top[2], market["best"])
+            above = sum(1 for r in market["all"] if r["q"] > top[2])      # outlet headlines scoring above ours
+            HEADLINE_STATS["cands"] += [{"h": r[1], "score": round(r[0], 2), "q": round(r[2], 3), "c": comps.get(r[1]), "round": attempt + 1}
+                                        for r in ranked[:6]]
+            HEADLINE_STATS.update({"rank": above + 1, "chosen_q": round(top[2], 3), "best_outlet_q": round(market["best"], 3)
+                                   if market["best"] is not None else None})
+            # ours is good enough when it is in the top TOP_N with the outlets'; below that one more call (never a third)
+            if attempt == 1 or market["best"] is None or above < kit.TOP_N:
+                log.info("headline q=%.2f rank %d of %d", top[2], above + 1, len(market["all"]) + 1)
                 return top[1]
-            prompt += ("\n\nThese were correct but weaker than the outlets' best headline:\n"
+            HEADLINE_STATS["retried"] = True
+            prompt += ("\n\nThese were correct but weaker than several outlets' headlines:\n"
                        + "\n".join(f"- {r[1]}" for r in best_ours[:3])
                        + "\nWrite six better ones: the core the outlets share plus the most specific fact, about THIS article's lead.")
             continue

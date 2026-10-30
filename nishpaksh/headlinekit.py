@@ -269,8 +269,10 @@ def repetition(h: str, recent, limit: int = 40) -> int:
 # Every outlet headline of the story is one voice, in either language. They are compared by the multilingual embedding model
 # (Hindi against English directly, nothing translated) with figures as a second bridge (the same value in either script).
 # UNTUNED guesses, to be fitted on the owner's labels: the weights, SEEDS.
-SEEDS = 3
+SEED_MIN, SEED_MAX, SEED_MARGIN = 2, 4, 0.10    # seeds: the outlet headlines within SEED_MARGIN of the best, at least 2, at most 4
+TOP_N = 3                                          # ours is good enough when no more than TOP_N-1 outlet headlines score above it
 W_AGREE, W_LEAD, W_SPECIFIC = 0.45, 0.30, 0.25
+WEIGHTS = {"agree": W_AGREE, "lead": W_LEAD, "specific": W_SPECIFIC}
 MIN_VOICES = 2
 
 
@@ -290,10 +292,11 @@ def _specific(t: str, figs: set) -> float:
 
 
 def evaluate(titles, reference: str = "", candidates=()) -> dict:
-    """{"seeds": [{"title","outlet","q"}] best first, "best": q of the best outlet headline, "cands": [q per candidate]}.
+    """{"seeds": [{"title","outlet","q"}] best first (adaptive: within SEED_MARGIN of the best, 2 to 4), "all": every outlet headline,
+    "best": q of the best outlet headline, "cands": [q per candidate]}.
     q is 0..1 on ONE scale for outlet headlines and candidates alike. Empty seeds and no scores (cands == []) when fewer than
     MIN_VOICES headlines exist or the embedding cannot run: the caller then behaves as before."""
-    empty = {"seeds": [], "best": None, "cands": []}
+    empty = {"seeds": [], "best": None, "all": [], "cands": []}
     try:
         rows = _rows(titles)
         cands = [str(c) for c in candidates or []]
@@ -307,6 +310,8 @@ def evaluate(titles, reference: str = "", candidates=()) -> dict:
         ref = v[n + m] if reference else None
         figs = [_figset(t) for t in texts[:n + m]]
 
+        comp: dict[int, tuple] = {}        # the three parts of every q, kept so the weights can be fitted later
+
         def q(i: int, others: list[int]) -> float:
             if not others:
                 return 0.0
@@ -315,14 +320,18 @@ def evaluate(titles, reference: str = "", candidates=()) -> dict:
                 agree = 0.7 * agree + 0.3 * (sum(1 for j in others if figs[i] & figs[j]) / len(others))
             lead = max(0.0, float(v[i] @ ref)) if ref is not None else None
             sp = _specific(texts[i], figs[i])
+            comp[i] = (round(agree, 3), None if lead is None else round(lead, 3), round(sp, 3))
             if lead is None:
                 return max(0.0, min(1.0, (W_AGREE * agree + W_SPECIFIC * sp) / (W_AGREE + W_SPECIFIC)))
             return max(0.0, min(1.0, W_AGREE * agree + W_LEAD * lead + W_SPECIFIC * sp))
         out = []
         for i, (o, t) in enumerate(rows):
-            out.append({"title": t, "outlet": o, "q": q(i, [j for j in range(n) if j != i and (not o or rows[j][0] != o)])})
+            out.append({"title": t, "outlet": o, "q": q(i, [j for j in range(n) if j != i and (not o or rows[j][0] != o)]), "c": comp.get(i)})
         out.sort(key=lambda r: -r["q"])
-        return {"seeds": out[:SEEDS], "best": out[0]["q"], "cands": [q(n + k, list(range(n))) for k in range(m)]}
+        seeds = [r for r in out if r["q"] >= out[0]["q"] - SEED_MARGIN][:SEED_MAX]
+        seeds = out[:SEED_MIN] if len(seeds) < SEED_MIN else seeds
+        return {"seeds": seeds, "best": out[0]["q"], "all": out, "cands": [q(n + k, list(range(n))) for k in range(m)],
+                "cand_c": [comp.get(n + k) for k in range(m)]}
     except Exception as e:  # noqa: BLE001
         log.info("headlinekit.evaluate: %s", str(e)[:120])
         return empty
