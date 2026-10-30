@@ -1641,7 +1641,9 @@ function rankCards(cards, records, verOf) {
     const rec = records[seenKey(c)];
     c.upd = null;
     let t = 0;
-    if (rec) {
+    // A record belongs to ONE story. A different story id on the same thread is a new article (a follow-up): it is unseen,
+    // never "Updated" (owner, Oct 30 2026). Only the same story with changed line colours is updated.
+    if (rec && (rec.i == null || String(rec.i) === String(c.id))) {
       const was = fpOf(rec.v), now = verOf(c);
       if (was && now && was !== now) { c.upd = {r: "updated", n: 0}; counts.upd++; }
       else t = rec.o ? 2 : 1;
@@ -1652,7 +1654,11 @@ function rankCards(cards, records, verOf) {
   return {ordered: tiers[0].concat(tiers[1], tiers[2]), counts};
 }
 // UNSEEN-END
-let me = null;                    // the signed-in reader (2.1): kept on this device until they log out
+// the newest story the reader has been taken to the top for (opening, the refresh button). A background refresh that slips new cards
+// into the deck while the reader stays on their card does not move it, so the refresh button still brings them to the new ones
+// (owner, Oct 30 2026: a press found "nothing new" because the cards were already loaded behind the reader).
+let reachedAt = 0;
+let me = null;                   // the signed-in reader (2.1): kept on this device until they log out
 try { me = JSON.parse(safeGet("np-me") || "null"); } catch (e) { me = null; }
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c])); }
 function safeUrl(u) { try { const p = new URL(u); return p.protocol === "https:" || p.protocol === "http:"; } catch (e) { return false; } }
@@ -1955,8 +1961,8 @@ function watchCurrent() {
 }
 function markSeen(c, opened) {
   const all = readSeen(), k = seenKey(c), v = verOf(c), old = all[k], b = c.bar || {};
-  const now = Date.now(), same = old && (!fpOf(old.v) || !v || fpOf(old.v) === v);
-  all[k] = {v: v || fpOf(old && old.v), i: c.id, b: ["e", "v", "p", "o", "d", "r", "u"].map(x => b[x] || 0), s: same ? old.s : now, o: opened ? now : (same ? old.o || 0 : 0)};
+  const now = Date.now(), same = old && (old.i == null || String(old.i) === String(c.id)) && (!fpOf(old.v) || !v || fpOf(old.v) === v);
+  all[k] = {v: v || (same ? fpOf(old && old.v) : ""), i: c.id, b: ["e", "v", "p", "o", "d", "r", "u"].map(x => b[x] || 0), s: same ? old.s : now, o: opened ? now : (same ? old.o || 0 : 0)};
   safeSet(SEEN_KEY, JSON.stringify(all));
 }
 function takeSeenSnapshot() { seenSnap = readSeen(); }
@@ -2064,6 +2070,7 @@ async function showDeck(keepId, feedOnly = false, soft = false) {
       track.classList.remove("swap");
     } else renderDeck(keepId);
     buildBar();
+    if (keepId == null || !reachedAt) reachedAt = Math.max(reachedAt, newestAt(cardCache[lang]));   // opened at the top: it has been reached
     return true;
   } catch (e) {
     track.innerHTML = `<div class="slot"><div class="state"><div>${esc(T[lang].error)}<br><br>
@@ -3190,7 +3197,8 @@ async function manualRefresh() {
     if (!st) storyCache.clear();                          // new cards already read keep the stories fetched with them
     if ("serviceWorker" in navigator) navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {});   // a newer page is picked up too
     const keep = cards[current] && cards[current].id;
-    const had = cardCache[lang] && cardCache[lang].length ? newestAt(cardCache[lang]) : 0;   // what the reader has been shown
+    // what the reader has been taken to: not what is merely loaded (a background refresh may already hold the new cards)
+    const had = reachedAt || (cardCache[lang] && cardCache[lang].length ? newestAt(cardCache[lang]) : 0);
     if (st) cardCache[lang] = st.cards; else { delete cardCache.en; delete cardCache.hi; }   // new cards already read: no waiting
     // the database too (Oct 29 2026): when the feed is behind it (a failed export), the pill had found the new stories there and
     // the press, reading the feed alone, found none and said "up to date". The database read is short (4 s) and its failure
@@ -3198,6 +3206,7 @@ async function manualRefresh() {
     const ok = await showDeck(keep, false, true);
     if (ok && had) {
       const isNew = newestAt(cardCache[lang]) > had;
+      reachedAt = Math.max(reachedAt, newestAt(cardCache[lang]));
       outcome = isNew ? "new" : "none";
       if (isNew && cards.length) jumpTo(0);               // the top of the home page: the latest article
     }
