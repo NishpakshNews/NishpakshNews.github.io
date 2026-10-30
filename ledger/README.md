@@ -48,7 +48,11 @@ Consistency is the goal: no empty hours and a small spread, then more articles.
 - `shadow` (Oct 29 2026): what tidy / fusion / insert WOULD have done to the pages published or matured this run (nothing is
   changed): `stories`, `lines`, `pairs`, `outcomes` (same / covered / overlap / conflict / distinct), `folded`, `stories_with_fold`,
   `to_one_sentence`, `inspector_repeats` (what the current code counts), `weekday_errors`, `also_lines`, `also_would_insert`,
-  `also_why_not`, and up to 5 `sample_folds`, `sample_overlaps`, `sample_inserted` to READ. Any sampled fold or insertion that is
+  `also_why_not`, and up to 5 `sample_folds` (kept / dropped / reader), `sample_would_fold` (folds the code proposed that the reader did not confirm),
+  `sample_overlaps`, `sample_inserted` (with the story's headline, lead and the line it would sit next to) to READ. Oct 30 2026: a fold
+  needs the local reader to say the kept line holds all the dropped line says (`reader` true/false, `unverified`, `reader_refused`,
+  `would_fold` = folded + both), a line partly in another script is never judged, an inserted line must also fit the story's time
+  and not repeat another inserted line; `seconds` is what the shadow step cost. Any sampled fold or insertion that is
   not right is a false positive: the systems stay off until a day of samples has none.
 - `problems`: the run's health problems and failed steps.
 
