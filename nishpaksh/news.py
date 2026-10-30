@@ -542,8 +542,8 @@ def write_headline(router: Router | None, news: dict, items: dict[int, dict], le
     def score(h: str) -> float:
         try:
             return headline_score(h, news["text"], latest_text, cons=cons, recent=list(taken))
-        except Exception:  # noqa: BLE001 - never hold an article back for the scorer: the old one
-            return headline_score(h, news["text"], latest_text)
+        except Exception:  # noqa: BLE001 - a scoring fault never holds an article back: candidates tie, the model's first wins
+            return 0.0
     for attempt in range(2):          # a second call only when all candidates fail
         try:
             res = router.call("page", prompt, json_out=True, max_output_tokens=450)
