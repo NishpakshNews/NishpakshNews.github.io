@@ -341,8 +341,11 @@ def expired(made_at, now=None) -> bool:
     if made_at is None:
         return False
     now = now or utcnow()
-    if made_at.tzinfo is None and now.tzinfo is not None:
-        made_at = made_at.replace(tzinfo=now.tzinfo)
+    # either side may be aware (Supabase timestamptz) or naive (the job's own Postgres): compare both as naive UTC
+    if made_at.tzinfo is not None:
+        made_at = made_at.astimezone(dt.timezone.utc).replace(tzinfo=None)
+    if now.tzinfo is not None:
+        now = now.astimezone(dt.timezone.utc).replace(tzinfo=None)
     return now - made_at > dt.timedelta(hours=AUDIO_LIFE_HOURS)
 
 

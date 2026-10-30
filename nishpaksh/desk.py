@@ -348,7 +348,13 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
             continue
         verify.base_verdicts(store, sid)            # the 6-hour clock moved since it was analysed
         t1 = time.time()
-        ok = _write_with_retries(store, router, sid, until, stats)
+        try:
+            ok = _write_with_retries(store, router, sid, until, stats)
+        except Exception as e:  # noqa: BLE001   one story's crash must not end the desk (Oct 30 2026: a TypeError in polish ended a 28-minute desk run)
+            log.exception("desk: story %s crashed while being written", sid)
+            stats.setdefault("crashed", {})[str(sid)] = f"{type(e).__name__}: {str(e)[:200]}"
+            stats["tried"] += 1
+            ok = False
         write_s += time.time() - t1
         if ok:
             stats["published"].append(sid)

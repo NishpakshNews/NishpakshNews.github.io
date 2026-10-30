@@ -91,3 +91,12 @@ def test_a_gloss_never_carries_a_bracket_it_did_not_open():
     assert refs.usable_gloss("SIR) in West Bengal", "the revision", src) is None
     assert refs.gloss_text("during the special intensive revision.", [{"phrase": "special intensive revision",
                            "gloss": "SIR) in West Bengal"}], "", set()) == ("during the special intensive revision.", 0)
+
+
+def test_polish_accepts_integer_ids_in_background():
+    """Regression, Oct 30 2026: `dict(by_id, **{int: ...})` raised 'keywords must be strings' for every story with background."""
+    from nishpaksh import style
+    payload = {"narrative": {"paragraphs": [[{"text": "A thing happened.", "ids": [1]}]], "section_keys": []},
+               "established": [{"id": 1, "text": "A thing happened.", "sources": []}],
+               "background": [{"id": 2, "text": "Earlier it began.", "sources": []}]}
+    style.polish(payload)
