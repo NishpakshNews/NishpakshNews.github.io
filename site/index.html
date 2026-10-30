@@ -1101,6 +1101,11 @@
   .tkcard::-webkit-scrollbar { display: none; }
   /* Mute and Voice and pace (owner, Oct 30 2026): a glass pair at the foot of the card, the same material as the floating button.
      Muted: the Mute button turns solid indigo, the voice goes flat and the blue glow goes out (only while the guide is not speaking). */
+  .tkcard.morph { overflow: hidden; transition: height 480ms var(--ease), transform 420ms var(--ease), opacity 260ms ease, box-shadow 500ms ease, background-color 500ms ease, visibility 0s; }
+  .tkcard > *, .tkhead .tkname, .tkhead .bx:first-child { transition: opacity 160ms ease; }
+  .tkcard.swap > :not(.tkhead), .tkcard.swap .tkname, .tkcard.swap .tkhead .bx:first-child { opacity: 0; }
+  .tkcard.rise > :not(.tkhead), .tkcard.rise .tkname, .tkcard.rise .tkhead .bx:first-child { animation: tkrise 460ms var(--ease) both; }
+  @keyframes tkrise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   .tkpair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
   .tkpill { height: 44px; border: 0; border-radius: 22px; padding: 0 10px; min-width: 0; white-space: nowrap; cursor: pointer; color: #2f3a72; font-size: 14px; font-weight: 600;
             display: inline-flex; align-items: center; justify-content: center; gap: 7px; background: rgba(255,255,255,0.7);
@@ -3801,6 +3806,9 @@ function overlayOpen() { if (!overlay) { overlay = true; history.pushState({...(
 function overlayClose() { if (!overlay) return; overlay = false; if (history.state && history.state.npo) { ignorePop = true; history.back(); } }
 window.addEventListener("popstate", e => {
   if (ignorePop) { ignorePop = false; e.stopImmediatePropagation(); return; }
+  if (overlay && TK.ui === "card" && tkViewNow() === "set") {      // Voice and pace: back goes to the talk card; the entry back just used is put back, so the next back closes the card
+    history.pushState({...(history.state || {}), npo: 1}, ""); tkView("main"); e.stopImmediatePropagation(); return;
+  }
   if (overlay) { overlay = false; hideMenu(); hideSheet(); if (TK.ui === "card") tkMin(true); e.stopImmediatePropagation(); }
 }, true);
 mbtn.addEventListener("click", () => mdrop.classList.contains("on") ? closeMenu() : openMenu());
@@ -4718,8 +4726,8 @@ function tkBuild() {
     const sg = e.target.closest("[data-tks]");
     if (sg) { const [k, val] = sg.dataset.tks.split(":"); tkSetStyle({...tkStyle(), [k]: val}); return; }
     const b = e.target.closest("[data-tk]"); if (!b) return;
-    if (b.dataset.tk === "openset") { TK.view = "set"; tkPaint(); }
-    else if (b.dataset.tk === "back") { TK.view = "main"; tkPaint(); }
+    if (b.dataset.tk === "openset") tkView("set");
+    else if (b.dataset.tk === "back") tkView("main");
     else if (b.dataset.tk === "mute") tkToggleMute();
     else if (b.dataset.tk === "reset") tkSetStyle({...STYLE_DEFAULT});
     else if (b.dataset.tk === "min") tkMin();
@@ -5007,6 +5015,25 @@ function onRecapTalkTap(day) {
   tkShowCard({ready: !TK.mod, recap: day});
   if (TK.mod) tkBegin();
 }
+/* Voice and pace opens and closes inside the card (owner, Oct 30 2026): the old content fades out, the card eases to the new height, the new content
+   rises in. Transform, opacity and the card's own height only; reduced motion switches at once. */
+function tkViewNow() { return TK.viewTo || TK.view; }     // the view the card is going to (a tap during the fade counts)
+function tkView(v) {
+  if (tkViewNow() === v) return;
+  const c = TK.card;
+  if (!c || TK.ui !== "card" || matchMedia("(prefers-reduced-motion: reduce)").matches) { TK.view = v; TK.viewTo = null; tkPaint(); return; }
+  TK.viewTo = v;
+  clearTimeout(TK.viewT1); clearTimeout(TK.viewT2);
+  const h0 = c.getBoundingClientRect().height;
+  c.style.height = h0 + "px"; c.classList.remove("rise"); c.classList.add("morph", "swap");
+  TK.viewT1 = setTimeout(() => {
+    TK.view = v; TK.viewTo = null; tkPaint();
+    c.style.height = "auto"; const h1 = c.getBoundingClientRect().height;
+    c.style.height = h0 + "px"; void c.offsetHeight;
+    c.style.height = h1 + "px"; c.classList.remove("swap"); c.classList.add("rise");
+    TK.viewT2 = setTimeout(() => { c.style.height = ""; c.classList.remove("morph", "rise"); }, 520);
+  }, 160);
+}
 function tkToggleMute() {
   if (TK.phase !== "live" || !TK.talk) return;
   TK.muted = !TK.muted;
@@ -5017,7 +5044,7 @@ function tkBegin() {
   if (!TK.mod || TK.phase === "live") return;
   const t = talkInstance();
   if (player.el && !player.el.paused) player.el.pause();       // two voices at once would be noise
-  TK.phase = "live"; TK.st = "connecting"; TK.muted = false; TK.reason = ""; TK.reading = ""; TK.cap = ""; TK.capLineId = null; TK.capSegments = []; TK.capFinal = false; TK.nudges = {}; TK.view = "main";
+  TK.phase = "live"; TK.st = "connecting"; TK.muted = false; TK.viewTo = null; TK.reason = ""; TK.reading = ""; TK.cap = ""; TK.capLineId = null; TK.capSegments = []; TK.capFinal = false; TK.nudges = {}; TK.view = "main";
   tkPaint();
   t.start(TK.recap ? {recap: TK.recap, lang: TK.lang, style: tkStyle()} : {storyId: Number(TK.storyId), lang: TK.lang, style: tkStyle()});
 }
@@ -5191,7 +5218,7 @@ function schedulePeek(id) {
 
 /* ---- the phone's back button, Escape and leaving ---- */
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape" && TK.ui === "card") { e.preventDefault(); e.stopImmediatePropagation(); if (TK.view === "set") { TK.view = "main"; tkPaint(); } else tkMin(); }
+  if (e.key === "Escape" && TK.ui === "card") { e.preventDefault(); e.stopImmediatePropagation(); if (tkViewNow() === "set") tkView("main"); else tkMin(); }
 }, true);
 addEventListener("pagehide", () => { if (TK.phase === "live" && TK.talk) TK.talk.stop(); });
 setTimeout(loadTalk, 700);                   // the module is fetched in the background, so the first tap can start the sound at once

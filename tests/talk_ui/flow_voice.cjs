@@ -43,7 +43,7 @@ const ok = (c, m) => console.log(c ? "PASS" : "FAIL", m);
   h = await open({ lang: "hi", width: 360, height: 640 }); page = h.page;
   await page.waitForTimeout(300); await page.tap(".acts .talkbtn"); await page.waitForTimeout(500);
   await page.evaluate(() => window.__mock.set("listening"));
-  await page.tap('[data-tk="openset"]'); await page.waitForTimeout(500);
+  await page.tap('[data-tk="openset"]'); await page.waitForTimeout(900);
   const hi = await page.evaluate(() => { const c = document.querySelector(".tkcard"); const r = c.getBoundingClientRect(); return { title: document.querySelector(".tkname").textContent, top: Math.round(r.top), bottom: Math.round(r.bottom), vh: innerHeight, scrolls: c.scrollHeight > c.clientHeight, labs: [...document.querySelectorAll(".tkopts .olab")].map(x => x.textContent) }; });
   ok(hi.title === "आवाज़ और रफ़्तार" && hi.top >= 0 && hi.bottom <= hi.vh, "Hindi panel fits a 360x640 screen " + JSON.stringify(hi));
   await page.screenshot({ path: `${SHOTS}/41-settings-hindi-small.png` });
