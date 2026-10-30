@@ -162,6 +162,8 @@ def find_antecedent(ref: dict, source: str) -> str | None:
         if not sep:
             continue
         name = _name_at(src, m.end() + sep.end())
+        if name and "(" in sep.group():
+            name = name.split(")")[0].strip()          # "revision (SIR) in West Bengal": the name is what the bracket holds
         if name:
             found[name.lower()] = name
     for m in re.finditer(rf"((?:[A-Z][\w–&'’-]*\s+){{1,7}}){head[:1].upper() + head[1:]}(?![\w-])", src):
@@ -214,13 +216,25 @@ def in_source(gloss: str, source: str) -> bool:
     return _norm(gloss) in _norm(source)
 
 
+def balanced(text: str) -> bool:
+    """Every round, square or curly bracket that closes was opened (and the reverse), in order."""
+    stack, pairs = [], {")": "(", "]": "[", "}": "{"}
+    for ch in text or "":
+        if ch in "([{":
+            stack.append(ch)
+        elif ch in pairs:
+            if not stack or stack.pop() != pairs[ch]:
+                return False
+    return not stack
+
+
 def usable_gloss(gloss: str | None, phrase: str, source: str) -> str | None:
     """A gloss is kept only when its words stand in the source, it has a name or a figure in it (a capital or a
     digit), is not the phrase again, and is short enough to sit in a bracket."""
     g = _norm(gloss or "").strip(" .,;:\"'")
     if not g or len(g.split()) > 22 or g.lower() == _norm(phrase).lower():
         return None
-    if not in_source(g, source):
+    if not balanced(g) or not in_source(g, source):
         return None
     if not re.search(r"[A-Z0-9]", g[1:] if g[:1].isupper() and len(g.split()) == 1 else g):
         return None
@@ -408,7 +422,7 @@ def gloss_text(text: str, refs: list[dict], told: str, done: set[str]) -> tuple[
     quotes = [(m.start(), m.end()) for m in _QUOTE.finditer(text)]
     for r in refs:
         g, phrase = r.get("gloss"), r.get("phrase")
-        if not g or not phrase or g.lower() in done:
+        if not g or not phrase or g.lower() in done or not balanced(g):
             continue
         m = re.search(rf"(?<![\w'’-]){re.escape(phrase)}(?![\w-])", text, re.I)
         if not m or any(a <= m.start() < b for a, b in quotes):

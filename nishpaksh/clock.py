@@ -24,6 +24,8 @@ TENSE_RULES = (
     "  same thing and the two statements really are at different times. Never as the first word of a paragraph, never\n"
     "  after an unrelated sentence, at most once in a paragraph. Otherwise give the date or day itself (\"On Monday\")\n"
     "  or no time word at all.\n"
+    "- a statement with no \"when\" but a \"first reported\" day older than today happened on or before that day: tell it\n"
+    "  in the past, and in the opening sentence of the article name that day (\"On 28 October, ...\"), never as today's news.\n"
     "- a day name or date is written as given in the statement; \"yesterday\" / \"today\" / \"tomorrow\" only as the tag\n"
     "  after the statement's \"when\" says."
 )

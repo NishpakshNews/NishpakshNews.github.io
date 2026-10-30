@@ -503,6 +503,15 @@ def _statement_line(i: dict) -> str:
     if when:
         ago = clock.relative((i.get("time") or {}).get("start"))
         line += f" | when: {when}" + (f" ({ago})" if ago else "")
+    else:
+        # no day in the statement: the day it was first reported is the latest it can belong to (tense.py), so an
+        # old report is not told as today's news (owner, Oct 30 2026: a result of Oct 28 led an article of Oct 30)
+        from . import tense
+        day = tense.item_day(i)
+        if day:
+            ago = clock.relative(day.isoformat())
+            if ago and ago != "today":
+                line += f" | first reported: {day.strftime('%-d %B')} ({ago})"
     return line
 
 

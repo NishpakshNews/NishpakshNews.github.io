@@ -246,7 +246,8 @@ def build_payload(store: Store, router: Router | None, story_id: int) -> dict | 
                 continue
             seen.add(a["url"])
             srcs.append({"outlet": a["outlet"], "url": a["url"], "lang": a["lang"], "perspective": p,
-                         "stance": r["stance"], "evidence": r["evidence"], "attributed_to": r["attributed_to"]})
+                         "stance": r["stance"], "evidence": r["evidence"], "attributed_to": r["attributed_to"],
+                         "published_at": a["published_at"].isoformat(timespec="minutes") if a.get("published_at") else None})
         detail = c["detail"] or {}
         check = None
         if detail.get("checked"):
@@ -718,7 +719,7 @@ def drop_past_schedules(payload: dict, now: dt.datetime | None = None) -> int:
     from .relate import Profile
     now = now or utcnow()
     today = (now + dt.timedelta(hours=5, minutes=30)).date()
-    items = _all_items_of(payload) + list(payload.get("context") or [])
+    items = _all_items_of(payload) + list(payload.get("context") or []) + list(payload.get("background") or [])
     done = [i for i in items if not SCHEDULED.search(i.get("text") or "") and act_score(i.get("text") or "") > 0]
 
     def when(i) -> dt.date | None:
@@ -740,7 +741,7 @@ def drop_past_schedules(payload: dict, now: dt.datetime | None = None) -> int:
         if d < today or any(Profile(i["text"]).names & Profile(j["text"]).names for j in done):
             gone.add(i["id"])
     if gone:
-        for key in ("undated", "established", "contested", "context"):
+        for key in ("undated", "established", "contested", "context", "background"):
             payload[key] = [i for i in payload.get(key) or [] if i["id"] not in gone]
         payload["timeline"] = [t for t in ([i for i in tier if i["id"] not in gone]
                                            for tier in payload.get("timeline") or []) if t]
@@ -831,7 +832,7 @@ def fold_covered(payload: dict, covered: dict) -> int:
                                                     if items[small].get("groups") else set()))
             gone.add(small)
     if gone:
-        for key in ("undated", "established", "contested", "context"):
+        for key in ("undated", "established", "contested", "context", "background"):
             payload[key] = [i for i in payload.get(key) or [] if i["id"] not in gone]
         payload["timeline"] = [t for t in ([i for i in tier if i["id"] not in gone]
                                            for tier in payload.get("timeline") or []) if t]

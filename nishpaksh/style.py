@@ -363,6 +363,11 @@ def polish(payload: dict) -> None:
     # a body of several people is "they", with a plural verb, never "it" (agreement.py, owner Oct 15 2026)
     from .agreement import fix_article as _plural_bodies
     nar["plural_bodies"] = _plural_bodies(paras)
+    # a sentence whose statements all belong to an earlier day is told in the past (tense.py, owner Oct 30 2026)
+    from . import tense
+    all_by_id = dict(by_id, **{i["id"]: i for i in payload.get("background") or [] if "id" in i})
+    nar["tense_fixed"] = tense.fix_article(paras, all_by_id)
+    nar["lead_day_named"] = tense.name_lead_day(paras, nar.get("section_keys") or [], all_by_id)
     # last: whoever the reader has not been told about gets the context in brackets (owner, Oct 11 2026)
     from .gloss import gloss
     gloss(paras, speakers_of, [i.get("text") or "" for i in items], names)
