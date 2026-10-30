@@ -367,7 +367,11 @@ Consistency is the goal: no empty hours and a small spread, then more articles.
 - `shadow` (Oct 29 2026): what tidy / fusion / insert WOULD have done to the pages published or matured this run (nothing is
   changed): `stories`, `lines`, `pairs`, `outcomes` (same / covered / overlap / conflict / distinct), `folded`, `stories_with_fold`,
   `to_one_sentence`, `inspector_repeats` (what the current code counts), `weekday_errors`, `also_lines`, `also_would_insert`,
-  `also_why_not`, and up to 5 `sample_folds`, `sample_overlaps`, `sample_inserted` to READ. Any sampled fold or insertion that is
+  `also_why_not`, and up to 5 `sample_folds` (kept / dropped / reader), `sample_would_fold` (folds the code proposed that the reader did not confirm),
+  `sample_overlaps`, `sample_inserted` (with the story's headline, lead and the line it would sit next to) to READ. Oct 30 2026: a fold
+  needs the local reader to say the kept line holds all the dropped line says (`reader` true/false, `unverified`, `reader_refused`,
+  `would_fold` = folded + both), a line partly in another script is never judged, an inserted line must also fit the story's time
+  and not repeat another inserted line; `seconds` is what the shadow step cost. Any sampled fold or insertion that is
   not right is a false positive: the systems stay off until a day of samples has none.
 - `problems`: the run's health problems and failed steps.
 
@@ -520,23 +524,44 @@ def _desk_report(store, since: dt.datetime) -> dict | None:
 SAMPLES = 5
 
 
-def shadow_from_pages(pages: dict) -> dict:
+def _cut(t, n=280):
+    t = t or ""
+    return t if len(t) <= n else t[:n].rsplit(" ", 1)[0] + "…"
+
+
+def shadow_from_pages(pages: dict, ref=None, reader=None) -> dict:
     """What the shadow systems (tidy, fusion, insert; owner Oct 29 2026: nothing of them touches an article yet) would have done
     to these finished pages {story id: {"headline", "paragraphs": [[line]], "also": [...], "lead": [ids]}}. Plain data in, plain
     data out, no model, no quota. Samples are kept so a later session can READ the decisions: any fold or placed line that is not
     right is a false positive, and the adoption bar is none."""
+    import time as _time
     from .tools import insert_shadow, tidy_shadow
+    t0 = _time.time()
+    if reader is None:                                  # the local entailment reader (no quota); without it nothing is verified
+        try:
+            from . import nli
+            reader = (lambda pairs: nli.covers(pairs)) if nli.available() else False
+        except Exception:  # noqa: BLE001
+            reader = False
     paras = {sid: [[dict(x) for x in para if (x.get("text") or "").strip()] for para in (p.get("paragraphs") or [])] for sid, p in pages.items()}
     protect = {sid: {int(i) for i in (p.get("lead") or []) if isinstance(i, int)} for sid, p in pages.items()}
-    t = tidy_shadow.run(paras, protect)
-    i = insert_shadow.run({sid: {"headline": p.get("headline"), "paragraphs": paras[sid], "also": p.get("also") or []} for sid, p in pages.items()})
+    t = tidy_shadow.run(paras, protect, nli_fn=reader or None)
+    i = insert_shadow.run({sid: {"headline": p.get("headline"), "paragraphs": paras[sid], "also": p.get("also") or []} for sid, p in pages.items()}, ref=ref)
+    head = {str(sid): p.get("headline") for sid, p in pages.items()}
+    side = lambda r: {"story": r["story"], "headline": _cut(head.get(str(r["story"])), 120),    # noqa: E731
+                      "kept": _cut(r["b_text"] if r["drop"] == "a" else r["a_text"]), "dropped": _cut(r["a_text"] if r["drop"] == "a" else r["b_text"]),
+                      "reader": r.get("reader"), "why": r.get("why")}
     return {"stories": t["stories"], "lines": t["lines"], "pairs": t["pairs"], "outcomes": t["outcomes"], "folded": t["folded"],
             "stories_with_fold": t["stories_with_fold"], "stories_with_overlap": t["stories_with_overlap"],
             "to_one_sentence": t["to_one_sentence"], "inspector_repeats": t["inspector_repeats"], "weekday_errors": t["weekday_errors"],
             "also_lines": i["lines"], "also_would_insert": i["inserted"], "also_why_not": i["why_not"],
-            "sample_folds": [{"a": f.get("a_text"), "b": f.get("b_text")} for f in t["folds"][:SAMPLES]],
+            "reader": bool(reader), "unverified": t["unverified"], "reader_refused": t["reader_refused"],
+            "would_fold": t["folded"] + t["unverified"] + t["reader_refused"], "seconds": round(_time.time() - t0, 1),
+            "sample_folds": [side(f) for f in t["folds"][:SAMPLES]],
+            "sample_would_fold": [side(f) for f in t["would_fold_not_verified"][:SAMPLES]],
             "sample_overlaps": [{"a": f.get("a_text"), "b": f.get("b_text")} for f in t["candidates"][:SAMPLES]],
-            "sample_inserted": [{"story": x["story"], "text": x["text"]} for x in i["placed"][:SAMPLES]]}
+            "sample_inserted": [{"story": x["story"], "headline": _cut(x.get("headline"), 120), "lead": _cut(x.get("lead"), 240),
+                                 "near": _cut(x.get("near")), "shared": x.get("shared"), "text": _cut(x["text"])} for x in i["placed"][:SAMPLES]]}
 
 
 def _shadow(store, since: dt.datetime) -> dict | None:
@@ -550,7 +575,7 @@ def _shadow(store, since: dt.datetime) -> dict | None:
                 if pay:
                     pages[str(sid)] = {"headline": pay.get("headline"), "paragraphs": (pay.get("narrative") or {}).get("paragraphs") or [],
                                        "also": pay.get("also") or [], "lead": pay.get("lead") or []}
-        return shadow_from_pages(pages) if pages else None
+        return shadow_from_pages(pages, ref=dt.datetime.now(dt.timezone.utc).date()) if pages else None
     except Exception as e:  # noqa: BLE001
         return {"error": str(e)[:200]}
 

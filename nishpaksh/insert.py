@@ -12,6 +12,13 @@ by line, which would read as part of the article, and where. A line is inserted 
               it is not a repeat or a covered line)
   subject     it is about THIS story: it names something the story names that is not the story's setting (named in under a
               third of its lines), or is close to the story's headline and lead by weighted cosine
+  event       it is about the story's EVENT, not merely its topic (Oct 30 2026, from the first day of samples: a cabinet scheme in
+              another scheme's story, a flood of another month, a campaign song in a story about a question to the Election
+              Commission). An event is who + what + where + WHEN, so two constraints are checked by code and one by the graph:
+              TIME (its month or date must lie near the story's dates or the day it is written, `time_problem`: events are local
+              in time, the basis of topic detection and tracking), ANCHOR (a line tied to the story only by common words, that
+              brings names the story lacks, is a sibling event and stays out), and the foreign cluster cut of `alsograph`;
+  once        it does not repeat a line this run already inserted (redundancy, as in maximal marginal relevance)
   no clash    `tidy.judge` finds no conflict between it and any written line (a conflict is for the dispute step, not for
               a quiet insertion)
   role        its role is background, explanation or core; a line read as a RELATED event stays out unless it names
@@ -23,9 +30,10 @@ BEFORE the repair pass and `tidy` (which then folds any repeat it makes). The fi
 """
 from __future__ import annotations
 
+import datetime as dt
 import re
 
-from . import alsograph, tidy
+from . import alsograph, tidy, when
 from .relate import Profile
 
 MIN_WORDS = 6
@@ -35,6 +43,7 @@ PLACE_MIN = 0.22       # weighted cosine to the nearest written line from which 
 SETTING_SHARE = 1 / 3  # a name in more than this share of the story's lines is its setting and ties nothing
 NAME_COVER = 0.6      # of a line's names (by weight) this share must be names the story has: "Khelo India Sports Goods Scheme" is another scheme
 MAX_SHARE = 0.25      # at most this share of the written lines is added (the cap that made them "also" had a reason)
+TIME_WINDOW = 45      # days: a dated line must lie this near the story's own dates or the day it is written (untuned; read in the audit)
 ROLES = ("background", "explanation", "core")
 
 _CLOSE = {"(": ")", "[": "]", "{": "}"}
@@ -65,6 +74,54 @@ def form_problem(text: str, outlets: set[str] = frozenset(), speaker: str | None
         return "an outlet speaking of itself"
     if sum(ch.isalpha() for ch in t) < 0.6 * len(t):
         return "mostly not words"
+    return None
+
+
+def _gap(a: tuple[dt.date, dt.date], b: tuple[dt.date, dt.date]) -> int:
+    """Days between two day-intervals (0 when they touch or overlap)."""
+    return max(0, (b[0] - a[1]).days, (a[0] - b[1]).days)
+
+
+def _span(text: str, ref: dt.date) -> list[tuple[dt.date, dt.date]]:
+    """The day-intervals a text's dated mentions point to: a date is one day, a bare month is that month. A mention with no
+    year is read in the year that puts it nearest to `ref`."""
+    out = []
+    for m in when.find(text or ""):
+        if m.kind == "mon":
+            mon, day, year = when.MONTHS.get(m.text.lower().rstrip(".")), None, None
+        elif m.kind in ("iso", "dmy_num", "dm", "md", "range_dm", "range_md", "my"):
+            d = when.date_of(m.text)
+            if not d or not d[1]:
+                continue
+            year, mon, day = d
+        else:
+            continue
+        if not mon:
+            continue
+        cands = []
+        for y in ([year] if year else [ref.year - 1, ref.year, ref.year + 1]):
+            try:
+                lo = dt.date(y, mon, day or 1)
+                hi = lo if day else dt.date(y + (mon == 12), mon % 12 + 1, 1) - dt.timedelta(days=1)
+            except ValueError:
+                continue
+            cands.append((lo, hi))
+        if cands:
+            out.append(min(cands, key=lambda r: _gap(r, (ref, ref))))
+    return out
+
+
+def time_problem(text: str, story_texts: list[str], ref: dt.date | None) -> str | None:
+    """'another time' when the line points to a month or date that is far (TIME_WINDOW days) from every date of the story and
+    from the day it is written. A line with no date, or no day to compare with, is no problem: the question has no answer."""
+    if ref is None:
+        return None
+    mine = _span(text, ref)
+    if not mine:
+        return None
+    frame = [(ref, ref)] + [r for t in story_texts for r in _span(t, ref)]
+    if any(all(_gap(r, f) > TIME_WINDOW for f in frame) for r in mine):
+        return "another time (its date is far from the story's)"
     return None
 
 
@@ -116,7 +173,8 @@ def _setting(profiles: list[Profile]) -> set[str]:
 
 
 def judge_line(line: dict, written: list[str], profiles: list[Profile], W, anchor: Profile, outlets: set[str],
-               ask=None, headline: str = "", graph: dict | None = None, clusters: dict | None = None) -> dict:
+               ask=None, headline: str = "", graph: dict | None = None, clusters: dict | None = None,
+               ref: dt.date | None = None) -> dict:
     """{"ok": bool, "why": reason, "place": (paragraph line index, cos) | None} for one `also` line."""
     text = line.get("text") or ""
     bad = form_problem(text, outlets, line.get("speaker"))
@@ -124,6 +182,9 @@ def judge_line(line: dict, written: list[str], profiles: list[Profile], W, ancho
         return {"ok": False, "why": bad}
     if line.get("role") not in ROLES and line.get("role") != "related":
         return {"ok": False, "why": f"role {line.get('role')}"}
+    bad = time_problem(text, written + [headline], ref)
+    if bad:
+        return {"ok": False, "why": bad}
     p = Profile(text)
     best, best_cos, clash = None, 0.0, None
     for k, (t, q) in enumerate(zip(written, profiles)):
@@ -161,6 +222,9 @@ def judge_line(line: dict, written: list[str], profiles: list[Profile], W, ancho
             if word != "SAME":
                 return {"ok": False, "why": "names something the story does not (another subject)"}
     tied = bool(shared) or cos_anchor >= TIE_COS
+    if tied and not shared and any(not any(n == m or _alias(n, m) for m in story_names) for n in mine):
+        # tied by common words only, while it brings names the story lacks: a sibling (another scheme, case, event), not a detail
+        return {"ok": False, "why": "tied by common words only and names something the story does not (another subject)"}
     if line.get("role") == "related" and not shared:
         return {"ok": False, "why": "another event"}
     if not tied:
@@ -170,7 +234,8 @@ def judge_line(line: dict, written: list[str], profiles: list[Profile], W, ancho
     return {"ok": True, "why": "belongs", "place": (best, round(best_cos, 2)), "shared": sorted(shared)[:4]}
 
 
-def insert(paragraphs: list[list[dict]], also: list[dict], headline: str = "", shade=None, source_index=None, ask=None, graph=True) -> tuple[list[list[dict]], dict]:
+def insert(paragraphs: list[list[dict]], also: list[dict], headline: str = "", shade=None, source_index=None, ask=None, graph=True,
+           ref: dt.date | None = None) -> tuple[list[list[dict]], dict]:
     """The paragraphs with the lines that belong inserted, and a report. Nothing is changed in place."""
     paras = [[dict(x) for x in para] for para in paragraphs]
     flat = [(n, k) for n, para in enumerate(paras) for k in range(len(para))]
@@ -192,8 +257,9 @@ def insert(paragraphs: list[list[dict]], also: list[dict], headline: str = "", s
                 clusters[cid] = _same_subject(ask, headline, x.get("text") or "")
                 asked += 1
     report["cluster_questions"] = asked
-    judged = [(judge_line(x, written, profiles, W, anchor, outlets, ask, headline, sc, clusters), x) for sc, x in zip(scores, also)]
+    judged = [(judge_line(x, written, profiles, W, anchor, outlets, ask, headline, sc, clusters, ref), x) for sc, x in zip(scores, also)]
     room = max(1, int(len(written) * MAX_SHARE))
+    placed: list[tuple[str, Profile]] = []
     for res, x in sorted(judged, key=lambda t: -(t[0].get("place", (0, 0))[1] if t[0]["ok"] else -1)):
         item = {"text": x.get("text"), **{k: v for k, v in res.items() if k != "ok"}, "ok": res["ok"]}
         if res["ok"] and report["inserted"] >= room:
@@ -201,6 +267,14 @@ def insert(paragraphs: list[list[dict]], also: list[dict], headline: str = "", s
             item.update(res)
         if not res["ok"]:
             report["why_not"][res["why"]] = report["why_not"].get(res["why"], 0) + 1
+            report["items"].append(item)
+            continue
+        px = Profile(x["text"])
+        again = next((t for t, q in placed if tidy.judge(0, 1, x["text"], t, px, q, W).outcome in ("same", "covered", "overlap")
+                      or max(tidy.measures(W, tidy.bag(px), tidy.bag(q))[1:]) >= NOVEL_MAX), None)
+        if again:                                              # once: a line this run already inserted says it
+            report["why_not"]["repeats a line inserted in this run"] = report["why_not"].get("repeats a line inserted in this run", 0) + 1
+            item.update(ok=False, why="repeats a line inserted in this run", repeats=again)
             report["items"].append(item)
             continue
         k = res["place"][0]
@@ -212,7 +286,9 @@ def insert(paragraphs: list[list[dict]], also: list[dict], headline: str = "", s
         line["_inserted"] = True
         paras[n].insert(_after(paras[n], written[k]), line)
         report["inserted"] += 1
+        placed.append((x["text"], px))
         item["paragraph"] = n
+        item["near"] = written[k]
         report["items"].append(item)
     for para in paras:
         for x in para:

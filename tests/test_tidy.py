@@ -5,6 +5,18 @@ from nishpaksh.relate import Profile
 from .tidy_pairs import PAIRS
 
 
+def YES(pairs):
+    return [True] * len(pairs)
+
+
+def NO(pairs):
+    return [False] * len(pairs)
+
+
+def NONE(pairs):
+    return [None] * len(pairs)
+
+
 def L(text, ids, cls="established", sources=(1,)):
     return {"text": text, "ids": list(ids), "class": cls, "sources": list(sources)}
 
@@ -35,7 +47,7 @@ def test_a_contained_line_goes_and_its_sources_and_the_weaker_colour_join_the_ot
     a = L("Officials who have completed three years in the same district will be removed.", [1], "established", [1, 2])
     b = L("Officials who have completed three years in the same district will be removed, and the Commission removed 73 returning officers.",
           [2], "single", [3])
-    out, rep = tidy.tidy([[a, b]])
+    out, rep = tidy.tidy([[a, b]], nli_fn=YES)
     assert len(out[0]) == 1 and rep["folded"] == 1
     x = out[0][0]
     assert "73 returning officers" in x["text"] and x["ids"] == [2, 1] and x["sources"] == [1, 2, 3] and x["class"] == "single"
@@ -59,7 +71,7 @@ def test_a_different_ordinal_is_a_different_fact():
 def test_a_quotation_inside_a_longer_one_is_folded_and_two_different_quotations_never_are():
     q1 = L("“You lack courage. We will ensure justice for these crimes,” Gandhi said.", [1])
     q2 = L("“Indian business is not a plaything. You lack courage. We will ensure justice for these crimes,” Gandhi said.", [2])
-    out, _ = tidy.tidy([[q1, q2]])
+    out, _ = tidy.tidy([[q1, q2]], nli_fn=YES)
     assert len(out[0]) == 1 and "plaything" in out[0][0]["text"]
     q3 = L("“We will hold a march at Ramlila Maidan on the first of November,” Venugopal said.", [3])
     out, rep = tidy.tidy([[q1, q3]])
@@ -131,7 +143,7 @@ def test_a_weekday_that_is_not_the_day_of_the_date_is_reported():
 def test_a_paragraph_that_falls_to_one_sentence_is_counted():
     a = L("The deadline for the Station Master posts is 25 November 2026.", [1])
     b = L("The deadline for the Station Master posts is 25 November 2026, the Board said on Tuesday.", [2])
-    out, rep = tidy.tidy([[a, b], [L("Applications opened on Tuesday.", [3])]])
+    out, rep = tidy.tidy([[a, b], [L("Applications opened on Tuesday.", [3])]], nli_fn=YES)
     assert rep["to_one_sentence"] == 1 and [len(p) for p in out] == [1, 1]
 
 
@@ -145,3 +157,38 @@ def test_ledger_shadow_records_without_touching_pages():
     before = copy.deepcopy(pages)
     out = ledger.shadow_from_pages(pages)
     assert pages == before and out["stories"] == 1 and "sample_folds" in out and out["also_would_insert"] == 0
+
+
+# --- Oct 30 2026: the first day of shadow samples -------------------------------------------------------------------
+HARISH_EN = "India agrees with the sentiment behind UNGA Resolution 76/262 and initiatives on mass atrocity situations, Parvathaneni Harish said."
+HARISH_HI = "लेकिन अब तक का अनुभव बताता है कि अलग-अलग मुद्दों पर छोटे-छोटे कदम उठाने से समस्या का समाधान नहीं होगा, Parvathaneni Harish said."
+
+
+def test_a_line_the_measures_cannot_fully_read_is_never_folded_even_if_the_reader_says_yes():
+    # the Hindi sentence is an empty bag except for its speaker's name, so "all of it is in the English line" was a claim about
+    # two words. Found in the first day of shadow samples (2026-10-30 13:05).
+    assert tidy.unread_share(HARISH_HI) > 0.5 and tidy.unread_share(HARISH_EN) == 0
+    out, rep = tidy.tidy([[L(HARISH_EN, [1]), L(HARISH_HI, [2])]], nli_fn=YES)
+    assert len(out[0]) == 2 and rep["folded"] == 0 and rep["outcomes"] == {"distinct": 1}
+
+
+def test_a_fold_needs_the_reader_without_one_nothing_is_folded_and_the_report_says_unverified():
+    a = L("The deadline for the Station Master posts is 25 November 2026.", [1])
+    b = L("The deadline for the Station Master posts is 25 November 2026, the Board said on Tuesday.", [2])
+    for reader, key in ((None, "unverified"), (NONE, "unverified"), (NO, "reader_refused")):
+        out, rep = tidy.tidy([[a, b]], nli_fn=reader)
+        assert len(out[0]) == 2 and rep["folded"] == 0 and rep[key] == 1
+    out, rep = tidy.tidy([[a, b]], nli_fn=YES)
+    assert len(out[0]) == 1 and rep["folded"] == 1 and rep["items"][0]["reader"] is True
+
+
+def test_the_reader_reads_the_kept_line_as_the_premise_and_the_dropped_line_as_the_claim():
+    seen = []
+
+    def spy(pairs):
+        seen.extend(pairs)
+        return [True] * len(pairs)
+    a = L("The deadline for the Station Master posts is 25 November 2026.", [1])
+    b = L("The deadline for the Station Master posts is 25 November 2026, the Board said on Tuesday.", [2])
+    tidy.tidy([[a, b]], nli_fn=spy)
+    assert seen[-1] == (b["text"], a["text"])

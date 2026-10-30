@@ -17,6 +17,17 @@ nothing upstream could fold them, but a reader sees one fact three times. `narra
      the sentence it returns (`verify_merge`): every figure, name, date and quotation of both lines is in it, nothing new
      is. A failed check leaves the paragraph as it was.
 
+Two things a fold must prove (owner, Oct 30 2026, from the first day of shadow samples: a Hindi sentence was folded into an
+English one that held only its speaker's name). The cause was not "different languages": it was that SIMILARITY IS NOT
+SUBSUMPTION. A line may go only when what is kept says everything it says, and that has two parts:
+  5. COMPLETE READING: the overlap measures see only what the tokenizer reads. A line whose letters are partly in a script the
+     bag cannot read (`unread_share`) has an invisible part, so "all of it is in the other line" is a claim about the visible
+     remainder only: the pair is not judged (`distinct`), never folded;
+  6. THE READER IS A NECESSARY CONDITION, not a booster: a fold or merge is applied only when the local entailment reader
+     (multilingual NLI) reads "the kept line says the dropped one" (`verify=True`). No reader, or a reader that could not
+     read the pair, is "unverified": the paragraph stays as it was. Code proves what it can read (figures, names, dates), the
+     reader judges what it cannot, and either one unsure keeps both lines.
+
 Four outcomes: `same` / `covered` (one line goes, its ids and sources join the other, the sentence takes the WEAKEST
 colour of the two: it can only get more cautious), `overlap` (each adds a detail: a merge candidate), `conflict` (the
 same question answered differently: both stay, the pair is reported), `distinct` (nothing).
@@ -46,6 +57,7 @@ NEW_ROOTS = 2      # a merged sentence may use at most this many words neither o
 _STRENGTH = frozenset("""only solely merely just alone all every each any some most few both either neither none except unless if
 may might could can would should must""".split())
 _LEANS = re.compile(r"(?i)^\s*(?:he|she|they|it|his|her|their|its|this|that|these|those|the latter|both)\b")
+UNREAD_MAX = 0.05  # a line may have at most this share of its letters in a script the bag cannot read (else coverage cannot be certified)
 GUARDED = {"disputed", "false"}            # a line in one of these colours is never folded into another
 
 _QUOTE = re.compile(r"[“\"]([^”\"]{12,})[”\"]")
@@ -100,6 +112,14 @@ def claim_strength(text: str) -> frozenset:
 
 def ordinals(text: str) -> frozenset:
     return frozenset(_ORDINAL.findall(text or ""))
+
+
+def unread_share(text: str) -> float:
+    """The share of a line's letters the overlap measures cannot see: letters outside the Latin script (the tokenizer reads
+    Latin words only, so a Devanagari sentence is an empty bag, or just the Latin names written inside it). A measure computed
+    on part of a line cannot certify that the rest says nothing new."""
+    letters = [c for c in (text or "") if c.isalpha()]
+    return sum(ord(c) > 0x024F for c in letters) / len(letters) if letters else 0.0
 
 
 def weekday_errors(text: str) -> list[str]:
@@ -173,6 +193,9 @@ def judge(i: int, j: int, ta: str, tb: str, pa: Profile, pb: Profile, W: idf.Wei
 
     def v(outcome, drop=None, keep=None, why=""):
         return Verdict(i, j, outcome, drop, keep, cos, ca, cb, why)
+
+    if unread_share(ta) > UNREAD_MAX or unread_share(tb) > UNREAD_MAX:
+        return v("distinct", why="a line is partly in a script the measures cannot read: coverage cannot be certified")
 
     # two quotations are never merged; one inside the other is the same words
     qa, qb = quotes(ta), quotes(tb)
@@ -312,7 +335,17 @@ def _variants(host: dict, gone: dict, notes) -> None:
                                                 "sources": list(gone.get("sources") or [])})
 
 
-def tidy(paragraphs: list[list[dict]], protect=frozenset(), nli_fn=None, rewrite=None, fuse=True) -> tuple[list[list[dict]], dict]:
+def _reader_says(nli_fn, keep: str, drop: str) -> bool | None:
+    """Does the kept line say everything the dropped one says (the local reader, premise = kept)? None = could not read."""
+    if nli_fn is None:
+        return None
+    try:
+        return nli_fn([(keep, drop)])[0]
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def tidy(paragraphs: list[list[dict]], protect=frozenset(), nli_fn=None, rewrite=None, fuse=True, verify=True) -> tuple[list[list[dict]], dict]:
     """The article with its repeats folded, and a report. Nothing is changed in place. `protect`: ids that are never
     folded (the lead's, a dispute's). `rewrite(a, b) -> str | None` makes one sentence of two overlapping lines; it is
     optional and every answer is checked by `verify_merge`. `fuse`: two overlapping lines are first merged by CODE
@@ -323,7 +356,7 @@ def tidy(paragraphs: list[list[dict]], protect=frozenset(), nli_fn=None, rewrite
     paras = [[dict(x) for x in para] for para in paragraphs]
     judged = pairs_of(paras, nli_fn)
     report = {"pairs": len(judged), "outcomes": {}, "folded": 0, "merged": 0, "merge_refused": 0, "skipped_guard": 0,
-              "to_one_sentence": 0, "items": []}
+              "to_one_sentence": 0, "unverified": 0, "reader_refused": 0, "items": []}
     for _, vd in judged:
         report["outcomes"][vd.outcome] = report["outcomes"].get(vd.outcome, 0) + 1
     gone: set[tuple[int, int]] = set()
@@ -349,6 +382,14 @@ def tidy(paragraphs: list[list[dict]], protect=frozenset(), nli_fn=None, rewrite
                 item["applied"] = "guarded: the line after it would be left without its subject"
                 report["items"].append(item)
                 continue
+            if verify:                                          # the reader must read: kept line says all the dropped one says
+                says = _reader_says(nli_fn, para[vd.keep]["text"], para[vd.drop]["text"])
+                item["reader"] = says
+                if says is not True:
+                    report["unverified" if says is None else "reader_refused"] += 1
+                    item["applied"] = "unverified: no reader answer" if says is None else "refused: the reader does not read the kept line as saying it all"
+                    report["items"].append(item)
+                    continue
             _fold(para[vd.keep], para[vd.drop])
             _variants(para[vd.keep], para[vd.drop], vd.notes)
             gone.add((n, vd.drop))

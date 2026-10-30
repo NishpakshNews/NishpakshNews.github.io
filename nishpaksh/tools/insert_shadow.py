@@ -9,19 +9,21 @@ from .. import insert
 from ..narrative import shade
 
 
-def run(pages: dict) -> dict:
+def run(pages: dict, ref=None) -> dict:
     tot = {"stories": 0, "lines": 0, "inserted": 0, "why_not": {}, "placed": []}
     for sid, s in pages.items():
         also = s.get("also") or []
         if not also or not s.get("paragraphs"):
             continue
-        _, rep = insert.insert([list(p) for p in s["paragraphs"]], also, s.get("headline") or "", shade=shade)
+        _, rep = insert.insert([list(p) for p in s["paragraphs"]], also, s.get("headline") or "", shade=shade, ref=ref)
         tot["stories"] += 1
         tot["lines"] += rep["lines"]
         tot["inserted"] += rep["inserted"]
         for k, v in rep["why_not"].items():
             tot["why_not"][k] = tot["why_not"].get(k, 0) + v
-        tot["placed"] += [{"story": sid, "near": it["place"], "text": it["text"]} for it in rep["items"] if it["ok"]]
+        lead = " ".join((x.get("text") or "") for para in s["paragraphs"] for x in para)[:240]
+        tot["placed"] += [{"story": sid, "headline": s.get("headline"), "lead": lead, "near": it.get("near"), "tie": it["place"],
+                           "shared": it.get("shared"), "text": it["text"]} for it in rep["items"] if it["ok"]]
     tot["share_inserted"] = round(tot["inserted"] / tot["lines"], 3) if tot["lines"] else 0
     return tot
 

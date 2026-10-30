@@ -68,3 +68,48 @@ def test_a_sibling_subject_needs_the_model_and_stays_out_without_it():
     assert r["inserted"] == 0
     _, r = I.insert(paras, also, "Cabinet approves container manufacturing scheme", ask=lambda p: "ANOTHER")
     assert r["inserted"] == 0
+
+
+# --- Oct 30 2026: the first day of shadow samples (an event is who + what + where + WHEN) ----------------------------
+import datetime as dt
+
+TODAY = dt.date(2026, 10, 30)
+
+
+def run_on(also, ref=TODAY):
+    return insert.insert([list(p) for p in PARAS], also, "Cabinet approves scheme to boost container production", ref=ref)
+
+
+def test_a_dated_line_far_from_the_story_is_another_event_and_stays_out_near_dates_and_undated_lines_go_in():
+    far = A("Container manufacturing under the scheme will start with three Indian shipyards in August.", 20)
+    near = A("Container manufacturing under the scheme will start with three Indian shipyards on 27 October.", 21)
+    _, rep = run_on([far])
+    assert rep["inserted"] == 0 and any("another time" in k for k in rep["why_not"])
+    _, rep = run_on([near])                                # near the day it is written: the time gate passes it (the place decides the rest)
+    assert not any("another time" in k for k in rep["why_not"])
+    _, rep = run_on([far], ref=None)                       # no day to compare with: the question has no answer
+    assert not any("another time" in k for k in rep["why_not"])
+
+
+def test_a_story_that_gives_its_own_old_date_makes_a_line_of_that_date_compatible():
+    paras = [[L("The scheme was first announced in August after the shipping crisis.", [1]),
+              L("The Union Cabinet approved the Container Manufacturing Promotion Scheme on Wednesday.", [2])],
+             [L("The Shipping Ministry will run the scheme with an outlay of ₹10,000 crore.", [4])]]
+    new, rep = insert.insert(paras, [A("Container manufacturing under the scheme will start with three Indian shipyards in August.", 22)],
+                             "Cabinet approves container scheme", ref=TODAY)
+    assert rep["inserted"] == 1
+
+
+def test_a_line_that_repeats_one_inserted_in_the_same_run_is_left_out():
+    a = A("Container manufacturing under the scheme will start with three Indian shipyards.", 30)
+    b = A("Container manufacturing under the scheme will start with three Indian shipyards, officials said.", 31)
+    filler = [[L("Rain fell over Kerala on Tuesday.", [51]), L("The court heard a plea on Monday.", [52])],
+              [L("Markets closed higher on Wednesday after the budget.", [53]), L("The league match ended in a draw at Pune.", [54])]]
+    _, rep = insert.insert([list(p) for p in PARAS] + filler, [a, b], "Cabinet approves scheme to boost container production", ref=TODAY)
+    assert rep["inserted"] == 1 and rep["why_not"].get("repeats a line inserted in this run") == 1
+
+
+def test_a_line_tied_only_by_common_words_that_brings_new_names_is_a_sibling_and_stays_out():
+    sib = A("The scheme resembles the Sagarmala Shipbuilding Programme run by the Gujarat Maritime Board with Kandla port.", 40)
+    _, rep = run_on([sib])
+    assert rep["inserted"] == 0

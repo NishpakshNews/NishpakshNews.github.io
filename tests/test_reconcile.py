@@ -67,7 +67,7 @@ def test_a_near_figure_folds_and_the_second_reading_is_kept_as_data_not_words():
     a = L("The scheme was approved with an outlay of ₹7,395 crore for rural works by the Cabinet on Wednesday.", [1], sources=(1,))
     b = L("The scheme was approved with an outlay of ₹7,395.55 crore for rural works by the Cabinet on Wednesday, the minister said.",
           [2], sources=(2,))
-    out, rep = tidy.tidy([[a, b]])
+    out, rep = tidy.tidy([[a, b]], nli_fn=lambda pairs: [True] * len(pairs))
     assert len(out[0]) == 1 and rep["folded"] == 1
     kept = out[0][0]
     assert "(" not in kept["text"] and "another" not in kept["text"]

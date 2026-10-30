@@ -1,0 +1,14 @@
+{
+ "_about": "Labels the owner or a reader has given to shadow samples (tidy folds, 'Also' insertions). label: right | wrong | suspect (looked wrong from the line alone; the ledger then had no story text). tools/day_check.py matches by the start of the text. Add every line you read; a system with ONE wrong sample stays off.",
+ "folds": [
+  {"dropped": "लेकिन अब तक का अनुभव बताता है", "label": "wrong", "why": "a Hindi sentence with its own claim folded into an English line that held only the speaker's name (2026-10-30 13:05); fixed by unread_share + the reader"},
+  {"dropped": "India's GDP growth rate in the first quarter of the 2027 fiscal year was 7.8%.", "label": "right"}
+ ],
+ "inserted": [
+  {"text": "The Union Cabinet approved a 10,000 crore rupee scheme for container manufacturing.", "label": "suspect", "why": "story 49831 is about PM VGSY: another cabinet scheme"},
+  {"text": "A flash flood on the Nepal-China border in August left more than 5,000 missing.", "label": "suspect", "why": "story 52103 (Bhutan rivers): another event, another month; time gate"},
+  {"text": "The BJP released a dedicated campaign song targeting the Congress", "label": "suspect", "why": "story 47651 is Rahul Gandhi's question to the CEC"},
+  {"text": "According to Confederation of Central Government Employees and Workers President SB Yadav, banking employees' DA", "label": "suspect", "why": "story 49556: another group's DA"},
+  {"text": "The Houthi attacks have triggered concerns over the safety of the Bab-el-Mandeb shipping lane.", "label": "suspect", "why": "story 50622: repeats the other inserted Houthi line"}
+ ]
+}

@@ -27,7 +27,7 @@ def lines_of(payload: dict) -> list[list[dict]]:
 
 def run(pages: dict[str, list[list[dict]]], protect: dict[str, set] | None = None, nli_fn=None) -> dict:
     out = {"stories": 0, "lines": 0, "pairs": 0, "outcomes": {}, "folded": 0, "to_one_sentence": 0, "inspector_repeats": 0,
-           "weekday_errors": 0, "stories_with_fold": 0, "stories_with_overlap": 0, "folds": [], "candidates": [], "conflicts": [],
+           "weekday_errors": 0, "unverified": 0, "reader_refused": 0, "stories_with_fold": 0, "stories_with_overlap": 0, "folds": [], "would_fold_not_verified": [], "candidates": [], "conflicts": [],
            "by_story": {}}
     for sid, paras in pages.items():
         paras = [p for p in paras if p]
@@ -40,6 +40,8 @@ def run(pages: dict[str, list[list[dict]]], protect: dict[str, set] | None = Non
         for k, n in rep["outcomes"].items():
             out["outcomes"][k] = out["outcomes"].get(k, 0) + n
         out["folded"] += rep["folded"]
+        out["unverified"] += rep.get("unverified", 0)
+        out["reader_refused"] += rep.get("reader_refused", 0)
         out["to_one_sentence"] += rep["to_one_sentence"]
         out["inspector_repeats"] += inspector.inspect(paras).get("repeats", 0)
         out["weekday_errors"] += sum(len(tidy.weekday_errors(x.get("text"))) for p in paras for x in p)
@@ -48,9 +50,12 @@ def run(pages: dict[str, list[list[dict]]], protect: dict[str, set] | None = Non
         out["by_story"][str(sid)] = {"lines": sum(len(p) for p in paras), "folded": rep["folded"], "overlap": rep["outcomes"].get("overlap", 0),
                                      "conflict": rep["outcomes"].get("conflict", 0)}
         for it in rep["items"]:
-            row = {"story": sid, **{k: it[k] for k in ("outcome", "cos", "why", "a_text", "b_text")}, "drop": None if it["drop"] is None else ("a" if it["drop"] == it["a"] else "b")}
+            row = {"story": sid, **{k: it[k] for k in ("outcome", "cos", "why", "a_text", "b_text")}, "drop": None if it["drop"] is None else ("a" if it["drop"] == it["a"] else "b"),
+                   "reader": it.get("reader"), "applied": it["applied"]}
             if it["applied"] == "folded":
                 out["folds"].append(row)
+            elif str(it["applied"]).startswith(("unverified", "refused: the reader")):
+                out["would_fold_not_verified"].append(row)
             elif it["applied"] == "candidate":
                 out["candidates"].append(row)
         # conflicts are not in `items` (nothing is applied to them): list them from the judged pairs
@@ -58,7 +63,7 @@ def run(pages: dict[str, list[list[dict]]], protect: dict[str, set] | None = Non
             if v.outcome == "conflict":
                 out["conflicts"].append({"story": sid, "why": v.why, "cos": round(v.cos, 2),
                                          "a_text": paras[n][v.a]["text"], "b_text": paras[n][v.b]["text"]})
-    for k in ("folds", "candidates", "conflicts"):
+    for k in ("folds", "would_fold_not_verified", "candidates", "conflicts"):
         out[k + "_total"] = len(out[k])
         out[k] = out[k][:EXAMPLES]
     out["fold_rate_pct"] = round(100 * out["folded"] / max(1, out["lines"]), 1)
