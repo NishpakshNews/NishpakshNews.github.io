@@ -335,12 +335,38 @@ def _variants(host: dict, gone: dict, notes) -> None:
                                                 "sources": list(gone.get("sources") or [])})
 
 
+def align_figures(keep: str, drop: str) -> str:
+    """The dropped line with each figure that code has already paired with one of the kept line's (equal, inside, covers, near:
+    "7,395 crore" / "7,395.55 crore") written the way the kept line writes it. Arithmetic is code's question; a reader is bad at
+    it (it can read 7,395 and 7,395.55 as two different claims), so the reader is asked only the part code cannot read."""
+    try:
+        for fp in reconcile.difference(keep, drop, Profile(keep), Profile(drop)).pairs:
+            if fp.relation in ("equal", "within", "covers", "near") and fp.a.text != fp.b.text and fp.b.text in drop:
+                drop = drop.replace(fp.b.text, fp.a.text, 1)
+    except Exception:  # noqa: BLE001
+        pass
+    return drop
+
+
+def _other_language(a: str, b: str) -> bool:
+    """True when language identification is sure the two lines are in different languages (an established identifier, not a word
+    list). Unsure or unavailable: False (the script check and the reader still stand)."""
+    try:
+        from . import langid
+        la, lb = langid.identify(a), langid.identify(b)
+    except Exception:  # noqa: BLE001
+        return False
+    return bool(la and lb and la[0] != lb[0] and la[1] >= langid.OTHER_SURE and lb[1] >= langid.OTHER_SURE)
+
+
 def _reader_says(nli_fn, keep: str, drop: str) -> bool | None:
     """Does the kept line say everything the dropped one says (the local reader, premise = kept)? None = could not read."""
     if nli_fn is None:
         return None
+    if _other_language(keep, drop):
+        return False
     try:
-        return nli_fn([(keep, drop)])[0]
+        return nli_fn([(keep, align_figures(keep, drop))])[0]
     except Exception:  # noqa: BLE001
         return None
 

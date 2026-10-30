@@ -1123,6 +1123,25 @@ def _response_sentence(i: dict) -> str:
     return text + "."
 
 
+def english_only(paragraphs: list[list[dict]], keys: list[str]) -> tuple[list[list[dict]], list[str], list[str]]:
+    """The English essay holds English sentences. A sentence that is mostly in another script (`hygiene.kind` "hi": a Hindi
+    statement added "in plain words" with its English attribution, Oct 30 2026: "लेकिन ... , Parvathaneni Harish said.") leaves the
+    essay; its statements are not covered, so `_also` lists them under the article instead of losing them. The old check let any
+    sentence through when its SOURCE was Hindi, which is exactly where such a sentence comes from. Names written in Devanagari
+    inside an English sentence ("mixed") stay. An article is never emptied by this: with no English sentence left, nothing moves."""
+    from . import hygiene
+    stray = [x["text"] for para in paragraphs for x in para if hygiene.kind(x.get("text") or "") == "hi"]
+    if not stray or len(stray) == sum(len(p) for p in paragraphs) or len(keys) != len(paragraphs):
+        return paragraphs, keys, []
+    out_p, out_k = [], []
+    for para, k in zip(paragraphs, keys):
+        keep = [x for x in para if hygiene.kind(x.get("text") or "") != "hi"]
+        if keep:
+            out_p.append(keep)
+            out_k.append(k)
+    return out_p, out_k, stray
+
+
 def _also(items: list[dict], covered: set[int], by_id: dict[int, dict], essay: list[str] | None = None) -> list[dict]:
     """Statements the essay does not carry, listed under it in plain words ("Also reported"), so
     nothing is silently dropped and the essay itself stays the writer's prose. A statement the essay
@@ -1996,6 +2015,10 @@ def write_narrative(router: Router | None, payload: dict, banned: set[str], draf
             paragraphs, copy_stats = _rephrase_copies(router if model else None, paragraphs, by_id, banned, outlets,
                                                       report_text)
             flow.update(copy_stats)
+    paragraphs, keys, stray = english_only(paragraphs, keys)
+    if stray:
+        flow["not_english"] = len(stray)
+        log.info("narrative: %d sentence(s) in another script left the English essay", len(stray))
     covered = {x for para in paragraphs for s in para for x in s["ids"]}
     also = _also(items, covered, by_id, [x["text"] for para in paragraphs for x in para])
     if rejected:

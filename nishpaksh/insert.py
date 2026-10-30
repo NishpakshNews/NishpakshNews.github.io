@@ -125,6 +125,18 @@ def time_problem(text: str, story_texts: list[str], ref: dt.date | None) -> str 
     return None
 
 
+def anchor_problem(text: str, story_texts: list[str]) -> str | None:
+    """A time word that points at the day a report was written ("Thursday", "tomorrow", "next week") loses its anchor when the
+    line moves into another article (deixis, as TimeML calls it: "will visit on Thursday" may have happened by now). Such a word
+    is only safe when the article itself uses it, so the two readings are one day. Dates ("27 October") are not deictic."""
+    def deictic(t):
+        return {m.text.lower().strip(" .,;") for m in when.find(t or "") if m.kind in ("weekday", "relative")}
+    mine = deictic(text)
+    if mine and not mine <= set().union(*(deictic(t) for t in story_texts)):
+        return "its time words (a weekday, tomorrow, next week ...) have no anchor in this article"
+    return None
+
+
 SUBJECT_PROMPT = """A news article has this headline. Is the extra line about the SAME subject as the headline, or about ANOTHER one
 of the same kind (another scheme, case, match, person, place or event that the article merely mentions)?
 
@@ -200,6 +212,9 @@ def judge_line(line: dict, written: list[str], profiles: list[Profile], W, ancho
             best, best_cos = k, cos
     if clash:
         return {"ok": False, "why": "clashes with a written line (for the dispute step)", "clash": clash}
+    bad = anchor_problem(text, written + [headline])          # after the clash check: a day that CONTRADICTS the article is the dispute step's
+    if bad:
+        return {"ok": False, "why": bad}
     setting = _setting(profiles)
     shared = {n for n in p.names if any(n in q.names for q in profiles)} - setting
     cos_anchor = tidy.measures(W, tidy.bag(p), tidy.bag(anchor))[0]

@@ -113,3 +113,13 @@ def test_a_line_tied_only_by_common_words_that_brings_new_names_is_a_sibling_and
     sib = A("The scheme resembles the Sagarmala Shipbuilding Programme run by the Gujarat Maritime Board with Kandla port.", 40)
     _, rep = run_on([sib])
     assert rep["inserted"] == 0
+
+
+def test_a_weekday_or_tomorrow_has_no_anchor_in_another_article_unless_the_article_uses_it():
+    line = "The Chief Minister will visit the container shipyards of the scheme on Thursday afternoon."
+    assert insert.anchor_problem(line, ["The scheme was approved on Wednesday.", "Rain fell."]) is not None
+    assert insert.anchor_problem(line, ["The Chief Minister reached the shipyards on Thursday."]) is None
+    assert insert.anchor_problem("The scheme was launched on 27 October with three shipyards.", ["Rain fell."]) is None     # a date is anchored
+    assert insert.anchor_problem("Three shipyards will start container manufacturing under the scheme.", ["Rain fell."]) is None
+    _, rep = run_on([A("The Chief Minister will visit the container manufacturing shipyards of the scheme on Thursday afternoon.", 60)])
+    assert rep["inserted"] == 0 and any("no anchor" in k for k in rep["why_not"])

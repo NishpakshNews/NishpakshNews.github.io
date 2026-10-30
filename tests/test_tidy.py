@@ -192,3 +192,32 @@ def test_the_reader_reads_the_kept_line_as_the_premise_and_the_dropped_line_as_t
     b = L("The deadline for the Station Master posts is 25 November 2026, the Board said on Tuesday.", [2])
     tidy.tidy([[a, b]], nli_fn=spy)
     assert seen[-1] == (b["text"], a["text"])
+
+
+# --- Oct 30 2026, open items: the reader is asked only what code cannot read ----------------------------------------------
+def test_figures_code_has_paired_are_written_alike_before_the_reader_reads_them():
+    keep = "The scheme was approved with an outlay of ₹7,395.55 crore for rural works by the Cabinet on Wednesday, the minister said."
+    drop = "The scheme was approved with an outlay of ₹7,395 crore for rural works by the Cabinet on Wednesday."
+    assert "7,395.55 crore" in tidy.align_figures(keep, drop) and "7,395 crore" not in tidy.align_figures(keep, drop)
+    seen = []
+
+    def spy(pairs):
+        seen.extend(pairs)
+        return [True] * len(pairs)
+    out, rep = tidy.tidy([[L(keep, [1]), L(drop, [2])]], nli_fn=spy)
+    assert rep["folded"] == 1 and seen[-1][0] == keep and "7,395.55 crore" in seen[-1][1]
+    # a figure code did NOT pair (two different figures) is never rewritten for the reader
+    other = "The scheme was approved with an outlay of ₹9,000 crore for rural works by the Cabinet on Wednesday."
+    assert tidy.align_figures(keep, other) == other
+
+
+def test_two_lines_a_language_identifier_is_sure_are_in_different_languages_are_never_folded():
+    from nishpaksh import langid
+    langid.set_backend(lambda t: ("hindi", 0.99, 0.9) if "Namaste" in t else ("english", 0.99, 0.9))
+    try:
+        a = L("The deadline for the Station Master posts is 25 November 2026, the Board said on Tuesday.", [1])
+        b = L("Namaste, the deadline for the Station Master posts is 25 November 2026.", [2])
+        out, rep = tidy.tidy([[a, b]], nli_fn=YES)
+        assert len(out[0]) == 2 and rep["reader_refused"] == 1
+    finally:
+        langid.set_backend(None)
