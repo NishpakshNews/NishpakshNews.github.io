@@ -1474,6 +1474,28 @@
                             -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: none; box-shadow: none; }
   @keyframes glassIn { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
   @media (prefers-reduced-motion: reduce) { .glass.where { animation-duration: 1ms; } }
+
+  /* the card edge to edge (owner, Oct 30 2026; canvas "Curves, card tucked behind", curve 6px): the grey margins and the 12px gaps
+     above and below the card are gone. The card runs --cr (6px) BEHIND the header and the sections bar, so their small curves show
+     the card (its picture at the top, white at the foot) instead of grey. Nothing moves differently: the swipe depth, the tidy glide
+     and the opening/closing glide (CARD_TUCK in the script) work on the same card, only wider and taller by the margins. */
+  :root { --cr: 6px; }
+  #app { gap: 0; }
+  header.top { z-index: 3; }
+  #deck { margin: calc(-1 * var(--cr)) calc(-1 * var(--padr)) calc(-1 * var(--cr)) calc(-1 * var(--padl)); }
+  .slot { padding-bottom: 0; }
+  .card, .state { border-radius: 0; box-shadow: none; }
+  .card { padding: calc(24px + var(--cr)) 22px calc(18px + var(--cr)); }
+  .card .foot { bottom: calc(18px + var(--cr)); }
+  .card .pic .pic-credit, .card .pic > .glass { top: calc(10px + var(--cr)); }
+  .card.wh { padding-top: calc(58px + var(--cr)); }
+  .card.wh > .glass.where { top: calc(16px + var(--cr)); }
+  .hbw, .chrome, .cpane { border-radius: 0 0 var(--cr) var(--cr); }
+  nav.sections { border-radius: var(--cr) var(--cr) 0 0; }
+  @media (min-width: 700px) {
+    .card { padding: calc(30px + var(--cr)) 30px calc(22px + var(--cr)); }
+    .card .foot { bottom: calc(22px + var(--cr)); }
+  }
 </style>
 </head>
 <body>
@@ -3492,8 +3514,8 @@ function tidy() {
   const hbw = $("hbw"), hbgr = $("hbgr"), hNew = card.offsetHeight;
   const parts = [...card.querySelectorAll(":scope > h2, :scope > .text, :scope > .pic, :scope > .edge, :scope > .kk")];
   const back = document.createElement("div");
-  back.style.cssText = `position:absolute;left:0;right:0;top:0;height:${hNew}px;background:var(--card);border-radius:20px;` +
-    `box-shadow:0 4px 0 var(--edge);transform-origin:50% 100%;transform:scaleY(${hOld / hNew});will-change:transform;pointer-events:none`;
+  back.style.cssText = `position:absolute;left:0;right:0;top:0;height:${hNew}px;background:var(--card);` +
+    `transform-origin:50% 100%;transform:scaleY(${hOld / hNew});will-change:transform;pointer-events:none`;
   slot.style.position = "relative";
   card.style.position = "relative"; card.style.zIndex = "1"; card.style.background = "transparent"; card.style.boxShadow = "none";
   slot.appendChild(back);                              // last child: the deck's tilt takes the first child as the card
@@ -3572,6 +3594,9 @@ function resetBar() { const ab = $("abar"); if (ab) { ab.style.transition = ""; 
    Before anything moves, the start (which looks exactly like the card) is drawn once, so the layers are ready and nothing
    flashes; the article's text arriving mid-way waits for the end. */
 var MOTION_MS = 460, MORPH_STEPS = 24, morphPic = null, morphAnims = [];
+// the card is square and runs CARD_TUCK px behind the header and the sections bar (CSS --cr): the glide starts from, and lands on,
+// the part of the card that shows between them, so nothing is drawn over the bars' curves
+var CARD_TUCK = 6, CARD_R = 0;
 function easeCurve(x1, y1, x2, y2) {           // cubic-bezier, as CSS (--ease is .2,.8,.2,1)
   const bx = t => 3 * (1 - t) * (1 - t) * t * x1 + 3 * (1 - t) * t * t * x2 + t * t * t;
   const by = t => 3 * (1 - t) * (1 - t) * t * y1 + 3 * (1 - t) * t * t * y2 + t * t * t;
@@ -3588,16 +3613,20 @@ function holdStart(el, kf) { for (const k of Object.keys(kf)) { const css = k.re
 function resetPlate() { $("plate").style.borderRadius = ""; }
 function buildMorph(r, opening) {
   const plate = $("plate"), W = sheet.clientWidth || innerWidth, Hs = sheet.clientHeight || innerHeight;
-  const sx = r.width / W, sy = r.height / Hs, opt = {duration: MOTION_MS, easing: "linear", fill: "both"};
+  // only the part of the card that shows between the header and the sections bar (the card runs CARD_TUCK behind each)
+  const tk = r.height > 4 * CARD_TUCK ? CARD_TUCK : 0, vTop = r.top + tk, vH = r.height - 2 * tk;
+  const sx = r.width / W, sy = vH / Hs, opt = {duration: MOTION_MS, easing: "linear", fill: "both"};
   const ord = a => opening ? a : a.slice().reverse();
   const anims = [];
-  // the plate: rounded like the card at the card (its corners are counter-stretched), square once it fills the screen
-  plate.style.borderRadius = `${(20 / sx).toFixed(2)}px / ${(20 / sy).toFixed(2)}px`;
-  anims.push(plate.animate(ord([{transform: `translate(${r.left}px, ${r.top}px) scale(${sx}, ${sy})`}, {transform: "none"}]),
+  // the plate: as square as the card at the card (its corners are counter-stretched), square once it fills the screen
+  plate.style.borderRadius = `${(CARD_R / sx).toFixed(2)}px / ${(CARD_R / sy).toFixed(2)}px`;
+  anims.push(plate.animate(ord([{transform: `translate(${r.left}px, ${vTop}px) scale(${sx}, ${sy})`}, {transform: "none"}]),
                            {duration: MOTION_MS, easing: "cubic-bezier(.2,.8,.2,1)", fill: "both"}));
   const mp = morphPic, hp = $("hpic");
   if (mp && hbox.classList.contains("morph")) {
-    const {P, B, f, a0} = mp, outer = [], inner = [], soft = [], round = [];
+    const {P: P0, B, f, a0} = mp, outer = [], inner = [], soft = [], round = [];
+    // the picture's frame starts at the visible top of the card; the picture inside (a0) stays exactly where the card draws it
+    const cut = Math.max(0, vTop - P0.top), P = {left: P0.left, top: P0.top + cut, w: P0.w, h: P0.h - cut};
     const cx = f.L + f.w / 2, cy = f.T + f.h / 2;
     for (let i = 0; i <= MORPH_STEPS; i++) {
       // how far along from the card (0) to the article (1); closing runs the same curve the other way (fast, then settling)
@@ -3610,7 +3639,8 @@ function buildMorph(r, opening) {
       const it = `translate(${dx.toFixed(2)}px, ${dy.toFixed(2)}px) scale(${mx.toFixed(5)}, ${my.toFixed(5)})`;
       outer.push({transform: `translate(${tx.toFixed(2)}px, ${ty.toFixed(2)}px) scale(${kx.toFixed(5)}, ${ky.toFixed(5)})`});
       inner.push({transform: it}); soft.push({transform: `${it} scale(1.15)`});
-      const rx = (20 / kx).toFixed(2), ry = (20 / ky).toFixed(2);
+      const rr = CARD_R + (20 - CARD_R) * e;     // on screen: the card's corner at the card, the article's 20px at the article
+      const rx = (rr / kx).toFixed(2), ry = (rr / ky).toFixed(2);
       round.push({borderRadius: `${rx}px ${rx}px 0px 0px / ${ry}px ${ry}px 0px 0px`});
     }
     anims.push(hp.animate(outer, opt));
