@@ -178,15 +178,20 @@ def _pick(items: list[dict], titles: list[str] | None = None) -> tuple[list[int]
 
 # ------------------------------------------------------------------------------------------- headline
 
-HEADLINE_PROMPT = """{now}Write THREE different headlines for this news story, for a reader who has never heard of it.
+HEADLINE_PROMPT = """{now}Write SIX different headlines for this news story, for a reader who has never heard of it.
 Each: at most 12 words, plain English, sentence case (capital letters only for names). A good headline tells
 the outcome and the one detail that makes it matter, so the reader wants the article. "Who did what" alone is
-not enough.
+not enough, and a vague noun ("changes", "concerns", "measures") never beats the figure, the place or the number affected.
 
-The three lead with different things:
+The six lead with different things:
 A. THE OUTCOME: what changed, ended or was decided, and for whom.
 B. THE DETAIL: the one specific, surprising or human fact in the statements (an amount, a place, a contrast).
 C. THE STAKES: who is affected, or what is now at risk or unsettled, said as a plain statement.
+D. LABEL: DEVELOPMENT: a short label for the story, a colon, then what happened
+   ("Seemapuri collapse: police count 40 dead, families say 50").
+E. THE WORDS: the speaker, a colon, and their exact words in quotation marks, copied letter for letter from the QUOTES
+   below ("Rahul Gandhi: 'Every FIR a medal'"). If no QUOTES are given, write a second outcome headline instead.
+F. YOUR OWN ANGLE: what would make a reader open the article that A to E did not say.
 
 Rules:
 1. About TODAY: headline the newest development ({newest}), in the present tense with an active verb
@@ -219,13 +224,13 @@ Weak -> strong:
   -> "Defence Ministry signs Rs 661.50 crore deal for BrahMos launchers"
 - police put a toll at 40 and families at 50: "Building collapse kills 40" (takes a side)
   -> "Seemapuri collapse: police count 40 dead, families say 50"
-{thread}{taken}
+{thread}{taken}{outlets}{quotes}
 THE NEWS: {news}{news_when}
 {latest}The article opens: {lead}
 Other statements (for one detail, if needed):
 {others}
 
-Reply with JSON only: {{"headlines": ["A...", "B...", "C..."]}}"""
+Reply with JSON only: {{"headlines": ["A...", "B...", "C...", "D...", "E...", "F..."]}}"""
 
 LATEST_NOTE = "LATEST (the newest development, headline THIS one): {latest}\n"
 
@@ -438,9 +443,12 @@ def headline_problem(h: str, source: str, banned: set[str], disputed: set[str] =
     return _actor_problem(h, source)
 
 
-def headline_score(h: str, news: str, latest: str = "") -> float:
+def headline_score(h: str, news: str, latest: str = "", cons: dict | None = None, recent=()) -> float:
     """How good a correct headline is, on what makes one good (owner, Oct 8 2026). `latest`: the newest
-    development when the lead carries one besides the news (a headline about it is today's, owner Oct 12 2026)."""
+    development when the lead carries one besides the news (a headline about it is today's, owner Oct 12 2026).
+    `cons` (headlinekit.consensus: the words most outlets' headlines share) and `recent` (the latest published headlines)
+    switch on the Oct 30 2026 scorer: the headline is rewarded for carrying what the outlets lead with, not for copying the
+    news statement's words, and loses a little for a shape and verb the last 40 headlines already used."""
     score = 0.0
     n = len(h.split())
     score += 1 if 7 <= n <= 12 else 0
@@ -450,7 +458,14 @@ def headline_score(h: str, news: str, latest: str = "") -> float:
     from .frames import _stem
     nw = {_stem(w) for w in re.findall(r"[a-z]{4,}", news.lower())}
     hw = {_stem(w) for w in re.findall(r"[a-z]{4,}", h.lower())}
-    score += 1 if nw and len(hw & nw) >= 0.5 * len(nw) else 0      # it is about the news
+    if cons:
+        from . import headlinekit as kit
+        score += 4.0 * kit.coverage(h, cons)                       # it carries what the outlets lead with
+        score += 1.5 if kit.has_figure(h, cons) else 0             # ... above all the figure they headline
+        score += 0.5 if re.search(r":\s", h) and len(h.split(":", 1)[1].split()) >= 2 else 0   # label: development
+        score -= min(1.0, 0.34 * kit.repetition(h, recent))        # not the shape and verb of the last headlines
+    else:
+        score += 1 if nw and len(hw & nw) >= 0.5 * len(nw) else 0  # it is about the news
     facts = (1 if act_score(h) >= 2 else 0) + len(re.findall(r"\d+|\b(?:two|three|four|five|six|seven|eight|nine|ten)\b", h))
     score += min(1.0, 0.5 * max(0, facts - 1))                      # more of the news in the same words
     if latest:                                                      # about the newest development
@@ -485,11 +500,14 @@ def _disputed_answers(news: dict, items: dict[int, dict]) -> tuple[set[str], str
 
 def write_headline(router: Router | None, news: dict, items: dict[int, dict], lead: str, banned: set[str],
                    thread: str = "", latest: dict | None = None, taken: list[str] = (),
-                   parents: list[str] = ()) -> str | None:
-    """The best correct headline of three, or None (the article waits as a kept draft). `latest`: the fact of the
+                   parents: list[str] = (), titles=()) -> str | None:
+    """The best correct headline of six, or None (the article waits as a kept draft). `latest`: the fact of the
     day when the lead carries a second one (`lead_news`); the headline is then about it.
     `taken`: headlines already published (a headline too close to one is not used while a fresh one exists);
-    `parents`: the headlines of the stories this one develops (always shown to the model)."""
+    `parents`: the headlines of the stories this one develops (always shown to the model);
+    `titles`: the outlets' own English headlines of the story ({"outlet", "title"} or plain strings; headlinekit reads them:
+    what they share is what the headline should carry, they are shown to the model, and none may be copied). One model call
+    as before; headlinekit is code and any fault in it leaves the old prompt and the old scoring."""
     if router is None or not news:
         return None
     if latest is not None and latest.get("id") == news.get("id"):
@@ -507,16 +525,28 @@ def write_headline(router: Router | None, news: dict, items: dict[int, dict], le
     taken_note = TAKEN_NOTE.format(lines="\n".join(f"- {t}" for t in shown)) if shown else ""
     ctx = f"\nThis is a new development in an ongoing story ({thread}): headline the NEW development.\n" if thread else ""
     ago = clock.relative(((latest or news).get("time") or {}).get("start"))
+    from . import headlinekit as kit
+    pool = [news] + ([latest] if latest else []) + others + [i for i in items.values() if i not in others and i is not news]
+    kb = kit.blocks(titles, pool)                    # {} / "" everywhere when it cannot read anything: the old prompt
+    cons, quoted = kb["cons"], kb["quoted"]
     prompt = HEADLINE_PROMPT.format(
         now=clock.now_line().split("\n", 1)[0] + "\n\n", news_when=f" (dated: {ago})" if ago else "",
         dispute=DISPUTE_NOTE.format(versions=versions) if versions else "", thread=ctx, taken=taken_note, news=news["text"],
         newest="the one marked LATEST" if latest else "THE NEWS", latest=LATEST_NOTE.format(latest=latest_text) if latest else "",
-        lead=lead or news["text"], others="\n".join(f"- {i['text']}" for i in others) or "- (none)")
+        lead=lead or news["text"], others="\n".join(f"- {i['text']}" for i in others) or "- (none)",
+        outlets=kb["outlets"], quotes=kb["quotes"])
+    quote_facts = " ".join(i.get("text") or "" for i in pool)      # a quotation may come from any statement, not only the 8 shown
     tried: list[str] = []
     repeated: list[tuple[float, str]] = []     # correct headlines that repeat an earlier one
-    for attempt in range(2):          # a second call only when all three fail
+
+    def score(h: str) -> float:
         try:
-            res = router.call("page", prompt, json_out=True, max_output_tokens=300)
+            return headline_score(h, news["text"], latest_text, cons=cons, recent=list(taken))
+        except Exception:  # noqa: BLE001 - never hold an article back for the scorer: the old one
+            return headline_score(h, news["text"], latest_text)
+    for attempt in range(2):          # a second call only when all candidates fail
+        try:
+            res = router.call("page", prompt, json_out=True, max_output_tokens=450)
         except (QuotaExhausted, Exception) as e:  # noqa: BLE001
             log.info("headline not written: %s", e)
             return None
@@ -527,6 +557,11 @@ def write_headline(router: Router | None, news: dict, items: dict[int, dict], le
         for c in cands or []:
             h = house_style(str(c or "").strip().strip('"'))
             problem = headline_problem(h, source, banned, disputed, facts)
+            if not problem:
+                try:
+                    problem = kit.quote_problem(h, quote_facts, quoted) or kit.copy_problem(h, titles)
+                except Exception:  # noqa: BLE001 - the kit never blocks a headline by failing
+                    problem = None
             if problem:
                 why.append(f'"{h}": {problem}')
                 continue
@@ -537,11 +572,11 @@ def write_headline(router: Router | None, news: dict, items: dict[int, dict], le
             else:
                 good.append(h)
         if good:
-            return max(good, key=lambda h: headline_score(h, news["text"], latest_text))   # ties: the model's first
+            return max(good, key=score)   # ties: the model's first
         tried += why
-        prompt += "\n\nThese were rejected:\n" + "\n".join(f"- {w}" for w in why[:3]) + "\nWrite three new ones."
+        prompt += "\n\nThese were rejected:\n" + "\n".join(f"- {w}" for w in why[:3]) + "\nWrite new ones."
     if repeated:       # nothing fresh in two tries: the least repeated one beats holding the article back
-        h = min(repeated, key=lambda r: (r[0], -headline_score(r[1], news["text"], latest_text)))[1]
+        h = min(repeated, key=lambda r: (r[0], -score(r[1])))[1]
         log.info("headline repeats an earlier one, used anyway: %s", h)
         return h
     log.info("no headline passed: %s", "; ".join(tried)[:400])

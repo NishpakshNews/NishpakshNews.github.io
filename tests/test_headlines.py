@@ -105,8 +105,8 @@ def test_write_headline_asks_again_with_the_reasons_when_all_three_fail():
 
 
 def test_the_prompt_is_still_found_by_the_fake_backend_and_fills_in():
-    assert "Write THREE different headlines" in HEADLINE_PROMPT[:40]
-    text = HEADLINE_PROMPT.format(now="", taken="", news_when="", dispute="", thread="", news="N", newest="THE NEWS", latest="", lead="L", others="- o")
+    assert "Write SIX different headlines" in HEADLINE_PROMPT[:40]
+    text = HEADLINE_PROMPT.format(now="", taken="", news_when="", dispute="", thread="", news="N", newest="THE NEWS", latest="", lead="L", others="- o", outlets="", quotes="")
     assert "THE NEWS: N" in text and "{" not in text.replace("{{", "").replace("}}", "").split("Reply with JSON only")[0]
 
 
