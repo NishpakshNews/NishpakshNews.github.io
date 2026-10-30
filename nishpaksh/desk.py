@@ -201,7 +201,7 @@ def fresh_topics(store: Store, ids: list[int], now: dt.datetime | None = None) -
     return {sid for sid in ids if roots.get(sid, sid) not in covered}
 
 
-def ready(store: Store, now: dt.datetime | None = None) -> list[int]:
+def ready(store: Store, now: dt.datetime | None = None, refused_out: set | None = None) -> list[int]:
     """Settled, qualifying, unpublished stories. There is no limit on articles per topic per day (owner,
     Oct 10 2026), but a story whose topic has no article yet today goes first (most important first);
     stories on a topic already written about today follow, in the same order, so they are written
@@ -242,6 +242,8 @@ def ready(store: Store, now: dt.datetime | None = None) -> list[int]:
     # a follow-up refused before goes after every other story (owner, Oct 16 2026: 6-11 a run were looked at
     # first and turned away again, before stories that could be written)
     out.sort(key=lambda t: (t[2] not in refused, t[2] in fresh, t[0], t[1], t[2]), reverse=True)
+    if refused_out is not None:
+        refused_out.update(refused)
     return [sid for _, _, sid in out]
 
 
@@ -261,7 +263,7 @@ def refused_last_run(store: Store, now: dt.datetime | None = None) -> set[str]:
 RUN_TRIES = 3             # a story is written at most this often in one run: the first try and up to two retries
 
 
-def _write_with_retries(store: Store, router: Router, sid: int, until: float | None, stats: dict) -> bool:
+def _write_with_retries(store: Store, router: Router, sid: int, until: float | None, stats: dict, fill: bool = False) -> bool:
     """Write the story; if the try ends "written short" (owner, Oct 28 2026), try again at once in the same run. The saved
     draft is continued, never started again (publish_story resumes it), and the failed try has lowered the bar one step
     (narrative.publish_bar; the first draft's bar stays 80%). Basic rules, a retry is made only while:
@@ -269,22 +271,106 @@ def _write_with_retries(store: Store, router: Router, sid: int, until: float | N
     (not at the floor, and not after a model error that used no try), it has had fewer than RUN_TRIES tries (the run may overrun its
     time for this: owner, Oct 28 2026, pace matters more than the clock). Retries are counted apart from the desk's tries
     (`stats["retries"]`), so they do not crowd other stories out. When the tries are used the draft is kept and the story
-    waits for the next run, as before."""
+    waits for the next run, as before.
+    `fill` (the second desk run, owner Oct 30 2026): the bar falls by whole statements and the tries are bounded by the
+    bar reaching its floor (FILL_TRIES at most), not by RUN_TRIES."""
     from . import compose
-    from .narrative import publish_bar
     ok = compose.publish_story(store, router, sid)
     tries = 1
-    while not ok and tries < RUN_TRIES:
+    limit = FILL_TRIES if fill else RUN_TRIES
+    while not ok and tries < limit:
         out = compose.LAST_OUTCOME
         short = out.get("detail") or {}
         if out.get("outcome") != "written short" or short.get("why") != "coverage":
             break
-        if publish_bar(compose._writer_tries(store, sid)) >= float(short.get("bar") or 0):
+        if compose.bar_for(compose._writer_tries(store, sid), int(short.get("total") or 0)) >= float(short.get("bar") or 0):
             break
         tries += 1
         stats.setdefault("retries", {})[str(sid)] = tries - 1
         ok = compose.publish_story(store, router, sid)
+    stats.setdefault("tries_used", {})[str(sid)] = tries
     return ok
+
+
+FILL_TRIES = 8        # most writer tries one story gets in a fill run (the bar reaches its floor well before this)
+
+
+def story_size(store: Store, sid: int) -> int:
+    """How many statements a story will carry, estimated before writing (owner, Oct 30 2026): its canonical statements
+    that are not relations, less the lines another line already says in full (`analysis.covered`). The writer's own item
+    list is built later (follow-up drops, the cap), so this orders stories; it does not set the bar."""
+    from .db import canonical
+    n = store.one(select(func.count().label("n")).select_from(canonical)
+                  .where(canonical.c.story_id == sid, canonical.c.kind != "relation"))
+    an = (store.one(select(stories.c.analysis).where(stories.c.id == sid)) or {}).get("analysis") or {}
+    return max(1, int((n or {}).get("n") or 0) - len(an.get("covered") or {}))
+
+
+def minutes_since_last_publication(store: Store, now: dt.datetime) -> int | None:
+    row = store.one(select(func.max(published.c.updated_at).label("t")).select_from(published))
+    t = (row or {}).get("t")
+    return round((now - t).total_seconds() / 60) if t else None
+
+
+def fill_work(store: Store, router: Router, now: dt.datetime | None = None) -> dict:
+    """The job's second desk run (owner, Oct 30 2026): ONE article has to be published, quickly. The ready stories are
+    taken smallest first (a refused follow-up last), the first is written completely, and the run ends with the first
+    article published. No time stopper and no write allowance. The rules are the usual ones (checks, coherence guard,
+    headline); only the bar falls by whole statements on a retry, which a small story needs. A story that cannot be
+    published (coherence guard, headline failed, a model error) is passed over for the next smallest. The run is bounded by
+    COUNT: each ready story gets its tries, and it ends without an article only if every ready story used them."""
+    from . import compose, consolidate, verify
+    now = now or utcnow()
+    t_work = time.time()
+    compose.STAGE_SECONDS.clear()
+    compose.FILL_MODE = True
+    stats: dict = {"mode": "fill", "already_this_hour": published_this_hour(store, now), "tried": 0, "published": [],
+                   "skipped": {}, "write_allowance": None}
+    try:
+        refused: set[int] = set()
+        queue = ready(store, now, refused_out=refused)
+        stats["ready"] = len(queue)
+        sizes = {sid: story_size(store, sid) for sid in queue}
+        order = sorted(queue, key=lambda sid: (sid in refused, sizes[sid], queue.index(sid)))
+        stats["fill"] = {"order": [[sid, sizes[sid]] for sid in order[:12]], "passed_over": {}}
+        review_s = write_s = 0.0
+        for sid in order:
+            t0 = time.time()
+            consolidate.consolidate_story(store, router, sid)
+            review_s += time.time() - t0
+            if _review_open(store, sid):
+                stats["skipped"]["review not finished"] = stats["skipped"].get("review not finished", 0) + 1
+                stats["fill"]["passed_over"][str(sid)] = "review not finished"
+                continue
+            verify.base_verdicts(store, sid)
+            t1 = time.time()
+            try:
+                ok = _write_with_retries(store, router, sid, None, stats, fill=True)
+            except Exception as e:  # noqa: BLE001
+                log.exception("desk fill: story %s crashed while being written", sid)
+                stats.setdefault("crashed", {})[str(sid)] = f"{type(e).__name__}: {str(e)[:200]}"
+                ok = False
+            write_s += time.time() - t1
+            stats["tried"] += 1
+            if ok:
+                stats["published"].append(sid)
+                stats["fill"].update(story=sid, statements=sizes[sid], tries=stats["tries_used"].get(str(sid), 1),
+                                     seconds_to_publish=round(time.time() - t_work))
+                if (compose.LAST_OUTCOME.get("detail") or {}).get("lowered_bar"):
+                    stats.setdefault("lowered_bar", {})[str(sid)] = compose.LAST_OUTCOME["detail"]["lowered_bar"]
+                break
+            why = compose.LAST_OUTCOME.get("outcome", "?")
+            detail = compose.LAST_OUTCOME.get("detail") or {}
+            if why == "written short" and detail:
+                stats.setdefault("short", {})[str(sid)] = detail
+                why = f"written short ({detail.get('why')}{': ' + str(detail.get('guard')) if detail.get('guard') else ''})"
+            stats["fill"]["passed_over"][str(sid)] = why
+            stats["skipped"][why] = stats["skipped"].get(why, 0) + 1
+        stats["review_seconds"], stats["write_seconds"] = round(review_s), round(write_s)
+        stats["stage_seconds"] = dict(compose.STAGE_SECONDS)
+    finally:
+        compose.FILL_MODE = False
+    return stats
 
 
 def work(store: Store, router: Router, now: dt.datetime | None = None, until: float | None = None) -> dict:
@@ -392,6 +478,8 @@ def work(store: Store, router: Router, now: dt.datetime | None = None, until: fl
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--minutes", type=float, default=SETTINGS.desk_minutes)
+    p.add_argument("--fill", action="store_true",
+                   help="the job's second run: publish ONE article, the smallest ready story, with no time limit")
     a = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     t0 = time.time()
@@ -404,7 +492,10 @@ def main() -> None:
     router.resolve()
     skipping = refused_last_run(store)
     router.skip_models(skipping)
-    stats = work(store, router, until=t0 + a.minutes * 60)
+    gap = minutes_since_last_publication(store, utcnow())       # how long the site has been without a new article
+    stats = fill_work(store, router) if a.fill else work(store, router, until=t0 + a.minutes * 60)
+    stats.setdefault("mode", "first")
+    stats["gap_minutes"] = gap
     # how many articles this run published, for the workflow: the job's first desk run publishes the feed at once only if
     # there is something new in it (hourly.yml, Oct 29 2026)
     if os.environ.get("GITHUB_OUTPUT"):

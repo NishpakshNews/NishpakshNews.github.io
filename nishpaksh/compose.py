@@ -941,7 +941,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         return _outcome(story_id, "no writer")
     if not _writer_attempt_allowed(store, story_id, h):
         return _outcome(story_id, "resting at the lowest bar")
-    bar = publish_bar(_writer_tries(store, story_id))
+    bar = bar_for(_writer_tries(store, story_id), len(ordered_items(payload)))
     from .belong import assign_topics
     with _timed("topics"):
         assign_topics(store, router, story_id, payload)     # one subject per paragraph (plan.py); no topics: shared words, as before
@@ -1065,6 +1065,14 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
         except Exception as e:  # noqa: BLE001 - a link never stops an article; the next run's pass does it
             log.warning("children of %s not attached: %s", parents, str(e)[:150])
     return _outcome(story_id, "published", {"lowered_bar": mark} if mark else None)
+
+
+FILL_MODE = False      # the job's second desk run (desk --fill): the bar falls by whole statements (narrative.fill_bar)
+
+
+def bar_for(tries: int, n: int) -> float:
+    from .narrative import fill_bar, publish_bar
+    return fill_bar(tries, n) if FILL_MODE else publish_bar(tries)
 
 
 FLOOR_WAIT_HOURS = 3   # at the lowest bar a story is tried again only this often (it is never given up)

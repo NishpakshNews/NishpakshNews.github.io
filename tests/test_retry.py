@@ -132,3 +132,61 @@ def test_light_pick_takes_the_best_rated_dirty_stories_up_to_the_allowance():
     assert run._light_pick(St(), [1, 3, 4, 5, 9], 2) == [3, 5]
     assert run._light_pick(St(), [1, 3], 0) == []
     assert run._light_pick(St(), [], 2) == []
+
+
+def test_fill_bar_falls_by_whole_statements():
+    # 5 statements: 80% needs 4; the percent steps never go below 4 until 60%, the fill bar loses one statement a try
+    need = lambda n, t: next(k for k in range(n + 1) if k >= N.fill_bar(t, n) * n)
+    assert [need(5, t) for t in range(5)] == [4, 3, 3, 3, 3]            # floor 50% of 5 = 3
+    assert [need(8, t) for t in range(6)] == [7, 6, 5, 4, 4, 4]
+    assert [need(5, t) for t in range(3)] != [next(k for k in range(6) if k >= N.publish_bar(t) * 5) for t in range(3)]
+    for n in (1, 3, 5, 12, 40, 80):
+        for t in range(10):
+            assert need(n, t) <= next(k for k in range(n + 1) if k >= N.publish_bar(t) * n)    # never stricter than the usual bar
+            assert need(n, t) >= -(-n // 2)                             # never below the floor
+    assert abs(N.fill_bar(0, 5) * 5 - 3.5) < 1e-9 and need(40, 0) == 32 # the first bar is the usual 80%
+
+
+def test_fill_mode_switches_the_bar_in_compose():
+    compose.FILL_MODE = False
+    assert compose.bar_for(1, 5) == N.publish_bar(1)
+    compose.FILL_MODE = True
+    try:
+        assert compose.bar_for(1, 5) == N.fill_bar(1, 5)
+    finally:
+        compose.FILL_MODE = False
+
+
+def test_the_fill_run_writes_the_smallest_first_passes_over_failures_and_stops_at_one(monkeypatch):
+    from nishpaksh import consolidate, verify
+    sizes = {1: 12, 2: 5, 3: 3, 4: 8}
+    monkeypatch.setattr(desk, "published_this_hour", lambda *a, **k: 0)
+    monkeypatch.setattr(desk, "ready", lambda store, now=None, refused_out=None: (refused_out.update({3}) if refused_out is not None else None) or [1, 2, 3, 4])
+    monkeypatch.setattr(desk, "story_size", lambda store, sid: sizes[sid])
+    monkeypatch.setattr(desk, "_review_open", lambda *a: False)
+    monkeypatch.setattr(consolidate, "consolidate_story", lambda *a, **k: None)
+    monkeypatch.setattr(verify, "base_verdicts", lambda *a, **k: None)
+    seen = []
+
+    def fake_publish(store, router, sid):
+        seen.append((sid, compose.FILL_MODE))
+        if sid == 2:
+            compose.LAST_OUTCOME = {"outcome": "headline failed"}
+            return False
+        compose.LAST_OUTCOME = {"outcome": "published"}
+        return True
+    monkeypatch.setattr(compose, "publish_story", fake_publish)
+    st = desk.fill_work(None, None)
+    assert [s for s, _ in seen] == [2, 4]                      # 5 first (3 is a refused follow-up, last), 2 fails, 4 (8) publishes
+    assert all(f for _, f in seen) and compose.FILL_MODE is False
+    assert st["published"] == [4] and st["mode"] == "fill"
+    assert st["fill"]["story"] == 4 and st["fill"]["statements"] == 8 and st["fill"]["passed_over"] == {"2": "headline failed"}
+
+
+def test_the_ledger_keeps_each_run_of_the_job_apart():
+    from nishpaksh import ledger
+    out = ledger.merge_desk_reports([{"published": [1], "seconds": 600, "gap_minutes": 20},
+                                     {"mode": "fill", "published": [2], "seconds": 90, "gap_minutes": 75, "fill": {"story": 2, "statements": 4}}])
+    assert out["run_log"] == [{"mode": "first", "gap_minutes": 20, "published": 1, "seconds": 600},
+                              {"mode": "fill", "gap_minutes": 75, "published": 1, "seconds": 90}]
+    assert out["fill"]["statements"] == 4

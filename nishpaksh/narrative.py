@@ -1318,6 +1318,21 @@ def publish_bar(tries: int) -> float:
     return max(PUBLISH_FLOOR, PUBLISH_MIN - BAR_STEP * max(0, tries))
 
 
+def fill_bar(tries: int, n: int) -> float:
+    """The bar of the job's second desk run (owner, Oct 30 2026), which must publish one story: it falls by WHOLE
+    statements, one fewer for each failed try, down to PUBLISH_FLOOR of the statements. A 5-statement story needs 4 at
+    80% and the 5-point steps (75, 70%) still need 4, so they would not help it. Never higher than `publish_bar`.
+    The returned value sits half a statement under the count needed, so the `>=` of `essay_ok` is exact."""
+    if n <= 0:
+        return publish_bar(tries)
+    import math
+    need0 = math.ceil(PUBLISH_MIN * n - 1e-9)
+    floor = math.ceil(PUBLISH_FLOOR * n - 1e-9)
+    by_percent = math.ceil(publish_bar(tries) * n - 1e-9)
+    need = max(floor, min(need0 - max(0, tries), by_percent))
+    return (need - 0.5) / n
+
+
 def essay_ok(nar: dict, payload: dict, bar: float | None = None) -> bool:
     """Good enough to publish: written by the writer, not badly off task (no more than half its
     sentences left the essay), and carrying at least PUBLISH_MIN (80%) of EVERY statement known about the story

@@ -109,7 +109,7 @@ def build_entry(run: dict, desk: dict | None, outlets: dict | None, intake: dict
     if desk:
         entry["desk"] = {k: desk[k] for k in ("published", "seats", "ready", "ready_beat", "tried", "skipped",
                                               "beat_seat", "beat_seat_empty", "already_this_hour", "short", "write_allowance",
-                                              "runs", "seconds") if k in desk}
+                                              "runs", "seconds", "run_log", "fill") if k in desk}
         if desk.get("express"):
             entry["desk"]["express"] = desk["express"]
     return entry
@@ -458,6 +458,13 @@ def merge_desk_reports(reports: list[dict]) -> dict | None:
         return None
     out = dict(reports[0])
     out["runs"] = len(reports)
+    # each run apart (owner, Oct 30 2026): its mode (first / fill), the minutes the site had gone without an article when it
+    # began, what it published and how long it took; the fill run's own record says which story, how big, how many tries
+    out["run_log"] = [{"mode": r.get("mode", "first"), "gap_minutes": r.get("gap_minutes"),
+                       "published": len(r.get("published") or []), "seconds": r.get("seconds")} for r in reports]
+    for r in reports:
+        if r.get("fill"):
+            out["fill"] = r["fill"]
     secs = [r.get("seconds") for r in reports if isinstance(r.get("seconds"), (int, float))]
     if secs:
         out["seconds"] = int(sum(secs))
