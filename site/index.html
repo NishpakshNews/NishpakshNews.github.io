@@ -3804,11 +3804,14 @@ function closeMenu() { const was = mdrop.classList.contains("on"); hideMenu(); i
    history entry; back pops it and closes what is open; closing it by tap or Escape takes the entry away again */
 let overlay = false, ignorePop = false;
 function overlayOpen() { if (!overlay) { overlay = true; history.pushState({...(history.state || {}), npo: 1}, ""); } }
-function overlayClose() { if (!overlay) return; overlay = false; if (history.state && history.state.npo) { ignorePop = true; history.back(); } }
+function overlayClose() { if (!overlay) return; overlay = false; const n = TK.setEntry ? 2 : 1; TK.setEntry = false; if (history.state && history.state.npo) { ignorePop = true; history.go(-n); } }
+/* Voice and pace gets an entry of its own, pushed inside the tap (Android Chrome skips entries pushed without one), so phone back just uses it up */
+function tkSetOpen() { if (!TK.setEntry && overlay) { history.pushState({...(history.state || {}), npo: 1}, ""); TK.setEntry = true; } tkView("set"); }
+function tkSetBack() { if (TK.setEntry) { TK.setEntry = false; ignorePop = true; history.back(); } tkView("main"); }
 window.addEventListener("popstate", e => {
   if (ignorePop) { ignorePop = false; e.stopImmediatePropagation(); return; }
-  if (overlay && TK.ui === "card" && tkViewNow() === "set") {      // Voice and pace: back goes to the talk card; the entry back just used is put back, so the next back closes the card
-    history.pushState({...(history.state || {}), npo: 1}, ""); tkView("main"); e.stopImmediatePropagation(); return;
+  if (overlay && TK.ui === "card" && TK.setEntry) {      // Voice and pace: back goes to the talk card; its own entry is used up, the card's entry stays for the next back
+    TK.setEntry = false; tkView("main"); e.stopImmediatePropagation(); return;
   }
   if (overlay) { overlay = false; hideMenu(); hideSheet(); if (TK.ui === "card") tkMin(true); e.stopImmediatePropagation(); }
 }, true);
@@ -4727,8 +4730,8 @@ function tkBuild() {
     const sg = e.target.closest("[data-tks]");
     if (sg) { const [k, val] = sg.dataset.tks.split(":"); tkSetStyle({...tkStyle(), [k]: val}); return; }
     const b = e.target.closest("[data-tk]"); if (!b) return;
-    if (b.dataset.tk === "openset") tkView("set");
-    else if (b.dataset.tk === "back") tkView("main");
+    if (b.dataset.tk === "openset") tkSetOpen();
+    else if (b.dataset.tk === "back") tkSetBack();
     else if (b.dataset.tk === "mute") tkToggleMute();
     else if (b.dataset.tk === "reset") tkSetStyle({...STYLE_DEFAULT});
     else if (b.dataset.tk === "min") tkMin();
@@ -5164,7 +5167,7 @@ function tkEndAll(o = {}) {
     TK.card.style.setProperty("--dx", "0px"); TK.card.style.setProperty("--dy", "0px"); TK.card.style.setProperty("--s", "0.94");   // a small shrink, in place
     TK.card.classList.add("min"); TK.veil.classList.remove("on");
     sheet.inert = false; bsheet.inert = false;
-    if (!wasRecap) { if (o.noHistory) overlay = false; else overlayClose(); }      // the recap card keeps its own back-button entry
+    if (!wasRecap) { if (o.noHistory) { overlay = false; TK.setEntry = false; } else overlayClose(); }      // the recap card keeps its own back-button entry
   }
   fl.el.classList.remove("on");
   htmlEl.classList.remove("talk-live", "talk-mini", "talk-recap");
@@ -5224,7 +5227,7 @@ function schedulePeek(id) {
 
 /* ---- the phone's back button, Escape and leaving ---- */
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape" && TK.ui === "card") { e.preventDefault(); e.stopImmediatePropagation(); if (tkViewNow() === "set") tkView("main"); else tkMin(); }
+  if (e.key === "Escape" && TK.ui === "card") { e.preventDefault(); e.stopImmediatePropagation(); if (tkViewNow() === "set") tkSetBack(); else tkMin(); }
 }, true);
 addEventListener("pagehide", () => { if (TK.phase === "live" && TK.talk) TK.talk.stop(); });
 setTimeout(loadTalk, 700);                   // the module is fetched in the background, so the first tap can start the sound at once
