@@ -1,11 +1,11 @@
 // Nishpaksh offline support (nishpaksh_version_1.0). The page itself and its icons are kept for
 // offline use; news (the feed, articles) is always asked for fresh and the last copy is used offline;
 // fonts are kept once loaded.
-const VERSION = "np-main-96";
+const VERSION = "np-main-97";
 const IMGS = "np-pictures";           // the outlets' share pictures: linked, shown from this device's own cache (owner, Oct 29 2026)
 const IMG_MAX = 80;
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-maskable-192.png",
-               "./icon-maskable-512.png", "./apple-touch-icon.png", "./mark.png", "./notif-icon-256.png", "./notif-badge-96.png"];
+               "./icon-maskable-512.png", "./apple-touch-icon.png", "./mark.png", "./notif-icon-256.png", "./notif-badge-96.png", "./icon-monochrome-192.png", "./icon-monochrome-512.png"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
