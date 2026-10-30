@@ -1001,8 +1001,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
                                                  latest=latest, taken=recent_headlines(store, story_id),
                                                  parents=[x["headline"] for x in payload.get("parents") or []],
                                                  titles=[{"outlet": x.get("outlet"), "title": x["title"]}
-                                                         for x in payload.get("sources") or []
-                                                         if x.get("lang") == "en" and x.get("title")])
+                                                         for x in payload.get("sources") or [] if x.get("title")])
     headline_missing = essay_good and not payload.get("headline")
     if not essay_good or headline_missing:
         # which check failed, with the numbers (owner, Oct 11 2026, story 16981): kept with the failure and in the log

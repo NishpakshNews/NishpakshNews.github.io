@@ -527,7 +527,8 @@ def write_headline(router: Router | None, news: dict, items: dict[int, dict], le
     ago = clock.relative(((latest or news).get("time") or {}).get("start"))
     from . import headlinekit as kit
     pool = [news] + ([latest] if latest else []) + others + [i for i in items.values() if i not in others and i is not news]
-    kb = kit.blocks(titles, pool)                    # {} / "" everywhere when it cannot read anything: the old prompt
+    market = kit.evaluate(titles, reference=lead or news["text"])     # every outlet headline, both languages, on one scale
+    kb = kit.blocks(titles, pool, market["seeds"])   # {} / "" everywhere when it cannot read anything: the old prompt
     cons, quoted = kb["cons"], kb["quoted"]
     prompt = HEADLINE_PROMPT.format(
         now=clock.now_line().split("\n", 1)[0] + "\n\n", news_when=f" (dated: {ago})" if ago else "",
@@ -539,11 +540,18 @@ def write_headline(router: Router | None, news: dict, items: dict[int, dict], le
     tried: list[str] = []
     repeated: list[tuple[float, str]] = []     # correct headlines that repeat an earlier one
 
-    def score(h: str) -> float:
+    def score(h: str, q: float = 0.0) -> float:
         try:
-            return headline_score(h, news["text"], latest_text, cons=cons, recent=list(taken))
+            return headline_score(h, news["text"], latest_text, cons=cons, recent=list(taken)) + 4.0 * q
         except Exception:  # noqa: BLE001 - a scoring fault never holds an article back: candidates tie, the model's first wins
             return 0.0
+
+    def rank(hs: list[str]) -> list[tuple[float, str]]:
+        """(score, headline) best first; q = the same embedding scale the outlets' headlines are on."""
+        qs = kit.evaluate(titles, reference=lead or news["text"], candidates=hs)["cands"] if market["seeds"] else []
+        qs = qs if len(qs) == len(hs) else [0.0] * len(hs)
+        return sorted(((score(h, qv), h, qv) for h, qv in zip(hs, qs)), key=lambda r: -r[0]), qs
+    best_ours: list[tuple[float, str, float]] = []
     for attempt in range(2):          # a second call only when all candidates fail
         try:
             res = router.call("page", prompt, json_out=True, max_output_tokens=450)
@@ -572,7 +580,19 @@ def write_headline(router: Router | None, news: dict, items: dict[int, dict], le
             else:
                 good.append(h)
         if good:
-            return max(good, key=score)   # ties: the model's first
+            ranked, _ = rank(good)
+            best_ours = sorted(best_ours + ranked, key=lambda r: -r[0])
+            top = best_ours[0]
+            # ours must beat the outlets' best on the shared scale; one more call when it does not (never a third)
+            if attempt == 1 or market["best"] is None or top[2] >= market["best"]:
+                log.info("headline q=%.2f outlets' best=%s", top[2], market["best"])
+                return top[1]
+            prompt += ("\n\nThese were correct but weaker than the outlets' best headline:\n"
+                       + "\n".join(f"- {r[1]}" for r in best_ours[:3])
+                       + "\nWrite six better ones: the core the outlets share plus the most specific fact, about THIS article's lead.")
+            continue
+        if best_ours:
+            return best_ours[0][1]
         tried += why
         prompt += "\n\nThese were rejected:\n" + "\n".join(f"- {w}" for w in why[:3]) + "\nWrite new ones."
     if repeated:       # nothing fresh in two tries: the least repeated one beats holding the article back

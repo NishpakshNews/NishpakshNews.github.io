@@ -13,6 +13,9 @@ headlines of the story, the statements) and runs in well under a millisecond. Ev
   quotes()         exact quoted words of a speaker in the statements (the only quotes a headline may use).
   quote_problem()  a quotation in a headline must be letter for letter in the statements, with its speaker named.
   copy_problem()   a headline may not copy an outlet's headline (7 words in a row, or nearly all its words).
+  rank()/Market    every outlet headline, English AND Hindi, scored on one scale by embeddings (no translation): how much the
+                   other outlets agree with it, how well it fits OUR lead, how specific it is. The best become the model's seeds and
+                   our candidates are scored on the same scale (owner, Oct 31 2026: ours must beat the outlets').
   repetition()     how many of the recent headlines have the same skeleton (shape and verb): a day of "X orders Y".
 """
 from __future__ import annotations
@@ -50,13 +53,16 @@ def _stem(w: str) -> str:
         return w
 
 
+_DIGITS = {0x0966 + i: ord(str(i)) for i in range(10)}      # Devanagari digits read as digits (the bridge to Hindi titles)
+
+
 def words(text: str) -> list[tuple[str, str]]:
     """[(stem, surface)] of the content words and figures of a headline (figures without separators)."""
     out: list[tuple[str, str]] = []
     for m in re.finditer(r"\d[\d,]*(?:\.\d+)?|[A-Za-z][A-Za-z'’-]*", (text or "").replace("per cent", "%")):
         w = m.group(0)
         if w[0].isdigit():
-            n = w.replace(",", "").rstrip(".")
+            n = w.translate(_DIGITS).replace(",", "").rstrip(".")
             out.append((n, n))
             continue
         lw = re.sub(r"(?:'s|’s)$", "", w.lower()).strip("'-’")
@@ -259,16 +265,79 @@ def repetition(h: str, recent, limit: int = 40) -> int:
         return 0
 
 
+# ------------------------------------------------------------------------------------------------ the market
+# Every outlet headline of the story is one voice, in either language. They are compared by the multilingual embedding model
+# (Hindi against English directly, nothing translated) with figures as a second bridge (the same value in either script).
+# UNTUNED guesses, to be fitted on the owner's labels: the weights, SEEDS.
+SEEDS = 3
+W_AGREE, W_LEAD, W_SPECIFIC = 0.45, 0.30, 0.25
+MIN_VOICES = 2
+
+
+def _figset(t: str) -> set[float]:
+    try:
+        from .figures import values
+        return {round(x, 4) for x in values(t)}
+    except Exception:  # noqa: BLE001
+        return {float(w) for w, _ in words(t) if w[0].isdigit() and re.fullmatch(r"\d+(?:\.\d+)?", w)}
+
+
+def _specific(t: str, figs: set) -> float:
+    """0..1: a figure, names (capitals or Latin words inside a Hindi title), a headline-sized length."""
+    n = len(t.split())
+    names = len(re.findall(r"(?<!^)(?<![.!?]\s)\b[A-Z][A-Za-z]{2,}", t))
+    return min(1.0, (0.5 if figs else 0.0) + min(0.3, 0.1 * names) + (0.2 if 5 <= n <= 14 else 0.0))
+
+
+def evaluate(titles, reference: str = "", candidates=()) -> dict:
+    """{"seeds": [{"title","outlet","q"}] best first, "best": q of the best outlet headline, "cands": [q per candidate]}.
+    q is 0..1 on ONE scale for outlet headlines and candidates alike. Empty seeds and no scores (cands == []) when fewer than
+    MIN_VOICES headlines exist or the embedding cannot run: the caller then behaves as before."""
+    empty = {"seeds": [], "best": None, "cands": []}
+    try:
+        rows = _rows(titles)
+        cands = [str(c) for c in candidates or []]
+        if len(rows) < MIN_VOICES:
+            return empty
+        from . import embed
+        texts = [t for _, t in rows] + cands + ([reference] if reference else [])
+        v, _how = embed.vectors(texts)
+        n, m = len(rows), len(cands)
+        sim = v @ v.T
+        ref = v[n + m] if reference else None
+        figs = [_figset(t) for t in texts[:n + m]]
+
+        def q(i: int, others: list[int]) -> float:
+            if not others:
+                return 0.0
+            agree = sum(float(sim[i, j]) for j in others) / len(others)
+            if figs[i]:       # the same figure in the other voices is agreement the embedding may miss
+                agree = 0.7 * agree + 0.3 * (sum(1 for j in others if figs[i] & figs[j]) / len(others))
+            lead = max(0.0, float(v[i] @ ref)) if ref is not None else None
+            sp = _specific(texts[i], figs[i])
+            if lead is None:
+                return max(0.0, min(1.0, (W_AGREE * agree + W_SPECIFIC * sp) / (W_AGREE + W_SPECIFIC)))
+            return max(0.0, min(1.0, W_AGREE * agree + W_LEAD * lead + W_SPECIFIC * sp))
+        out = []
+        for i, (o, t) in enumerate(rows):
+            out.append({"title": t, "outlet": o, "q": q(i, [j for j in range(n) if j != i and (not o or rows[j][0] != o)])})
+        out.sort(key=lambda r: -r["q"])
+        return {"seeds": out[:SEEDS], "best": out[0]["q"], "cands": [q(n + k, list(range(n))) for k in range(m)]}
+    except Exception as e:  # noqa: BLE001
+        log.info("headlinekit.evaluate: %s", str(e)[:120])
+        return empty
+
+
 # ------------------------------------------------------------------------------------------------ the prompt blocks
-def blocks(titles, items) -> dict:
+def blocks(titles, items, seeds=()) -> dict:
     """Everything `write_headline` adds to its prompt and its scoring: {"cons", "outlets", "must", "quotes", "quoted"}.
     All empty when nothing can be read (the prompt then reads as before)."""
     try:
         cons = consensus(titles)
-        lines = outlet_lines(titles)
+        lines = [x["title"] for x in seeds or []] or outlet_lines(titles)
         qs = quotes(items)
-        outlets = ("\nHOW THE OUTLETS HEADLINED IT (what professionals put first; use their facts in your own words, never copy "
-                   "a headline):\n" + "\n".join(f"- {t}" for t in lines) + "\n") if lines else ""
+        outlets = ("\nTHE BEST OUTLET HEADLINES (best first; some may be Hindi; what professionals put first. Beat them: carry the "
+                   "core they share plus the most specific fact any of them has, in your own English words, never copy one):\n" + "\n".join(f"- {t}" for t in lines) + "\n") if lines else ""
         must = ("Most outlets' headlines carry: " + ", ".join(v["word"] for v in cons.values()) + ". Put as many of these as fit "
                 "(the figure and the names first).\n") if cons else ""
         qtxt = ("QUOTES (exact words, for headline E; copy them letter for letter and name the speaker):\n"

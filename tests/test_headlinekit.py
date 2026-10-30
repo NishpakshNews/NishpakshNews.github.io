@@ -44,3 +44,28 @@ def test_fast_and_never_raises():
         kit.blocks(T, [{"text": "x said, \"hello there my friend\""}])
     assert time.time() - t < 1.0
     assert kit.blocks([{"bad": 1}, None, 5], [None])["cons"] == {}
+
+
+def _fake_embed(texts):
+    """Bag of a few topic words per text, so Hindi and English about one event are close (stand-in for the multilingual model)."""
+    import numpy as np
+    keys = [("collapse", "ढह", "गिर"), ("delhi", "दिल्ली"), ("40", "४०"), ("parliament", "संसद"), ("price", "महंगाई")]
+    return np.array([[1.0 if any(k in t.lower() for k in ks) else 0.0 for ks in keys] + [0.05] for t in texts])
+
+
+def test_market_reads_hindi_and_english_on_one_scale():
+    from nishpaksh import embed
+    embed.set_backend(_fake_embed)
+    try:
+        titles = T + [{"outlet": "H", "title": "दिल्ली में इमारत ढही, ४० की मौत"}]
+        m = kit.evaluate(titles, reference="A building collapsed in Delhi and 40 people died.",
+                         candidates=["Delhi collapse kills 40, rescue goes on", "Parliament row over price rise"])
+        assert m["seeds"] and "Parliament" not in m["seeds"][0]["title"]
+        assert m["cands"][0] > m["cands"][1]               # the on-topic candidate beats the off-topic one
+        assert kit._figset("४० की मौत") == kit._figset("40 dead")     # the figure bridge across scripts
+    finally:
+        embed.set_backend(None)
+
+
+def test_market_is_neutral_without_voices_or_embedding():
+    assert kit.evaluate(T[:1])["seeds"] == [] and kit.evaluate(None)["best"] is None
