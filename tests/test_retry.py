@@ -36,9 +36,11 @@ def test_the_lead_is_never_changed_and_a_lone_sentence_of_its_own_section_stays(
     paras = [[S("The lead sentence is here.")], [S("Numbers only are here.")], [S("Say one."), S("Say two.")]]
     out, k, n = N.merge_lone_paragraphs(paras, ["news", "numbers", "say"])
     assert n == 0 and len(out) == 3
-    assert N.lowered_bar_problems(out) == []          # one lone paragraph is allowed (LONE_ALLOWED = 2)
+    assert N.lowered_bar_problems(out) == []          # one lone paragraph is allowed (LONE_ALLOWED = 3)
     three = [[S("The lead sentence is here.")]] + [[S(f"Lone {i} is here.")] for i in range(3)]
-    assert N.lowered_bar_problems(three) == ["3 one-sentence paragraphs (at most 2)"]
+    assert N.lowered_bar_problems(three) == []        # three are allowed
+    four = [[S("The lead sentence is here.")]] + [[S(f"Lone {i} is here.")] for i in range(4)]
+    assert N.lowered_bar_problems(four) == ["4 one-sentence paragraphs (at most 3)"]
     out2, _, n2 = N.merge_lone_paragraphs([[S("The lead sentence is here.")], [S("A lone sentence is here.")], [S("Two a is here."), S("Two b is here.")]], ["news", "say", "say"])
     assert n2 == 1 and len(out2) == 2 and len(out2[0]) == 1          # not joined into the lead
 

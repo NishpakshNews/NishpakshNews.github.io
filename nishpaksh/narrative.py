@@ -1406,7 +1406,7 @@ def merge_lone_paragraphs(paragraphs: list[list[dict]], keys: list[str]) -> tupl
     return paras, ks, merged
 
 
-LONE_ALLOWED = 2     # one-sentence paragraphs (besides the lead) an article may still have at a lowered bar (owner, Oct 28 2026)
+LONE_ALLOWED = 3     # one-sentence paragraphs (besides the lead) an article may still have at a lowered bar (owner, Oct 28 2026; 2 -> 3 on Oct 31 2026)
 
 
 def cut_off(text: str) -> bool:
