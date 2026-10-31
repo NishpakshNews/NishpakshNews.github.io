@@ -975,6 +975,21 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     if lowered:
         nar["paragraphs"], nar["section_keys"], joined = merge_lone_paragraphs(nar["paragraphs"], nar.get("section_keys") or [])
         guard = lowered_bar_problems(nar["paragraphs"])
+        if guard:
+            # a draft that fails the guard is mended, never thrown away (owner, Oct 31 2026): lone paragraphs are joined
+            # across sections by code (kept only if the coherence count does not worsen), a cut-off sentence is rewritten
+            # by one small call; then the guard is asked again
+            from .narrative import repair_lowered_bar
+            try:
+                nar["paragraphs"], nar["section_keys"], fixed_guard = repair_lowered_bar(
+                    router, nar["paragraphs"], nar.get("section_keys") or [], payload, banned)
+            except Exception as e:  # noqa: BLE001 - a repair never stops an article; the draft is kept as it was
+                log.info("story %s: guard repair not done (%s)", story_id, str(e)[:120])
+                fixed_guard = {}
+            if fixed_guard.get("joined") or fixed_guard.get("cut_fixed"):
+                nar.setdefault("flow", {})["guard_repair"] = fixed_guard
+                joined += fixed_guard.get("joined", 0)
+                guard = lowered_bar_problems(nar["paragraphs"])
         if joined:
             nar.setdefault("flow", {})["lone_joined"] = joined
             try:
@@ -1105,6 +1120,39 @@ def _writer_attempt_allowed(store: Store, story_id: int, h: str, n: int = 0) -> 
     except ValueError:
         return True
     return utcnow() - at >= dt.timedelta(hours=FLOOR_WAIT_HOURS)
+
+
+def resting_likely(analysis: dict, n: int, now: dt.datetime | None = None) -> bool:
+    """Is this story probably on its pause at the lowest bar (`_writer_attempt_allowed` says no)? Read from the stored
+    failure alone (the statement hash needs the whole payload): a try was made AT the floor less than FLOOR_WAIT_HOURS ago.
+    The real gate in `publish_story` stays the judge; the second desk run only puts such a story last."""
+    from .narrative import fill_bar
+    w = (analysis or {}).get("writer_failures") or {}
+    if not w.get("at") or n <= 0:
+        return False
+    if fill_bar(max(0, int(w.get("n", 0) or 0) - 1), n) > fill_bar(1000, n) + 1e-9:
+        return False
+    try:
+        at = dt.datetime.fromisoformat(w["at"])
+    except ValueError:
+        return False
+    return (now or utcnow()) - at < dt.timedelta(hours=FLOOR_WAIT_HOURS)
+
+
+def remaining_work(analysis: dict, n: int) -> int:
+    """Statements the writer still has to produce for a story of `n` statements (owner, Oct 31 2026: the second desk run
+    takes the story that needs the least writing). A story with no draft needs the whole count its next bar asks for; a
+    kept draft needs that count less what it already carries, so a draft finished except for its headline, or short by
+    one statement that the next lower bar already forgives, costs nothing. Never more than a fresh write."""
+    from .narrative import fill_need
+    a = analysis or {}
+    w = a.get("writer_failures") or {}
+    tries = int(w.get("n", 0) or 0)
+    total = int(((w.get("shortfall") or {}).get("total")) or 0) or n
+    need = fill_need(tries, total) if total > 0 else 0
+    draft = a.get("writer_draft") or {}
+    have = int(draft.get("covers", 0) or 0) if draft.get("sections") else 0
+    return max(0, need - have)
 
 
 def _note_writer_failure(store: Store, story_id: int, h: str, nar: dict) -> None:

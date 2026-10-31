@@ -315,6 +315,19 @@ def story_size(store: Store, sid: int) -> int:
     return max(1, int((n or {}).get("n") or 0) - len(an.get("covered") or {}))
 
 
+def story_work(store: Store, sid: int, size: int, now: dt.datetime) -> tuple[int, bool]:
+    """(statements still to write, probably on its pause at the lowest bar) for the second run's order (owner, Oct 31 2026:
+    a kept draft, also one kept for the coherence guard, is the cheapest work there is). Any failure here falls back to
+    the statement count, the order the run had before."""
+    try:
+        from . import compose
+        an = (store.one(select(stories.c.analysis).where(stories.c.id == sid)) or {}).get("analysis") or {}
+        return compose.remaining_work(an, size), compose.resting_likely(an, size, now)
+    except Exception as e:  # noqa: BLE001 - an order is never a reason not to write
+        log.info("desk fill: work of story %s not read (%s)", sid, str(e)[:100])
+        return size, False
+
+
 def minutes_since_last_publication(store: Store, now: dt.datetime) -> int | None:
     row = store.one(select(func.max(published.c.updated_at).label("t")).select_from(published))
     t = (row or {}).get("t")
@@ -339,8 +352,16 @@ def fill_work(store: Store, router: Router, now: dt.datetime | None = None) -> d
         queue = ready(store, now, refused_out=refused)
         stats["ready"] = len(queue)
         sizes = {sid: story_size(store, sid) for sid in queue}
-        order = sorted(queue, key=lambda sid: (sid in refused, sizes[sid], queue.index(sid)))
-        stats["fill"] = {"order": [[sid, sizes[sid]] for sid in order[:12]], "passed_over": {}}
+        work, resting = {}, set()
+        for sid in queue:
+            work[sid], rest = story_work(store, sid, sizes[sid], now)
+            if rest:
+                resting.add(sid)
+        # least writing first (owner, Oct 31 2026): a kept draft counts only what it still lacks; a story on its pause at the
+        # lowest bar goes last (the pause is never overridden: publish_story still says "resting"), then a refused follow-up
+        order = sorted(queue, key=lambda sid: (sid in refused, sid in resting, work[sid], sizes[sid], queue.index(sid)))
+        stats["fill"] = {"order": [[sid, work[sid], sizes[sid]] for sid in order[:12]], "resting": sorted(resting),
+                         "passed_over": {}}
         review_s = write_s = 0.0
         for sid in order:
             t0 = time.time()

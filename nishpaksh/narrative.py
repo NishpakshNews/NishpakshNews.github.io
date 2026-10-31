@@ -1325,12 +1325,17 @@ def fill_bar(tries: int, n: int) -> float:
     The returned value sits half a statement under the count needed, so the `>=` of `essay_ok` is exact."""
     if n <= 0:
         return publish_bar(tries)
+    return (fill_need(tries, n) - 0.5) / n
+
+
+def fill_need(tries: int, n: int) -> int:
+    """How many of `n` statements an article must carry after `tries` failed tries (the count behind `fill_bar`); the
+    second desk run uses it to see how much writing a story still needs (desk.remaining_work)."""
     import math
     need0 = math.ceil(PUBLISH_MIN * n - 1e-9)
     floor = math.ceil(PUBLISH_FLOOR * n - 1e-9)
     by_percent = math.ceil(publish_bar(tries) * n - 1e-9)
-    need = max(floor, min(need0 - max(0, tries), by_percent))
-    return (need - 0.5) / n
+    return max(floor, min(need0 - max(0, tries), by_percent))
 
 
 def essay_ok(nar: dict, payload: dict, bar: float | None = None) -> bool:
@@ -1434,6 +1439,174 @@ def lowered_bar_problems(paragraphs: list[list[dict]]) -> list[str]:
     if cut:
         out.append(f"{cut} cut-off sentence(s)")
     return out
+
+
+# --- repair of a draft that fails the lowered-bar guard (owner, Oct 31 2026) -----------------------------------------
+# A draft kept because of the coherence guard is never thrown away (it cost many calls and reads well); it is mended.
+# Lone one-sentence paragraphs: text segmentation. The break between paragraphs belongs where the topic changes
+# (Hearst's TextTiling, dynamic-programming segmentation with a length prior; `plan.merge_small` already does this
+# before writing), so a lone sentence joins the ADJACENT paragraph it is closest to by sentence embedding, even across a
+# section, and only when the entity-based coherence count (`inspector.inspect`: dangling pronouns, repeats, repeated
+# runs, cut-off sentences, unintroduced people, time running back) does not get worse (Barzilay & Lapata 2008: the same
+# people and things carry through the sentences). No sentence changes, no model call. A cut-off sentence: one small
+# writer call per sentence, kept only if it passes every per-sentence check and still cites what it cited.
+CUT_OFF_MAX = 2          # model rewrites of a cut-off sentence per article (each is a writer call)
+
+CUT_OFF_PROMPT = """One sentence of a news article stops before it says anything:
+{sentence}
+
+Write it again as ONE complete sentence, from these numbered statements only:
+{statements}
+
+- keep every fact the cut-off sentence carries and cite every statement it cites ({ids}); add nothing; never change a number
+- a claim keeps the speaker the statement gives; name no news outlet; never write "according to reports" or "reportedly"
+{now}Reply with JSON only: {{"text": "...", "ids": [3]}}"""
+
+
+def _coherence_problems(paragraphs: list[list[dict]]) -> int | None:
+    """The inspector's count of problems (None = it could not be measured: then nothing is joined across sections)."""
+    try:
+        from . import inspector
+        return int(inspector.inspect(paragraphs)["problems"])
+    except Exception:  # noqa: BLE001 - a count; an unmeasured change is not made
+        return None
+
+
+def _paragraph_similarity(paragraphs: list[list[dict]]):
+    """Cosine similarity between whole paragraphs (sentence embeddings; the stemming TF-IDF fallback inside `embed`)."""
+    try:
+        import numpy as np
+        from . import embed
+        texts = [" ".join((s.get("text") or "") for s in p) for p in paragraphs]
+        v, _how = embed.vectors(texts)
+        v = np.asarray(v, dtype=float)
+        norms = np.linalg.norm(v, axis=1)
+        norms[norms == 0] = 1.0
+        v = v / norms[:, None]
+        return lambda a, b: float(np.dot(v[a], v[b]))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def join_lone_across_sections(paragraphs: list[list[dict]], keys: list[str],
+                              max_lone: int | None = None) -> tuple[list[list[dict]], list[str], int]:
+    """Only while MORE than `max_lone` one-sentence paragraphs (besides the lead) remain: the best-matching lone
+    paragraph joins the adjacent paragraph it is closest to (never the lead, never past LONE_MERGE_MAX sentences), in
+    its section or the next one, when the coherence count does not worsen. The absorbing paragraph keeps its section,
+    so a section whose only paragraph was the lone one loses its heading. Order and sentences are untouched.
+    Returns (paragraphs, keys, joined)."""
+    max_lone = LONE_ALLOWED if max_lone is None else max_lone
+    paras = [list(p) for p in paragraphs]
+    ks = list(keys) if len(keys) == len(paras) else None
+    if ks is None:
+        return paras, list(keys), 0
+
+    def n_text(p):
+        return len([s for s in p if (s.get("text") or "").strip()])
+
+    joined = 0
+    refused: set[tuple[str, str]] = set()
+    base = _coherence_problems(paras)
+    if base is None:
+        return paras, ks, 0
+    while True:
+        loners = [k for k in range(1, len(paras)) if n_text(paras[k]) == 1]
+        if len(loners) <= max_lone:
+            break
+        sim = _paragraph_similarity(paras)
+        options = []
+        for k in loners:
+            for j in (k - 1, k + 1):
+                if j < 1 or j >= len(paras) or len(paras[j]) > LONE_MERGE_MAX:
+                    continue
+                pair = (paras[k][0].get("text") or "", paras[j][0].get("text") or "")
+                if pair in refused:
+                    continue
+                options.append(((sim(k, j) if sim else 0.0), -abs(k - j), j < k, k, j, pair))
+        if not options:
+            break
+        options.sort(reverse=True)
+        done = False
+        for _s, _d, _prev, k, j, pair in options:
+            trial = [list(p) for p in paras]
+            trial_k = list(ks)
+            if j < k:
+                trial[j] = trial[j] + trial[k]
+            else:
+                trial[j] = trial[k] + trial[j]
+            del trial[k], trial_k[k]
+            after = _coherence_problems(trial)
+            if after is not None and after <= base:
+                paras, ks, base, done = trial, trial_k, after, True
+                joined += 1
+                break
+            refused.add(pair)
+        if not done:
+            break
+    return paras, ks, joined
+
+
+def repair_cut_off(router, paragraphs: list[list[dict]], payload: dict, banned: set[str]) -> tuple[list[list[dict]], int, int]:
+    """One writer call per cut-off sentence (at most CUT_OFF_MAX per article); the new sentence is kept only if it is a
+    full sentence, cites everything the old one cited, and passes EVERY per-sentence check. Returns
+    (paragraphs, asked, fixed). No router = nothing asked."""
+    paras = [[dict(s) for s in p] for p in paragraphs]
+    if router is None:
+        return paras, 0, 0
+    targets = [(p, k) for p, para in enumerate(paras) for k, s in enumerate(para) if cut_off((s.get("text") or "").strip())]
+    if not targets:
+        return paras, 0, 0
+    items, background, by_id, outlets, banned = _context(payload, banned)
+    try:
+        entities.use(entities.for_items(items + background))
+    except Exception:  # noqa: BLE001 - the state write_narrative left is used
+        pass
+    asked = fixed = 0
+    for p, k in targets[:CUT_OFF_MAX]:
+        old = paras[p][k]
+        ids = [i for i in old.get("ids") or [] if i in by_id]
+        if not ids:
+            continue
+        prompt = CUT_OFF_PROMPT.format(sentence=old.get("text") or "", ids=", ".join(str(i) for i in ids),
+                                       statements="\n".join(_statement_line(by_id[i]) for i in ids), now=clock.now_line())
+        asked += 1
+        try:
+            res = router.call("writer", prompt, json_out=True, max_output_tokens=500, max_attempts=4)
+            data = res.data if isinstance(res.data, dict) else {}
+        except Exception as e:  # noqa: BLE001
+            log.info("narrative: cut-off sentence not rewritten (%s)", str(e)[:120])
+            continue
+        text = str(data.get("text") or "").strip()
+        new_ids = [i for i in data.get("ids") or [] if isinstance(i, int) and i in by_id]
+        if not text or cut_off(text) or not set(ids) <= set(new_ids):
+            continue
+        saved, last = dict(_reasons()), getattr(_TL, "last", None)
+        try:
+            near = paras[p][k - 1].get("text") or "" if k > 0 else ""
+            checked, got = _check_one({"text": text, "ids": new_ids}, by_id, banned, outlets, set(), True, near, opens=(k == 0))
+        finally:
+            _reasons().clear()
+            _reasons().update(saved)
+            _TL.last = last
+        if got is None or not isinstance(checked, dict) or cut_off((checked.get("text") or "").strip()):
+            continue
+        paras[p][k] = {**checked, "ids": got}
+        fixed += 1
+    return paras, asked, fixed
+
+
+def repair_lowered_bar(router, paragraphs: list[list[dict]], keys: list[str], payload: dict,
+                       banned: set[str]) -> tuple[list[list[dict]], list[str], dict]:
+    """Mend what `lowered_bar_problems` finds, each part only when it is the part that fails: too many lone paragraphs
+    (join across sections, by code) and cut-off sentences (one small rewrite each). The caller asks the guard again.
+    Returns (paragraphs, keys, {"joined", "cut_asked", "cut_fixed"})."""
+    stats = {"joined": 0, "cut_asked": 0, "cut_fixed": 0}
+    paras, ks = [list(p) for p in paragraphs], list(keys)
+    lone = sum(1 for n, p in enumerate(paras) if n > 0 and len([s for s in p if (s.get("text") or "").strip()]) == 1)
+    if lone > LONE_ALLOWED:
+        paras, ks, stats["joined"] = join_lone_across_sections(paras, ks)
+    paras, stats["cut_asked"], stats["cut_fixed"] = repair_cut_off(router, paras, payload, banned)
+    return paras, ks, stats
 
 
 def _target_length(items: list[dict], express: bool = False) -> str:

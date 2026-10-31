@@ -83,8 +83,12 @@ def test_workflow_writes_first_and_publishes_before_the_pipeline():
     # the newsroom lives on the `newsroom` branch only: no Actions-cache copy (its egress stalled the job, Oct 30 2026)
     assert not [s for s in steps if (s.get("uses") or "").startswith("actions/cache")]
     assert job["timeout-minutes"] >= 150
-    # the second desk run is for a full run only: skipped when the pipeline reports a light run
-    assert "steps.pipeline.outputs.light != 'true'" in by["Write and publish again (the desk)"]["if"]
+    # the second desk run is for a full run, or after a light run when the first desk run published nothing (owner, Oct 31 2026;
+    # a missing `published` output counts as nothing published)
+    again_if = by["Write and publish again (the desk)"]["if"]
+    assert "steps.pipeline.outputs.light != 'true'" in again_if
+    assert "steps.desk_first.outputs.published == '0'" in again_if and "steps.desk_first.outputs.published == ''" in again_if
+    assert " || " in again_if and "restore" in again_if and "!cancelled()" in again_if
     assert "GITHUB_OUTPUT" in (ROOT / "nishpaksh/run.py").read_text() and "light=" in (ROOT / "nishpaksh/run.py").read_text()
 
 

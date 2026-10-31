@@ -150,10 +150,12 @@ jobs:
       - name: Write and publish again (the desk)
         # the second run only has to publish ONE article, the smallest ready story, with no time limit (owner, Oct 30 2026)
         # only after a FULL run (a refill, owner Oct 29 2026): the seats the first run left unused and the stories the refill has
-        # just made ready. After a light run the first run has used the seats and the next hour's first run takes what is new.
-        # If the pipeline failed or left no answer, this step runs as well.
+        # just made ready. After a light run the first run has used the seats and the next hour's first run takes what is new,
+        # EXCEPT when the first desk run published nothing (owner, Oct 31 2026): then this run still has to publish one, and it
+        # takes the story with the least writing left (a kept draft first). A missing `published` output counts as nothing
+        # published. If the pipeline failed or left no answer, this step runs as well.
         id: desk
-        if: ${{ !cancelled() && steps.restore.outcome == 'success' && steps.pipeline.outputs.light != 'true' }}
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' && (steps.pipeline.outputs.light != 'true' || steps.desk_first.outputs.published == '0' || steps.desk_first.outputs.published == '') }}
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
