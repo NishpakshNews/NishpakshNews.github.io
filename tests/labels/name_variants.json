@@ -1,0 +1,21 @@
+{"note":"Real pairs from stored statements; where a text was truncated the frame is rebuilt around the real differing words. want: same|apart|ask|unsure(=must NOT be same)",
+"pairs":[
+{"id":"himashree","a":"Himashree Boro was a student of B Borooah College in Guwahati.","b":"Himashri Boro was a student of B Borooah College in Guwahati.","want":"same"},
+{"id":"ramlila","a":"The INDIA Bloc plans to hold a mega rally at Ramlila Maidan in Delhi.","b":"The INDIA Bloc plans to hold a mega rally at Ram Leela Maidan in Delhi.","want":"same"},
+{"id":"leak-amarpreet","a":"Air Chief Marshal Amar प्रीत Singh will retire this month.","b":"Air Chief Marshal Amar Preet Singh will retire this month.","want":"same"},
+{"id":"preservation","a":"Gujarat amended the 1954 Gujarat Animal Preservation Act in 2017 to provide life imprisonment.","b":"Gujarat amended the 1954 Gujarat Animal Conservation Act in 2017 to provide life imprisonment.","hi_a":"गुजरात सरकार ने 1954 के 'गुजरात पशु संरक्षण अधिनियम' में 2017 में संशोधन करके आजीवन कारावास कर दिया था।","want":"ask"},
+{"id":"neg-patra","a":"Bharatiya Janata Party spokesperson Sambit Patra held a press conference on Friday.","b":"Bharatiya Janata Party spokesperson Sudhanshu Trivedi held a press conference on Friday.","want":"unsure"},
+{"id":"neg-nandigram","a":"The BJP won the Nandigram bypoll seat in West Bengal.","b":"The BJP won the Rejinagar bypoll seat in West Bengal.","want":"unsure"},
+{"id":"neg-inc","a":"The Indian National Congress filed a petition challenging the constitutional validity of the act.","b":"The Communist Party of India filed a petition challenging the constitutional validity of the act.","want":"unsure"},
+{"id":"neg-abha","a":"Houthi rebels attacked Abha International Airport on Sunday morning.","b":"Houthi rebels attacked King Khalid International Airport on Sunday morning.","want":"unsure"},
+{"id":"neg-eng","a":"England plays Bangladesh in a cricket match on Tuesday evening.","b":"England plays Sri Lanka in a cricket match on Tuesday evening.","want":"unsure"},
+{"id":"neg-aus","a":"India and Australia play a cricket match in Perth on Sunday.","b":"India and Pakistan play a cricket match in Perth on Sunday.","want":"unsure"},
+{"id":"neg-rahul","a":"Rahul Gandhi was detained by the Delhi Police near the protest site.","b":"Priyanka Gandhi Vadra was detained by the Delhi Police near the protest site.","want":"unsure"},
+{"id":"neg-shah","a":"Rahul Gandhi alleged that Amit Shah has finished democracy in the country.","b":"Rahul Gandhi alleged that Mohan Bhagwat has finished democracy in the country.","want":"unsure"},
+{"id":"neg-sspl","a":"SSPL Solutions Private Limited facilitated the import of petroleum products from Iran.","b":"Samudra Marine Services Private Limited facilitated the import of petroleum products from Iran.","want":"unsure"},
+{"id":"neg-matric","a":"The Pre-Matric ST Boys Hostel has 40 seats for the new academic year.","b":"The Post-Matric ST Boys Hostel has 40 seats for the new academic year.","want":"unsure"},
+{"id":"neg-const","a":"Madhuranthakam assembly constituency recorded a high voter turnout on polling day.","b":"Dharapuram assembly constituency recorded a high voter turnout on polling day.","want":"unsure"},
+{"id":"neg-goal","a":"Estevao scored the first goal for Brazil in the second half.","b":"Pedro scored the first goal for Brazil in the second half.","want":"unsure"},
+{"id":"neg-stake","a":"Parth Pawar holds a stake in Amadia Enterprises LLP according to the filing.","b":"Digvijay Patil holds a stake in Amadia Enterprises LLP according to the filing.","want":"unsure"},
+{"id":"neg-coe","a":"Centers of Excellence will be set up for Classical Assamese at the national university.","b":"Centers of Excellence will be set up for Classical Pali at the national university.","want":"unsure"}
+]}
