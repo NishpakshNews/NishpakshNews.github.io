@@ -403,6 +403,29 @@ def _opening_name_problem(h: str, facts: str) -> str | None:
     return None
 
 
+_QUOTED = re.compile(r'"[^"]*"|\u201c[^\u201d]*\u201d')
+
+
+def loaded_hit(h: str, banned) -> str | None:
+    """The first loaded word the headline uses outside quotation marks (a quoted word is the speaker's, as in the article), or None."""
+    low = _QUOTED.sub(" ", h or "").lower()
+    for w in sorted(banned):
+        if re.search(rf"(?<!\w){re.escape(w)}(?!\w)", low):
+            return w
+    return None
+
+
+def freed_words(banned, texts) -> tuple[set[str], list[str]]:
+    """(the loaded words still banned, the ones freed): a word the story's own statements use is the story's word, not
+    loaded for it (the article writer already does the same, narrative._context). Any fault leaves the full set."""
+    try:
+        used = " ".join(t for t in texts if t).lower()
+        freed = sorted(w for w in banned if re.search(rf"(?<!\w){re.escape(w.lower())}(?!\w)", used))
+        return {w for w in banned if w not in freed}, freed
+    except Exception:  # noqa: BLE001
+        return set(banned), []
+
+
 def headline_problem(h: str, source: str, banned: set[str], disputed: set[str] = frozenset(),
                      facts: str = "") -> str | None:
     """What is wrong with a headline, or None. `source` is every statement it may draw on (lower case);
@@ -423,8 +446,9 @@ def headline_problem(h: str, source: str, banned: set[str], disputed: set[str] =
     unknown = _opening_name_problem(h, facts)
     if unknown:
         return unknown
-    if any(re.search(rf"(?<!\w){re.escape(w)}(?!\w)", low) for w in banned):
-        return "it uses a loaded word"
+    hit = loaded_hit(h, banned)
+    if hit:
+        return f"it uses a loaded word ('{hit}'): say it plainly"
     bad = [l for l in LINKS if re.search(rf"\b{l}\b", low) and l not in source]
     if bad:
         return f"it links events with '{bad[0]}', which no statement does"
@@ -511,7 +535,7 @@ def headline_record() -> dict:
 
 def write_headline(router: Router | None, news: dict, items: dict[int, dict], lead: str, banned: set[str],
                    thread: str = "", latest: dict | None = None, taken: list[str] = (),
-                   parents: list[str] = (), titles=()) -> str | None:
+                   parents: list[str] = (), titles=(), background=()) -> str | None:
     """The best correct headline of six, or None (the article waits as a kept draft). `latest`: the fact of the
     day when the lead carries a second one (`lead_news`); the headline is then about it.
     `taken`: headlines already published (a headline too close to one is not used while a fresh one exists);
@@ -531,6 +555,7 @@ def write_headline(router: Router | None, news: dict, items: dict[int, dict], le
     source = facts.lower()
     latest_text = latest["text"] if latest else ""
     disputed, versions = _disputed_answers(news, items)
+    banned, freed = freed_words(banned, texts + [i["text"] for i in items.values()] + list(background or ()))
     taken = [t for t in dict.fromkeys(list(parents) + list(taken)) if t]
     shown = closest_taken(taken, f"{news['text']} {lead}", parents)
     taken_note = TAKEN_NOTE.format(lines="\n".join(f"- {t}" for t in shown)) if shown else ""
@@ -543,7 +568,8 @@ def write_headline(router: Router | None, news: dict, items: dict[int, dict], le
     HEADLINE_STATS.update({"v": 1, "voices": len(market["all"]), "weights": kit.WEIGHTS, "calls": 0, "retried": False,
                            "outlets": [{"o": r["outlet"], "q": round(r["q"], 3), "c": r.get("c"), "hi": bool(re.search("[\u0900-\u097F]", r["title"])),
                                         "t": r["title"][:90]} for r in market["all"][:12]],
-                           "seeds": [round(r["q"], 3) for r in market["seeds"]], "cands": []})
+                           "seeds": [round(r["q"], 3) for r in market["seeds"]], "cands": [],
+                           "loaded": {"banned": sorted(banned)[:20], "freed": freed[:20]}})
     kb = kit.blocks(titles, pool, market["seeds"])   # {} / "" everywhere when it cannot read anything: the old prompt
     cons, quoted = kb["cons"], kb["quoted"]
     prompt = HEADLINE_PROMPT.format(
@@ -626,5 +652,5 @@ def write_headline(router: Router | None, news: dict, items: dict[int, dict], le
         h = min(repeated, key=lambda r: (r[0], -score(r[1])))[1]
         log.info("headline repeats an earlier one, used anyway: %s", h)
         return h
-    log.info("no headline passed: %s", "; ".join(tried)[:400])
+    log.info("no headline passed (loaded words kept: %s; freed: %s): %s", sorted(banned)[:12], freed[:12], "; ".join(tried)[:400])
     return None

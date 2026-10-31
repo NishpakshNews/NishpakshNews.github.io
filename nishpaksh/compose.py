@@ -1000,6 +1000,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
             payload["headline"] = write_headline(router, news, items_, lead, banned, payload.get("_thread_ctx") or "",
                                                  latest=latest, taken=recent_headlines(store, story_id),
                                                  parents=[x["headline"] for x in payload.get("parents") or []],
+                                                 background=[b["text"] for b in payload.get("background") or [] if b.get("text")],
                                                  titles=[{"outlet": x.get("outlet"), "title": x["title"]}
                                                          for x in payload.get("sources") or [] if x.get("title")])
     if essay_good:
