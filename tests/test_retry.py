@@ -147,14 +147,16 @@ def test_fill_bar_falls_by_whole_statements():
     assert abs(N.fill_bar(0, 5) * 5 - 3.5) < 1e-9 and need(40, 0) == 32 # the first bar is the usual 80%
 
 
-def test_fill_mode_switches_the_bar_in_compose():
-    compose.FILL_MODE = False
-    assert compose.bar_for(1, 5) == N.publish_bar(1)
-    compose.FILL_MODE = True
-    try:
-        assert compose.bar_for(1, 5) == N.fill_bar(1, 5)
-    finally:
-        compose.FILL_MODE = False
+def test_every_desk_run_uses_the_statement_bar():
+    assert compose.bar_for(1, 5) == N.fill_bar(1, 5) and compose.bar_for(0, 40) == N.fill_bar(0, 40)
+
+
+def test_the_one_line_rule_up_to_20_and_five_points_above():
+    need = lambda n, t: next(k for k in range(n + 1) if k >= N.fill_bar(t, n) * n)
+    assert [need(20, t) for t in range(4)] == [16, 15, 14, 13]          # 20: both rules drop one a try
+    assert [need(21, t) for t in range(4)] == [17, 16, 15, 14]          # no jump at the boundary
+    assert [need(40, t) for t in range(4)] == [32, 30, 28, 26]          # above 20 the 5-point step is bigger
+    assert need(10, 9) == 5 and need(40, 9) == 20                       # floor 50%
 
 
 def test_the_fill_run_writes_the_smallest_first_passes_over_failures_and_stops_at_one(monkeypatch):
@@ -169,7 +171,7 @@ def test_the_fill_run_writes_the_smallest_first_passes_over_failures_and_stops_a
     seen = []
 
     def fake_publish(store, router, sid):
-        seen.append((sid, compose.FILL_MODE))
+        seen.append((sid, True))
         if sid == 2:
             compose.LAST_OUTCOME = {"outcome": "headline failed"}
             return False
@@ -178,7 +180,6 @@ def test_the_fill_run_writes_the_smallest_first_passes_over_failures_and_stops_a
     monkeypatch.setattr(compose, "publish_story", fake_publish)
     st = desk.fill_work(None, None)
     assert [s for s, _ in seen] == [2, 4]                      # 5 first (3 is a refused follow-up, last), 2 fails, 4 (8) publishes
-    assert all(f for _, f in seen) and compose.FILL_MODE is False
     assert st["published"] == [4] and st["mode"] == "fill"
     assert st["fill"]["story"] == 4 and st["fill"]["statements"] == 8 and st["fill"]["passed_over"] == {"2": "headline failed"}
 

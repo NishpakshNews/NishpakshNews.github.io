@@ -281,8 +281,8 @@ def _write_with_retries(store: Store, router: Router, sid: int, until: float | N
     time for this: owner, Oct 28 2026, pace matters more than the clock). Retries are counted apart from the desk's tries
     (`stats["retries"]`), so they do not crowd other stories out. When the tries are used the draft is kept and the story
     waits for the next run, as before.
-    `fill` (the second desk run, owner Oct 30 2026): the bar falls by whole statements and the tries are bounded by the
-    bar reaching its floor (FILL_TRIES at most), not by RUN_TRIES."""
+    `fill` (the second desk run, owner Oct 30 2026): the tries are bounded by the bar reaching its floor (FILL_TRIES at
+    most), not by RUN_TRIES. The bar itself falls the same way in every run (compose.bar_for, Oct 31 2026)."""
     from . import compose
     ok = compose.publish_story(store, router, sid)
     tries = 1
@@ -332,7 +332,6 @@ def fill_work(store: Store, router: Router, now: dt.datetime | None = None) -> d
     now = now or utcnow()
     t_work = time.time()
     compose.STAGE_SECONDS.clear()
-    compose.FILL_MODE = True
     stats: dict = {"mode": "fill", "already_this_hour": published_this_hour(store, now), "tried": 0, "published": [],
                    "skipped": {}, "write_allowance": None}
     try:
@@ -379,7 +378,7 @@ def fill_work(store: Store, router: Router, now: dt.datetime | None = None) -> d
         stats["review_seconds"], stats["write_seconds"] = round(review_s), round(write_s)
         stats["stage_seconds"] = dict(compose.STAGE_SECONDS)
     finally:
-        compose.FILL_MODE = False
+        pass
     return stats
 
 

@@ -2176,12 +2176,15 @@ def test_a_short_article_is_finished_next_time_not_thrown_away(store, monkeypatc
     monkeypatch.setattr(narrative, "essay_ok", lambda nar, payload, bar=None: real_ok(nar, payload, bar)
                         and (bar is not None and bar < narrative.PUBLISH_MIN - 1e-9))
     monkeypatch.setattr(narrative, "lowered_bar_problems", lambda paragraphs: ["3 one-sentence paragraphs (at most 2)"])
+    # a 5-statement story reaches its floor (3) after one failed try (Oct 31 2026: one line a try up to 20 statements), so
+    # the 3-hour rest at the floor would apply here; this test is about the draft, not the rest
+    monkeypatch.setattr(compose, "FLOOR_WAIT_HOURS", 0)
     assert not compose.publish_story(store, _router(store, Fills()), sid)
     assert compose.LAST_OUTCOME["outcome"] == "written short" and "coherence guard" in compose.LAST_OUTCOME["detail"]["why"]
     assert store.rows(select(published)) == []
     assert "writer_draft" in store.one(select(stories.c.analysis).where(stories.c.id == sid))["analysis"]
     monkeypatch.setattr(narrative, "lowered_bar_problems", lambda paragraphs: [])         # the rest is about the draft
-    assert compose.publish_story(store, _router(store, Fills()), sid)
+    assert compose.publish_story(store, _router(store, Fills()), sid), compose.LAST_OUTCOME
     assert "draft" not in calls                                   # continued, not started again
     an = store.one(select(stories.c.analysis).where(stories.c.id == sid))["analysis"]
     assert "writer_draft" not in an

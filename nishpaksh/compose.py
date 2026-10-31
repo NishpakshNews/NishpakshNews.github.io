@@ -939,7 +939,7 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     banned = set(payload["loaded_words"])
     if router is None:
         return _outcome(story_id, "no writer")
-    if not _writer_attempt_allowed(store, story_id, h):
+    if not _writer_attempt_allowed(store, story_id, h, len(ordered_items(payload))):
         return _outcome(story_id, "resting at the lowest bar")
     bar = bar_for(_writer_tries(store, story_id), len(ordered_items(payload)))
     from .belong import assign_topics
@@ -1072,12 +1072,12 @@ def publish_story(store: Store, router: Router | None, story_id: int) -> bool:
     return _outcome(story_id, "published", {"lowered_bar": mark} if mark else None)
 
 
-FILL_MODE = False      # the job's second desk run (desk --fill): the bar falls by whole statements (narrative.fill_bar)
-
-
 def bar_for(tries: int, n: int) -> float:
-    from .narrative import fill_bar, publish_bar
-    return fill_bar(tries, n) if FILL_MODE else publish_bar(tries)
+    """The bar of a try for a story of `n` statements (owner, Oct 31 2026, every desk run): each failed try lowers the
+    required count by one statement (a story of 20 or fewer) or by 5 points (a larger one), whichever is more
+    (narrative.fill_bar), down to PUBLISH_FLOOR."""
+    from .narrative import fill_bar
+    return fill_bar(tries, n)
 
 
 FLOOR_WAIT_HOURS = 3   # at the lowest bar a story is tried again only this often (it is never given up)
@@ -1089,13 +1089,15 @@ def _writer_tries(store: Store, story_id: int) -> int:
     return int((a.get("writer_failures") or {}).get("n", 0) or 0)
 
 
-def _writer_attempt_allowed(store: Store, story_id: int, h: str) -> bool:
+def _writer_attempt_allowed(store: Store, story_id: int, h: str, n: int = 0) -> bool:
     """A story is never given up (owner, Oct 16 2026): the bar falls with each try instead. Once it is at the floor,
     the same statements are tried again only every FLOOR_WAIT_HOURS; new statements are tried at once."""
-    from .narrative import PUBLISH_FLOOR, publish_bar
+    from .narrative import fill_bar
     a = ((store.one(select(stories.c.analysis).where(stories.c.id == story_id)) or {}).get("analysis") or {})
     w = a.get("writer_failures") or {}
-    if publish_bar(int(w.get("n", 0) or 0)) > PUBLISH_FLOOR or w.get("hash") != h or not w.get("at"):
+    # rests only after a try was made AT the floor (the bar of the last failed try could fall no further for a story of this
+    # size; a small story reaches the floor in a try or two, so the next try, at the floor, is still made at once)
+    if fill_bar(max(0, int(w.get("n", 0) or 0) - 1), n) > fill_bar(1000, n) + 1e-9 or w.get("hash") != h or not w.get("at"):
         return True
     try:
         at = dt.datetime.fromisoformat(w["at"])
